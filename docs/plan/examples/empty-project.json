@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "projectId": "project_empty",
+  "revision": 0,
+  "title": "Proyecto sin comenzar",
+  "createdAt": "2026-11-03T00:00:00Z",
+  "updatedAt": "2026-11-03T00:00:00Z",
+  "idea": "",
+  "locale": "es",
+  "styleId": "stylized-3d",
+  "styleVersion": 1,
+  "seed": 42,
+  "output": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationMs": 0,
+    "container": "mp4",
+    "voiceMode": "silent"
+  },
+  "captionStyle": {
+    "enabled": true,
+    "fontId": "builtin-sans-heavy-v1",
+    "fontSizePx": 72,
+    "color": "#FFFFFF",
+    "highlightColor": "#FFD54A",
+    "anchor": "upper",
+    "safeMarginPx": 120
+  },
+  "entities": [],
+  "scenes": [],
+  "assets": [],
+  "approval": null
+}

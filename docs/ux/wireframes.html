@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Molecula Studio · Bosquejos UX, solo diseño</title>
+  <style>
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 1rem; }
+    body { margin: 0; background: #ededeb; color: #242724; font: 16px/1.55 system-ui, sans-serif; }
+    a { color: #174b42; text-underline-offset: .2em; }
+    a:focus-visible { outline: 3px solid #174b42; outline-offset: 4px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: clamp(1.7rem, 4vw, 2.5rem); line-height: 1.2; }
+    h2 { font-size: 1.55rem; line-height: 1.3; }
+    h3 { font-size: 1rem; }
+    small, .small { font-size: .88rem; }
+    .wrap { max-width: 1360px; margin: auto; padding: clamp(1rem, 3vw, 2.5rem); }
+    .intro { max-width: 880px; }
+    .eyebrow { font-size: .78rem; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; }
+    .notice { padding: 1rem; background: #fff4d6; border: 1px solid #9e7b37; border-radius: 6px; }
+    .index { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7rem; padding: 0; list-style: none; margin: 1.5rem 0 3rem; }
+    .index a { display: block; padding: 1rem; background: #fff; border: 1px solid #b8bcb7; border-radius: 6px; }
+    .sheet { margin-bottom: 3.5rem; }
+    .sheet-header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+    .shell { background: #fafbf8; border: 2px solid #697068; border-radius: 8px; overflow-wrap: anywhere; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid #b8bcb7; }
+    .toolbar p { margin: 0; }
+    .actions { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+    .action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: .5rem .85rem; border: 1px solid #757e74; border-radius: 5px; background: #fff; font-weight: 650; font-size: .88rem; text-align: center; }
+    .primary { background: #294e45; border-color: #294e45; color: white; }
+    .future { border-style: dashed; background: #ededeb; color: #535951; }
+    .badge { display: inline-block; font-size: .78rem; font-weight: 650; padding: .2rem .55rem; border: 1px solid #879085; border-radius: 4px; background: #eff4ec; }
+    .pending { background: #fff4d6; border-color: #9e7b37; }
+    .steps { display: flex; flex-wrap: wrap; gap: .6rem 1.2rem; padding: .75rem 1.25rem; border-bottom: 1px solid #b8bcb7; font-size: .88rem; }
+    .current { font-weight: 800; text-decoration: underline; text-underline-offset: .3rem; }
+    .content { padding: 1.25rem; }
+    .grid { display: grid; gap: 1.25rem; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+    .cards { display: grid; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card { padding: 1rem; border: 1px solid #a8afa3; border-radius: 5px; background: white; min-width: 0; }
+    .card p:last-child { margin-bottom: 0; }
+    .selected { outline: 2px solid #294e45; outline-offset: -2px; }
+    .field { margin-bottom: 1rem; }
+    .label { display: block; font-size: .88rem; font-weight: 750; margin-bottom: .35rem; }
+    .value { background: white; border: 1px solid #8f9889; padding: .65rem .8rem; border-radius: 4px; min-height: 44px; }
+    .textarea { min-height: 105px; }
+    .inline-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+    .muted { color: #50584e; }
+    .line { padding: .9rem 0; border-bottom: 1px solid #c5cac0; }
+    .line:first-child { padding-top: 0; }
+    .line:last-child { border-bottom: 0; }
+    .row { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; }
+    .help { padding: 1rem; border-left: 3px solid #7a8376; background: #f0f2ed; margin: 1rem 0; }
+    .studio { display: grid; grid-template-columns: minmax(140px, .7fr) minmax(0, 1.6fr) minmax(0, 1fr); gap: 1.25rem; }
+    .scene-list { padding: 0; margin: 0; list-style: none; }
+    .scene-list li { margin-bottom: .5rem; padding: .65rem; border: 1px solid #a8afa3; border-radius: 4px; }
+    .portrait { width: min(100%, 300px); aspect-ratio: 9 / 16; margin: auto; border: 2px solid #697068; background: #e4e9df; display: flex; flex-direction: column; justify-content: space-between; padding: 1.1rem; text-align: center; }
+    .caption { padding: .5rem; background: #fff; border: 1px dashed #697068; font-weight: 800; line-height: 1.2; }
+    .landscape { padding: 1.5rem .5rem; border: 1px dashed #8e9788; background: #f6f8f2; }
+    .shape { width: 60%; height: 55px; border: 1px solid #8a9484; transform: skew(-12deg); margin: 1rem auto; background: #d4dcce; }
+    .preview { margin: 0; min-width: 0; }
+    figcaption { margin-top: .75rem; text-align: center; font-size: .85rem; }
+    .transport { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .6rem; margin-top: 1rem; }
+    .progress { height: 12px; border: 1px solid #737d6d; background: #e9ede4; margin: .75rem 0; }
+    .progress-fill { height: 100%; width: 40%; background: #657d60; }
+    .dialog-sketch { max-width: 620px; margin: 1.5rem auto 0; border: 2px solid #697068; padding: 1.25rem; background: #fff; border-radius: 8px; }
+    .annotation { margin-top: 1rem; font-size: .9rem; max-width: 1000px; }
+    .state-strip { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+    .footer { border-top: 1px solid #b8bcb7; padding-top: 1rem; }
+    @media (max-width: 900px) {
+      .studio { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+      .properties { grid-column: 1 / -1; }
+      .cards { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .index, .grid, .studio, .inline-fields { grid-template-columns: minmax(0, 1fr); }
+      .properties { grid-column: auto; }
+      .toolbar, .content { padding: 1rem; }
+      .actions { width: 100%; }
+      .actions .action { flex: 1 1 120px; }
+      .sheet-header { margin-bottom: .75rem; }
+      .sheet-header h2 { margin-bottom: 0; }
+      .portrait { padding: .75rem; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @media print { body { background: white; } .sheet { break-before: page; } .shell { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <main class="wrap" id="indice">
+    <header class="intro">
+      <p class="eyebrow">Molecula Studio / Plan UX / Baja fidelidad</p>
+      <h1>Un borrador que se puede retomar.</h1>
+      <p>Seis pantallas propuestas para un estudio local. M1: guardar/abrir JSON. M2: prueba audiovisual de 10–15 s con fixture, sin editor completo. M3: editor básico y proveedores opcionales con aprobación explícita. M4: pulido y validación final.</p>
+      <p class="notice"><strong>Solo diseño. No es un producto funcional.</strong> Todos los campos, botones, revisiones, tiempos y estados son representaciones estáticas. No guardan archivos, no generan contenido, no reproducen ni exportan. Solo funcionan los enlaces de navegación de este documento.</p>
+      <p><a href="README.md">Alcance y fases</a> · <a href="screens.md">Especificación de pantallas</a> · <a href="flows.md">Flujos y aceptación</a></p>
+    </header>
+    <nav aria-label="Índice de láminas">
+      <ol class="index">
+        <li><a href="#p1">P1 · Proyectos y apertura<br><small>M1 · Recuperar trabajo</small></a></li>
+        <li><a href="#p2">P2 · Idea y estilo<br><small>M1 · Guardar incompleto</small></a></li>
+        <li><a href="#p3">P3 · Guion y storyboard<br><small>M1 texto / M3 editor y aprobación</small></a></li>
+        <li><a href="#p4">P4 · Estudio y vista vertical<br><small>M2 fixture / M3 editor completo</small></a></li>
+        <li><a href="#p5">P5 · Exportaciones<br><small>M2 prueba MP4 / M3 UI completa</small></a></li>
+        <li><a href="#p6">P6 · Configuración y recursos<br><small>M1 · Revinculación</small></a></li>
+      </ol>
+    </nav>
+
+    <section class="sheet" id="p1" aria-labelledby="p1-title">
+      <div class="sheet-header"><h2 id="p1-title">P1 · Proyectos y apertura</h2><a href="#indice">Volver al índice</a></div>
+      <div class="shell">
+        <div class="toolbar"><div><strong>Molecula Studio</strong><p class="small muted">Espacio de trabajo local · estado ilustrativo: conectado</p></div><div class="actions"><span class="action">Abrir proyecto</span><span class="action primary">Nuevo proyecto</span></div></div>
+        <div class="content">
+          <div class="row"><h3>Proyectos recientes</h3><span class="badge">M1 · Sin proveedor ni motor</span></div>
+          <div class="line row"><div><strong>El viaje de la sal</strong><br><small>Borrador · revisión 4 · faltan voz y recursos</small></div><span class="action">Abrir</span></div>
+          <div class="line row"><div><strong>El movimiento del brazo</strong><br><small>Archivo movido · seleccionar ubicación</small></div><span class="action">Seleccionar archivo</span></div>
+          <aside class="help"><strong>Primera vez / estado vacío</strong><br>Comience con una idea o abra un archivo JSON. No necesita terminar un guion para guardar su avance.</aside>
+          <p class="small muted">Abrir importa una configuración validada en el espacio controlado, sin confiar en rutas del JSON. Conserva referencias; medios y aprobación quedan pendientes de comprobar vínculo/vigencia antes de usarlos.</p>
+        </div>
+      </div>
+      <div class="state-strip"><span class="badge">Vacío</span><span class="badge">Leyendo archivo</span><span class="badge pending">JSON inválido: conservar editor</span><span class="badge pending">Versión futura: no abrir</span><span class="badge">Selector cancelado: sin cambios</span></div>
+      <p class="annotation">No hay biblioteca en nube ni trabajos que se reanuden al abrir. Los recientes no sustituyen el archivo real. Si el companion falta, se muestra diagnóstico y nunca «Guardado».</p>
+    </section>
+
+    <section class="sheet" id="p2" aria-labelledby="p2-title">
+      <div class="sheet-header"><h2 id="p2-title">P2 · Idea y estilo</h2><a href="#indice">Volver al índice</a></div>
+      <div class="shell">
+        <div class="toolbar"><div><strong>El viaje de la sal</strong><p class="small">Cambios sin guardar · última escritura: sin guardar</p></div><div class="actions"><span class="action primary">Guardar</span><span class="action">Abrir proyecto</span><span class="action">Descargar copia</span></div></div>
+        <div class="steps"><span class="current">1 · Idea</span><span>2 · Guion</span><span>3 · Estudio</span><span>4 · Exportar</span><span>Configuración</span></div>
+        <div class="content grid">
+          <div>
+            <div class="field"><span class="label">Nombre del proyecto</span><div class="value">El viaje de la sal</div></div>
+            <div class="field"><span class="label">Idea · puede quedar incompleta</span><div class="value textarea">Explicar cómo llega la sal a nuestra mesa. Empezar por el agua del mar…</div></div>
+            <div class="inline-fields"><div class="field"><span class="label">Idioma</span><div class="value">Español</div></div><div class="field"><span class="label">Formato</span><div class="value">Vertical 9:16</div></div></div>
+            <h3>Estilo del proyecto</h3>
+            <div class="cards"><div class="card selected"><strong>3D estilizado</strong><p class="small">Seleccionado · primera opción prevista</p></div><div class="card future"><strong>2D</strong><p class="small">Futuro · no disponible</p></div><div class="card future"><strong>Gráficos en movimiento</strong><p class="small">Futuro · no disponible</p></div></div>
+            <div class="actions" style="margin-top:1.25rem"><span class="action primary">Guardar borrador</span><span class="action">Ir al guion manual</span></div>
+          </div>
+          <aside class="card"><h3>Guardar no exige terminar</h3><p>El JSON conserva idea, estilo y configuración sin audio ni credenciales.</p><p class="small">Un único estilo inicial; paisaje y personaje se resolverán con presets compatibles, no con modelado libre.</p><div class="help small">M1: vista previa y generación no disponibles todavía.</div><p class="small"><strong>Descargar copia</strong> solo exporta configuración; no incluye recursos y no confirma guardado canónico.</p></aside>
+        </div>
+      </div>
+      <div class="state-strip"><span class="badge">Sin guardar</span><span class="badge">Guardando…</span><span class="badge">Guardado tras escritura real</span><span class="badge pending">No se pudo guardar · Reintentar</span></div>
+      <p class="annotation">Guardar y Abrir permanecen visibles en todo el editor. Una escritura fallida conserva el borrador. Los campos de esta lámina son texto, no entradas editables.</p>
+    </section>
+
+    <section class="sheet" id="p3" aria-labelledby="p3-title">
+      <div class="sheet-header"><h2 id="p3-title">P3 · Guion y storyboard</h2><a href="#indice">Volver al índice</a></div>
+      <div class="shell">
+        <div class="toolbar"><div><strong>El viaje de la sal</strong><p class="small">Cambios sin guardar · última escritura ilustrativa: rev. 4 · 10:42</p></div><div class="actions"><span class="action primary">Guardar</span><span class="action">Abrir proyecto</span></div></div>
+        <div class="steps"><span>1 · Idea</span><span class="current">2 · Guion</span><span>3 · Estudio</span><span>4 · Exportar</span><span>Configuración</span></div>
+        <div class="content grid">
+          <div class="card"><h3>Escena 2 · Evaporación</h3><div class="field"><span class="label">Texto</span><div class="value textarea">El agua se evapora y los cristales de sal permanecen en las salinas.</div></div><div class="field"><span class="label">Intención visual</span><div class="value">Paisaje · preset del catálogo procedural</div></div><div class="inline-fields"><div class="field"><span class="label">Duración manual</span><div class="value">4 segundos</div></div><div class="field"><span class="label">Voz</span><div class="value">Pendiente de validación</div></div><div class="field"><span class="label">Origen</span><div class="value">Manual</div></div></div><div class="actions"><span class="action">Importar audio · M3</span><span class="action primary">Aprobar guion · M3</span></div></div>
+          <aside><h3>Storyboard · orden de escenas</h3><ol class="scene-list"><li>1 · Origen<br><small>Mar y agua · descripción manual</small></li><li class="selected">2 · Evaporación<br><small>Salinas · escena seleccionada</small></li><li>3 · Mesa<br><small>Uso cotidiano · sin recurso aún</small></li></ol><div class="actions"><span class="action">Añadir</span><span class="action">Subir</span><span class="action">Bajar</span></div><div class="help"><span class="badge pending">Pendiente de revisión</span><p class="small" style="margin: .6rem 0 0">Aprobar no inicia voz ni render. En M1 basta con editar y guardar texto parcial.</p></div></aside>
+        </div>
+      </div>
+      <p class="annotation"><strong>Invalidación específica:</strong> cambiar texto/inputs de voz invalida voz y alineación dependientes. Reordenar narraciones idénticas conserva clips y alineación local vigente, pero invalida montaje/timeline global. Ajustar duración revalida encaje sin regenerar voz ni pagar automáticamente. Antes de regenerar, confirmar alcance/coste. Fallar conserva la versión anterior etiquetada. M2 prueba una fixture; esta UI editorial completa corresponde a M3.</p>
+    </section>
+
+    <section class="sheet" id="p4" aria-labelledby="p4-title">
+      <div class="sheet-header"><h2 id="p4-title">P4 · Estudio y vista vertical</h2><a href="#indice">Volver al índice</a></div>
+      <div class="shell">
+        <div class="toolbar"><div><strong>El viaje de la sal</strong><p class="small">M3 · Editor básico · cambios sin guardar</p><p class="small">Último guardado confirmado · ejemplo: revisión 4 · 10:42</p></div><div class="actions"><span class="action primary">Guardar</span><span class="action">Abrir proyecto</span></div></div>
+        <div class="steps"><span>1 · Idea</span><span>2 · Guion</span><span class="current">3 · Estudio</span><span>4 · Exportar</span><span>Configuración</span></div>
+        <div class="content studio">
+          <aside><h3>Escenas</h3><ol class="scene-list"><li>1 · Origen</li><li class="selected">2 · Salinas</li><li>3 · Mesa</li></ol><div class="actions"><span class="action">Subir</span><span class="action">Bajar</span></div><p class="small muted">Edición por selección y campos, sin arrastre obligatorio.</p></aside>
+          <figure class="preview"><div class="portrait"><small>9:16 · margen seguro ilustrativo</small><div class="landscape"><div class="shape"></div><strong>Escena procedural</strong><br><small>Placeholder de composición<br>No es un render 3D</small></div><div class="caption">EL AGUA SE EVAPORA</div></div><div class="transport"><span class="action">Reproducir</span><span class="small">00:04 / 00:12 · ejemplo</span></div><figcaption>Ancla ilustrativa: usar solo posiciones admitidas por contrato. Audio tras acción explícita y validación de vínculo/vigencia.</figcaption></figure>
+          <aside class="properties"><h3>Propiedades · escena 2</h3><div class="field"><span class="label">Preset</span><div class="value">Catálogo procedural compatible</div></div><div class="field"><span class="label">Elemento visual</span><div class="value">Entidad del catálogo · sin archivo de modelo</div></div><div class="field"><span class="label">Cámara</span><div class="value">Frontal · preset compatible</div></div><div class="field"><span class="label">Iluminación</span><div class="value">Día</div></div><div class="field"><span class="label">Subtítulos</span><div class="value">Ancla según contrato soportado</div></div><span class="action">Revisar recursos</span></aside>
+        </div>
+      </div>
+      <aside class="card" style="margin-top:1rem">
+        <h3>Elementos del proyecto · ejemplo alternativo de continuidad</h3>
+        <div class="grid">
+          <div><div class="row"><strong>Auto rojo · catálogo</strong><span class="badge">Identidad y proporciones bloqueadas</span></div><p class="small"><code>entityId: auto-rojo</code> · <code>definitionVersion: 1</code> · bloqueados<br>Usado en escenas 1 y 3 del ejemplo de automóvil.</p><span class="action">Seleccionar y reutilizar</span><p class="small" style="margin-top:1rem">Geometría, proporciones, materiales, paleta y rig estables. Sin editor geométrico, rigging, edición global ni variantes arbitrarias en MVP.</p></div>
+          <div><h3>Estado de instancia · escena 3 del ejemplo</h3><div class="field"><span class="label">Pose · preset compatible</span><div class="value">Estacionado</div></div><div class="inline-fields"><div class="field"><span class="label">Posición X / Y / Z</span><div class="value">0 / 0 / 2</div></div><div class="field"><span class="label">Rotación X / Y / Z · grados</span><div class="value">0 / 45 / 0</div></div><div class="field"><span class="label">Escala uniforme · único factor</span><div class="value">1,0 ×</div></div></div><p class="small muted">Controles estáticos de instancia, no edición de identidad. Sin escala independiente por eje; cámara por escena. Ejemplo alternativo, no contenido de la historia de la sal. Otra cámara no exige píxeles idénticos.</p></div>
+        </div>
+      </aside>
+      <div class="state-strip"><span class="badge">Cargando recursos</span><span class="badge pending">Audio ausente · Revincular</span><span class="badge pending">Catálogo no disponible · Diagnóstico</span><span class="badge pending">Motor no disponible · Diagnóstico</span><span class="badge pending">Resultado obsoleto · Revisar</span></div>
+      <p class="annotation">Solo catálogo procedural, sin modelos externos ni editor de rigs/geometría. M1 conserva configuración sin motor. M2 demuestra una fixture audiovisual de 10–15 s y MP4, sin estos paneles completos; M3 habilita el editor. La vista previa no certifica exportación. Tras abrir/importar, bloquear uso de audio/alineación/aprobación hasta revalidar sus vínculos según arquitectura.</p>
+    </section>
+
+    <section class="sheet" id="p5" aria-labelledby="p5-title">
+      <div class="sheet-header"><h2 id="p5-title">P5 · Exportaciones y resultados</h2><a href="#indice">Volver al índice</a></div>
+      <div class="shell">
+        <div class="toolbar"><div><strong>El viaje de la sal</strong><p class="small">Ejemplo de estado: guardado · revisión 5 · 10:48</p></div><div class="actions"><span class="action">Guardar</span><span class="action">Abrir proyecto</span></div></div>
+        <div class="steps"><span>1 · Idea</span><span>2 · Guion</span><span>3 · Estudio</span><span class="current">4 · Exportar</span><span>Configuración</span></div>
+        <div class="content grid">
+          <div><h3>Salida local · M3</h3><div class="field"><span class="label">Perfil objetivo sujeto a validación técnica</span><div class="value">Vertical · 1080 × 1920 · 30 fps</div></div><p class="small">Destino: carpeta de salida del proyecto autorizado.<br>Origen: instantánea guardada de la revisión 5.</p><div class="actions"><span class="action future">Exportar video · no disponible mientras hay trabajo activo</span></div><div class="card" style="margin-top:1rem"><div class="row"><strong>Trabajo activo · estado ilustrativo</strong><span class="badge">Renderizando</span></div><p class="small">120 / 300 cuadros · valores de ejemplo</p><div class="progress" aria-hidden="true"><div class="progress-fill"></div></div><div class="actions"><span class="action">Cancelar</span></div><p class="small muted" style="margin-top:.75rem">Solo un trabajo activo. Si no hay total medible, mostrar etapa sin porcentaje inventado.</p></div></div>
+          <aside><div class="card"><h3>Comprobación previa</h3><p class="small">Guion aprobado · voz vigente · recursos encontrados · motor disponible · destino utilizable.</p><p class="small muted">Esta lámina no ha comprobado ninguna dependencia.</p></div><h3 style="margin-top:1.25rem">Resultados anteriores</h3><div class="card"><strong>Revisión 4 · anterior</strong><p class="small">Resultado válido conservado. No corresponde a los últimos cambios.</p><span class="action">Abrir archivo</span></div><div class="help"><strong>Trabajo interrumpido al cerrar</strong><p class="small">Revisar estado del servicio antes de volver a intentar. Nunca se reinicia automáticamente.</p></div></aside>
+        </div>
+      </div>
+      <div class="state-strip"><span class="badge">Vacío</span><span class="badge">Comprobando</span><span class="badge">Codificando</span><span class="badge pending">Cancelando</span><span class="badge">Cancelado</span><span class="badge pending">Fallido</span><span class="badge">Completado tras verificar salida</span></div>
+      <p class="annotation">Una exportación fallida/cancelada no reemplaza el último archivo válido; «Abrir archivo» exige salida comprobada. M1 no exporta. M2 demuestra MP4 audiovisual de una fixture de 10–15 s, sin exigir esta UI completa; M3 ofrece el recorrido editorial y trabajos aquí dibujado. M4 pule y valida. Abrir/importar no vuelve actuales voz, tiempos o aprobación: preflight exige vínculo y vigencia comprobados.</p>
+    </section>
+
+    <section class="sheet" id="p6" aria-labelledby="p6-title">
+      <div class="sheet-header"><h2 id="p6-title">P6 · Configuración y recursos</h2><a href="#indice">Volver al índice</a></div>
+      <div class="shell">
+        <div class="toolbar"><div><strong>Configuración del proyecto</strong><p class="small">El viaje de la sal · cambios sin guardar</p><p class="small">Último guardado confirmado · ejemplo: revisión 5 · 10:48</p></div><div class="actions"><span class="action primary">Guardar</span><span class="action">Abrir proyecto</span><span class="action">Volver al editor</span></div></div>
+        <div class="content">
+          <div class="grid"><div><h3>Configuración que viaja en el JSON</h3><div class="field"><span class="label">Estilo</span><div class="value">3D estilizado</div></div><div class="field"><span class="label">Preset de escena</span><div class="value">Catálogo procedural compatible</div></div><div class="help"><strong>Portabilidad</strong><p class="small">Traslade JSON y carpeta de audio. Schema 1: entidades visuales procedurales, sin importación de modelos/fuentes. Copia JSON sola no incluye audio ni demuestra vigencia de medios.</p><span class="action">Descargar copia JSON</span></div></div><aside class="card"><h3>Entorno local · estados de ejemplo</h3><p class="small">Companion: conectado<br>Motor: no disponible<br>Audio: 2 encontrados / 1 ausente</p><span class="action">Diagnóstico</span><hr><p class="small"><strong>Proveedor opcional · M3</strong><br>No configurado. Las credenciales se guardan fuera del proyecto, nunca en JSON.</p><p class="small">Coste no disponible: advertir y confirmar antes de cada solicitud potencialmente pagada.</p></aside></div>
+          <section class="dialog-sketch" aria-labelledby="relink-title"><p class="eyebrow">Representación de diálogo · no modal funcional</p><h3 id="relink-title">Revincular audio</h3><p>Audio esperado: <strong>narracion.wav</strong></p><p class="small">No se encontró <code>assets/audio/narracion.wav</code>. Seleccione audio permitido para validar e importar en el espacio autorizado.</p><div class="actions"><span class="action primary">Seleccionar archivo</span><span class="action">Cancelar</span></div><p class="small muted" style="margin-top:1rem">Confirmar solo tras validar tipo/compatibilidad; comprobar vínculo y procedencia según arquitectura antes de usarlo como vigente. Cancelar conserva la referencia anterior.</p></section>
+          <section class="dialog-sketch" aria-labelledby="relink-confirm-title">
+            <p class="eyebrow">Segundo estado estático · después de validar, antes de aplicar</p>
+            <h3 id="relink-confirm-title">Confirmar revinculación</h3>
+            <p>Archivo seleccionado: <strong>narracion.wav</strong></p>
+            <p class="small"><span class="badge">Tipo de audio aceptado · ejemplo</span><br>Validación de formato satisfactoria. Vínculo con narración, alineación y aprobación: pendiente de revalidar según arquitectura; el mismo nombre no acredita vigencia.</p>
+            <p class="small"><strong>Escenas afectadas:</strong> 2 · Evaporación / Salinas. Confirmar actualiza la referencia del borrador; reproducción/exportación quedan bloqueadas hasta validar vínculo, alineación y encaje dependientes. No se generará voz ni se exportará automáticamente.</p>
+            <div class="actions"><span class="action primary">Confirmar revinculación</span><span class="action">Seleccionar otro archivo</span><span class="action">Cancelar</span></div>
+            <p class="small muted" style="margin-top:1rem">Nada se aplica antes de confirmar. Después, Guardar persiste el cambio; no certifica medios como actuales. Cancelar conserva la referencia anterior. Audio diferente exige revalidar dependencias, nunca una reparación equivalente por nombre.</p>
+          </section>
+        </div>
+      </div>
+      <p class="annotation">Implementación futura: foco contenido en el diálogo, Escape seguro y retorno al disparador. Si cambia estilo o recurso, señalar dependencias afectadas antes de regenerar. Los secretos y rutas de terceros nunca se ejecutan ni se confían por venir en el JSON.</p>
+    </section>
+    <footer class="footer"><p><strong>Verificación del bosquejo:</strong> capturas Chromium a 1440, 390 y 320 px, navegación por las seis anclas y retorno, sin desbordamiento horizontal ni errores de consola/runtime en la comprobación. Teclado, zoom y contraste requieren revisión específica. Este HTML no prueba guardado, accesibilidad dinámica ni render de video. No requiere scripts, fuentes externas, imágenes o dependencias.</p><p><a href="#indice">Volver al índice</a> · <a href="flows.md">Revisar aceptación por fase</a></p></footer>
+  </main>
+</body>
+</html>
