@@ -1,0 +1,22 @@
+{
+  "name": "molecula-studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first storyboard studio. M1: persistence before generation.",
+  "engines": {
+    "node": ">=26.3.0 <27"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"tests/**/*.test.ts\"",
+    "test:unit": "node --test \"tests/unit/**/*.test.ts\"",
+    "test:integration": "node --test \"tests/integration/**/*.test.ts\"",
+    "dev:companion": "node --input-type=module -e \"console.error('M1 scaffold: companion entrypoint arrives in F03/F04'); process.exit(1)\"",
+    "dev:studio": "node --input-type=module -e \"console.error('M1 scaffold: studio renderer arrives in F04'); process.exit(1)\""
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2"
+  }
+}
