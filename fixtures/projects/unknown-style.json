@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "projectId": "project_future_style",
+  "revision": 2,
+  "title": "Estilo desconocido",
+  "createdAt": "2026-11-03T00:00:00Z",
+  "updatedAt": "2026-11-03T00:02:00Z",
+  "idea": "Documento con un estilo que este runtime todavía no instala.",
+  "locale": "en",
+  "styleId": "vector-flat",
+  "styleVersion": 1,
+  "seed": 99,
+  "output": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationMs": 3000,
+    "container": "mp4",
+    "voiceMode": "silent"
+  },
+  "captionStyle": {
+    "enabled": false,
+    "fontId": "builtin-sans-heavy-v1",
+    "fontSizePx": 64,
+    "color": "#111111",
+    "highlightColor": "#FFAA00",
+    "anchor": "lower",
+    "safeMarginPx": 96
+  },
+  "entities": [],
+  "scenes": [
+    {
+      "sceneId": "scene_flat",
+      "revision": 1,
+      "title": "Escena plana",
+      "startMs": 0,
+      "durationMs": 3000,
+      "text": "Un estilo que no está instalado.",
+      "visualIntent": "Capas vectoriales simples.",
+      "visual": {
+        "templateId": "flat-v1",
+        "layers": [
+          { "shape": "rect", "color": "#FFFFFF", "opacity": 0.5 },
+          { "shape": "circle", "color": "#FFAA00", "radius": 12 }
+        ],
+        "notes": "payload inerte, no interpretable por este runtime"
+      },
+      "audio": null,
+      "words": [],
+      "mediaBindings": {
+        "audio": null,
+        "words": null
+      }
+    }
+  ],
+  "assets": [],
+  "approval": null
+}

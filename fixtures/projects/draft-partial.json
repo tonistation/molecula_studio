@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "projectId": "project_draft",
+  "revision": 1,
+  "title": "Borrador con una escena",
+  "createdAt": "2026-11-03T00:00:00Z",
+  "updatedAt": "2026-11-03T00:05:00Z",
+  "idea": "Borrador mínimo que debe poder guardarse sin render ni voz.",
+  "locale": "es",
+  "styleId": "stylized-3d",
+  "styleVersion": 1,
+  "seed": 7,
+  "output": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationMs": 4000,
+    "container": "mp4",
+    "voiceMode": "silent"
+  },
+  "captionStyle": {
+    "enabled": true,
+    "fontId": "builtin-sans-heavy-v1",
+    "fontSizePx": 72,
+    "color": "#FFFFFF",
+    "highlightColor": "#FFD54A",
+    "anchor": "upper",
+    "safeMarginPx": 120
+  },
+  "entities": [],
+  "scenes": [
+    {
+      "sceneId": "scene_draft",
+      "revision": 0,
+      "title": "Escena borrador",
+      "startMs": 0,
+      "durationMs": 4000,
+      "text": "",
+      "visualIntent": "",
+      "visual": null,
+      "audio": null,
+      "words": [],
+      "mediaBindings": {
+        "audio": null,
+        "words": null
+      }
+    }
+  ],
+  "assets": [
+    {
+      "assetId": "asset_voice",
+      "kind": "audio",
+      "path": "assets/asset_voice.wav",
+      "mimeType": "audio/wav",
+      "byteLength": 128044,
+      "sha256": null,
+      "durationMs": 4000,
+      "source": {
+        "origin": "user",
+        "license": "user-provided fixture",
+        "attribution": ""
+      }
+    }
+  ],
+  "approval": null
+}

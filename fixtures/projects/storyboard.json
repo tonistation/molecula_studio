@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 1,
+  "projectId": "project_rocks",
+  "revision": 3,
+  "title": "Las capas cuentan una historia",
+  "createdAt": "2026-11-03T00:00:00Z",
+  "updatedAt": "2026-11-03T00:10:00Z",
+  "idea": "Explicar cómo las capas de roca conservan señales del pasado.",
+  "locale": "es",
+  "styleId": "stylized-3d",
+  "styleVersion": 1,
+  "seed": 2718,
+  "output": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationMs": 12000,
+    "container": "mp4",
+    "voiceMode": "silent"
+  },
+  "captionStyle": {
+    "enabled": true,
+    "fontId": "builtin-sans-heavy-v1",
+    "fontSizePx": 72,
+    "color": "#FFFFFF",
+    "highlightColor": "#FFD54A",
+    "anchor": "upper",
+    "safeMarginPx": 120
+  },
+  "entities": [
+    {
+      "entityId": "entity_presenter",
+      "definitionVersion": 1,
+      "generatorId": "procedural-v1",
+      "generatorVersion": 1,
+      "seed": 100,
+      "variantOf": null,
+      "identity": {
+        "type": "character",
+        "proportions": { "width": 0.8, "height": 2, "depth": 0.5 },
+        "props": { "bodyColor": "#3165C8", "accentColor": "#FFD54A" },
+        "rigId": "character-basic-v1",
+        "voiceId": null
+      }
+    },
+    {
+      "entityId": "entity_rocks",
+      "definitionVersion": 1,
+      "generatorId": "procedural-v1",
+      "generatorVersion": 1,
+      "seed": 101,
+      "variantOf": null,
+      "identity": {
+        "type": "rockLayers",
+        "proportions": { "width": 2, "height": 1.5, "depth": 1.2 },
+        "props": { "colors": ["#C08B62", "#E8C68D", "#98765C"] },
+        "rigId": "rigid-v1",
+        "voiceId": null
+      }
+    },
+    {
+      "entityId": "entity_car",
+      "definitionVersion": 1,
+      "generatorId": "procedural-v1",
+      "generatorVersion": 1,
+      "seed": 102,
+      "variantOf": null,
+      "identity": {
+        "type": "car",
+        "proportions": { "width": 1.8, "height": 1.4, "depth": 4 },
+        "props": { "bodyColor": "#C84B42", "wheelColor": "#263238" },
+        "rigId": "rigid-v1",
+        "voiceId": null
+      }
+    },
+    {
+      "entityId": "entity_pointer",
+      "definitionVersion": 1,
+      "generatorId": "procedural-v1",
+      "generatorVersion": 1,
+      "seed": 103,
+      "variantOf": null,
+      "identity": {
+        "type": "arrow",
+        "proportions": { "width": 0.4, "height": 0.4, "depth": 1.2 },
+        "props": { "color": "#F5C842", "direction": [-1, 0, 0] },
+        "rigId": "rigid-v1",
+        "voiceId": null
+      }
+    },
+    {
+      "entityId": "entity_layer_label",
+      "definitionVersion": 1,
+      "generatorId": "procedural-v1",
+      "generatorVersion": 1,
+      "seed": 104,
+      "variantOf": null,
+      "identity": {
+        "type": "label",
+        "proportions": { "width": 2, "height": 0.4, "depth": 0.1 },
+        "props": { "text": "Capas del pasado", "color": "#172D45" },
+        "rigId": "rigid-v1",
+        "voiceId": null
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "sceneId": "scene_intro",
+      "revision": 2,
+      "title": "Una pregunta",
+      "startMs": 0,
+      "durationMs": 6000,
+      "text": "Cada roca guarda una historia.",
+      "visualIntent": "Un personaje sencillo presenta un bloque de capas bajo luz diurna.",
+      "visual": {
+        "templateId": "explainer-v1",
+        "palette": "daylight",
+        "background": "#DDEEF5",
+        "camera": {
+          "projection": "perspective",
+          "keyframes": [
+            { "atMs": 0, "position": [0, 2, 8], "target": [0, 1, 0], "fovDeg": 45 },
+            { "atMs": 6000, "position": [1, 2, 7], "target": [0, 1, 0], "fovDeg": 45 }
+          ]
+        },
+        "components": [
+          {
+            "componentId": "presenter",
+            "entityId": "entity_presenter",
+            "definitionVersion": 1,
+            "position": [-1, 0, 0],
+            "rotation": [0, 0, 0],
+            "scale": 1,
+            "motion": "idle",
+            "state": "default"
+          },
+          {
+            "componentId": "rocks",
+            "entityId": "entity_rocks",
+            "definitionVersion": 1,
+            "position": [1, 0, 0],
+            "rotation": [0, 0, 0],
+            "scale": 0.8,
+            "motion": "none",
+            "state": "default"
+          },
+          {
+            "componentId": "car_intro",
+            "entityId": "entity_car",
+            "definitionVersion": 1,
+            "position": [0, 0, -1],
+            "rotation": [0, 0.5, 0],
+            "scale": 0.3,
+            "motion": "none",
+            "state": "default"
+          }
+        ]
+      },
+      "audio": null,
+      "words": [
+        { "text": "Cada", "startMs": 400, "endMs": 900, "emphasis": false },
+        { "text": "roca", "startMs": 900, "endMs": 1500, "emphasis": true },
+        { "text": "guarda", "startMs": 1500, "endMs": 2100, "emphasis": false },
+        { "text": "una", "startMs": 2100, "endMs": 2400, "emphasis": false },
+        { "text": "historia.", "startMs": 2400, "endMs": 3400, "emphasis": true }
+      ],
+      "mediaBindings": {
+        "audio": null,
+        "words": {
+          "inputDigest": "868ff862271dd59b41af2968b1079e87f444d5e06e9d78e41987393a4f698806",
+          "outputDigest": "24fff32c63c47e8f82644f074e35624ad4ef35d28c91f2626b1bbdb561005e76"
+        }
+      }
+    },
+    {
+      "sceneId": "scene_layers",
+      "revision": 1,
+      "title": "Leer las capas",
+      "startMs": 6000,
+      "durationMs": 6000,
+      "text": "Sus capas muestran cambios del pasado.",
+      "visualIntent": "Acercamiento al bloque; una flecha y un rótulo identifican las capas.",
+      "visual": {
+        "templateId": "explainer-v1",
+        "palette": "daylight",
+        "background": "#DDEEF5",
+        "camera": {
+          "projection": "perspective",
+          "keyframes": [
+            { "atMs": 0, "position": [3, 2, 6], "target": [0, 0.5, 0], "fovDeg": 42 },
+            { "atMs": 6000, "position": [2, 2, 5], "target": [0, 0.5, 0], "fovDeg": 42 }
+          ]
+        },
+        "components": [
+          {
+            "componentId": "layers",
+            "entityId": "entity_rocks",
+            "definitionVersion": 1,
+            "position": [0, 0, 0],
+            "rotation": [0, 0, 0],
+            "scale": 1.2,
+            "motion": "reveal",
+            "state": "default"
+          },
+          {
+            "componentId": "pointer",
+            "entityId": "entity_pointer",
+            "definitionVersion": 1,
+            "position": [1.8, 1, 0],
+            "rotation": [0, 0, 0],
+            "scale": 0.7,
+            "motion": "pulse",
+            "state": "default"
+          },
+          {
+            "componentId": "layer_label",
+            "entityId": "entity_layer_label",
+            "definitionVersion": 1,
+            "position": [0, 2, 0],
+            "rotation": [0, 0, 0],
+            "scale": 1,
+            "motion": "none",
+            "state": "default"
+          },
+          {
+            "componentId": "car_layers",
+            "entityId": "entity_car",
+            "definitionVersion": 1,
+            "position": [-1.5, 0, -1],
+            "rotation": [0, 1.2, 0],
+            "scale": 0.3,
+            "motion": "none",
+            "state": "default"
+          }
+        ]
+      },
+      "audio": null,
+      "words": [
+        { "text": "Sus", "startMs": 300, "endMs": 600, "emphasis": false },
+        { "text": "capas", "startMs": 600, "endMs": 1200, "emphasis": true },
+        { "text": "muestran", "startMs": 1200, "endMs": 1900, "emphasis": false },
+        { "text": "cambios", "startMs": 1900, "endMs": 2500, "emphasis": true },
+        { "text": "del", "startMs": 2500, "endMs": 2800, "emphasis": false },
+        { "text": "pasado.", "startMs": 2800, "endMs": 3800, "emphasis": true }
+      ],
+      "mediaBindings": {
+        "audio": null,
+        "words": {
+          "inputDigest": "5c31a6ca77b036002fe7cec61f5867c293cf5ef2f95a54679739e6c70d2fc54a",
+          "outputDigest": "e807ab471328c120e1e64010df3f9ca32e050b97e1b4ff699c01d43f980199bc"
+        }
+      }
+    }
+  ],
+  "assets": [],
+  "approval": null
+}
