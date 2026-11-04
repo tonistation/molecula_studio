@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | P1 | Proyectos y apertura | M1 | Crear borrador o recuperar trabajo validado. |
 | P2 | Idea y estilo | M1 | Definir intención y guardar aunque falten datos. |
-| P3 | Guion y storyboard | M1 texto; M3 editor/aprobación | Revisar contenido y orden de escenas; M2 usa una fixture preparada. |
+| P3 | Guion y storyboard | M1 texto; M2 aprobación mínima de fixture; M3 editor y aprobación editorial completa | Revisar contenido y orden de escenas; M2 usa una fixture preparada con aprobación mínima. |
 | P4 | Estudio y vista vertical | M2 prueba de fixture; M3 editor | M2 demuestra previsualización; M3 permite ajustar escenas desde el panel completo. |
 | P5 | Exportaciones y resultados | M2 prueba MP4; M3 UI completa | Exportar una fixture de 10–15 s en M2; gestionar salidas desde el editor en M3. |
 | P6 | Configuración y recursos | M1 | Configurar proyecto, diagnosticar y revincular. |
@@ -23,13 +23,16 @@
 | El viaje de la sal | Borrador | rev. 4 | [Abrir]             |
 | El brazo          | Faltan recursos     | [Abrir y revisar] |
 | Sin proyectos: «Comience con una idea»                      |
-| Importar: seleccione JSON; revise recursos por separado     |
+| Importar JSON externo: valida, limpia aprobación, avisa     |
+| Copia portable: JSON + assets/ · no es Descargar copia      |
 +------------------------------------------------------------+
 ```
 
 **Jerarquía:** Nuevo proyecto es la acción principal cuando la biblioteca está vacía; al haber recientes, Abrir sigue visible. La lista es local, no biblioteca en nube. Un registro reciente no es la autoridad del documento: al abrir se comprueba que el archivo siga disponible.
 
 **Estados:** vacío con acceso a crear/abrir; leyendo con nombre de archivo; JSON inválido o versión futura con mensaje preciso y documento activo intacto; cancelación del selector sin efectos; reciente movido con «Seleccionar archivo»; companion desconectado con diagnóstico y sin falso guardado.
+
+**Guardar copia portable:** crea una carpeta nueva con `project.json` y todos los activos referenciados disponibles; confirma solo al completarse la copia y, si faltan activos, avisa cuáles y deja la copia como borrador, nunca etiquetada «completa». Usa `projectId` nuevo, revisión raíz 0 y fechas nuevas, conservando IDs y versiones de entidades y escenas. No es «Descargar copia JSON»: esa descarga no incluye binarios, no confirma guardado y no limpia dirty. Importar un JSON externo o guardar copia portable limpia la aprobación con aviso explícito.
 
 **Aceptación:** crear no exige proveedor ni recursos; abrir una configuración incompleta conduce a la última sección útil, no a un asistente obligatorio. La apertura nunca arranca trabajos.
 
@@ -38,7 +41,7 @@
 ```text
 +------------------------------------------------------------+
 | El viaje de la sal   Cambios sin guardar  [Guardar] [Abrir] |
-| Última escritura: sin guardar      [Descargar copia]         |
+| Última escritura: sin guardar   [Copia portable] [Descargar] |
 | Idea > Guion > Estudio > Exportar              [Configuración]|
 | Nombre [El viaje de la sal_______________________________] |
 | Idea   [Explicar cómo llega la sal a nuestra mesa_________] |
@@ -52,6 +55,8 @@
 **Campos:** nombre, idea, idioma, estilo y configuración básica de escena admitida por schema 1. Público objetivo no forma parte del formulario inicial ni se inventa como campo del archivo. Una idea vacía no impide guardar; si falta nombre se usa «Proyecto sin título», renombrable. La duración objetivo, si se ofrece después, es orientación y no una promesa de duración renderizada.
 
 **Estilos:** una tarjeta habilitada «3D estilizado», con ejemplos textuales de paisaje o personaje mediante presets acotados. No implica que cualquier modelo/animación sea compatible. Las alternativas futuras no son CTA ni prestaciones incluidas. El estilo del contenido no impone tema oscuro a toda la UI.
+
+**Copia portable vs descarga:** «Guardar copia portable» escribe una carpeta nueva con `project.json` y todos los activos referenciados disponibles —`projectId` nuevo, revisión raíz 0, fechas nuevas, mismos IDs y versiones de entidades y escenas—, confirma solo al completarse y avisa si falta algún activo sin etiquetar la copia como «completa». «Descargar copia JSON» solo solicita una descarga de configuración: no incluye binarios, no confirma guardado, no limpia dirty y advierte que no es portable por sí sola.
 
 **Estados:** nuevo sin guardar; guardando con control temporalmente ocupado; éxito solo tras confirmación persistida; permiso denegado/disco lleno/companion caído con texto y reintento. No bloquear la edición por ausencia de IA. «Generar propuesta» solo aparece habilitable en M3 tras configuración y consentimiento. M4 pule y valida, no introduce proveedores.
 
@@ -75,7 +80,7 @@
 
 **Edición:** texto por escena, intención visual, duración manual, añadir/eliminar con confirmación si hay contenido y reordenar mediante botones. No línea de tiempo arrastrable obligatoria. El storyboard inicial es lista de tarjetas con descripciones y miniaturas de prueba cuando existan, no arte generado prometido.
 
-**Aprobación:** estado vinculado a entradas/procedencia definidas por arquitectura. Aprobar requiere texto/orden válidos y resumen de pendientes; no dispara voz ni render. En M3 «Ir al estudio» permite inspección incompleta, pero exportar exige validación. M1 permite guardar texto parcial sin aprobar; M2 usa una fixture acotada, no exige esta UI completa. Tras abrir/importar, aprobación y medios quedan pendientes hasta comprobar vínculos y vigencia; no se restauran como actuales por mera lectura del JSON.
+**Aprobación:** estado vinculado a entradas/procedencia definidas por arquitectura. Aprobar requiere texto/orden válidos y resumen de pendientes; no dispara voz ni render. En M3 «Ir al estudio» permite inspección incompleta, pero exportar exige validación. M1 permite guardar texto parcial sin aprobar; M2 usa una fixture acotada con aprobación mínima, no exige esta UI editorial completa. Reabrir un proyecto del workspace conserva la aprobación válida —se muestra obsoleta por digest si el contenido cambió, no se borra—. Importar un JSON externo o guardar copia portable sí limpia `approval` con aviso explícito, conserva medios, referencias y `mediaBindings`, registra la edición —revisión y fecha— antes del commit y la UI muestra «Sin aprobación», no «Pendiente de validación». Los medios no se restauran como actuales por mera lectura del JSON: quedan «Pendiente de validación» hasta comprobar vínculos y vigencia.
 
 **Cambios después de aprobar:** texto o entradas de voz cambiados invalidan voz y alineación dependientes; reordenar narraciones idénticas conserva clips y alineación local validada, pero invalida montaje/línea temporal; ajustar duración exige comprobar encaje sin regenerar voz automáticamente. Mostrar el efecto específico, no «regenerar todo». Editar no borra medios anteriores. Antes de regenerar se detalla alcance y posible coste. Si falla el proveedor, permanece accesible la versión aprobada anterior, identificada como no correspondiente al borrador actual.
 
@@ -92,7 +97,8 @@
 | 2 Salinas   | | SUBTÍTULO      |  | Elemento [Catálogo]    |
 | 3 Mesa      | |                |  | Cámara [Frontal]       |
 |             | | paisaje simple |  | Luz [Día]              |
-|             | |                |  | Ancla [según contrato] |
+|             | |                |  | Subtítulos [Sí]        |
+|             | |                |  | Ancla [upper]          |
 |             | +----------------+  | [Zona segura visible]  |
 |             | [Reproducir] 0:04   | Voz [Importada]         |
 | [Subir/bajar escena]               | [Revisar recursos]     |
@@ -101,13 +107,13 @@
 +------------------------------------------------------------+
 ```
 
-**Paneles (M3):** lista ordenada, lienzo 9:16 y propiedades de escena; M2 prueba una fixture de 10–15 s sin exigir estos controles completos. Solo presets soportados: cámara, iluminación, entidad de catálogo procedural y movimiento limitado. No hay importación GLB ni rig editor. Paisaje/personaje son familias previstas sujetas al catálogo, no promesas de modelos arbitrarios. La UI ofrece únicamente anclas de subtítulo admitidas por contrato; el ancla superior de las referencias queda pendiente de confirmación técnica. Revisar margen seguro y legibilidad sin prometer compatibilidad universal.
+**Paneles (M3):** lista ordenada, lienzo 9:16 y propiedades de escena; M2 prueba una fixture de 10–15 s sin exigir estos controles completos. Solo presets soportados: cámara, iluminación, entidad de catálogo procedural y movimiento limitado. No hay importación GLB ni rig editor. Paisaje/personaje son familias previstas sujetas al catálogo, no promesas de modelos arbitrarios. `captionStyle.enabled` se elige explícitamente aquí y forma parte del digest de aprobación y del recibo de exportación. La UI ofrece únicamente anclas admitidas por contrato: `upper` es el valor inicial por defecto y `center`/`lower` siguen disponibles. Revisar margen seguro y legibilidad sin prometer compatibilidad universal.
 
 **Reproducción:** posición temporal, reproducir/pausar y selección de escena; audio solo por acción explícita y después de validar vínculo/vigencia. Vista previa no equivale a render final. Mostrar «Pendiente de validación», «Necesita revisar montaje» o «Voz desactualizada» según dependencia; reordenar o ajustar duración no exige siempre regeneración. No reproducir voz anterior como si correspondiera a texto nuevo.
 
 **Elementos del proyecto:** seleccionar/reutilizar entidades de catálogo y consultar nombre estable, `entityId`, `definitionVersion`, identidad/proporciones bloqueadas y escenas usuarias. «Reutilizar» crea una instancia referenciada, no un diseño independiente. El ejemplo alternativo **Auto rojo**, `auto-rojo`, versión 1, usado en escenas 1 y 3 ilustra continuidad; no añade un automóvil a la historia de la sal.
 
-La identidad contiene geometría, proporciones, materiales, paleta y rig. Por instancia cambian pose, posición, rotación y escala uniforme; la cámara es de escena. No ofrecer escala no uniforme. Otra cámara/pose no exige píxeles idénticos. Edición geométrica, rigging, edición global y creación arbitraria de variantes no están disponibles en MVP. Una futura variante debe ser explícita y una modificación global debe listar usos y pedir confirmación.
+La identidad contiene geometría, proporciones, materiales, paleta y rig. Por instancia cambian pose, posición, rotación y escala uniforme; la cámara es de escena. La UI puede mostrar la rotación en grados, pero el schema persiste radianes Euler XYZ. No ofrecer escala no uniforme. Otra cámara/pose no exige píxeles idénticos. Edición geométrica, rigging, edición global y creación arbitraria de variantes no están disponibles en MVP. Una futura variante debe ser explícita y una modificación global debe listar usos y pedir confirmación.
 
 **Estados:** sin escena → volver al guion; audio ausente → «Revincular audio» sin perder edición; entidad procedural no disponible → placeholder y diagnóstico de catálogo/versión, nunca selector GLB; motor no disponible → explicación y configuración conservada; cargando; error de previsualización con diagnóstico; éxito con «Vista previa». M1 informa disponibilidad futura; M2 demuestra la fixture; M3 ofrece los controles completos.
 
@@ -119,7 +125,9 @@ La identidad contiene geometría, proporciones, materiales, paleta y rig. Por in
 +------------------------------------------------------------+
 | El viaje de la sal | Guardado · rev. 5 [Guardar] [Abrir]    |
 | Idea > Guion > Estudio > EXPORTAR                           |
-| Comprobación: guion ✓ audio ✓ recursos ✓ motor ✓ disco ✓  |
+| Salida [Con voz] [Sin voz: seleccionada] · Subtít. [Sí]     |
+| Comprobación sin voz: guion ✓ recursos ✓ motor ✓ disco ✓    |
+|   Audio ausente u obsoleto no bloquea esta salida           |
 | Perfil [Vertical 1080 × 1920 · 30 fps]*                     |
 | Revisión de origen: 5   Destino: salida local del proyecto  |
 | [Exportar video]                                          |
@@ -131,11 +139,11 @@ La identidad contiene geometría, proporciones, materiales, paleta y rig. Por in
 
 \*Perfil objetivo a validar con arquitectura y capacidad del motor, no selector de formatos ilimitados.
 
-**Preflight:** comprobar aprobación vigente, dependencias actuales, medios/timing válidos, motor disponible y espacio de trabajo utilizable. La aplicación exporta una revisión guardada e inmutable; si hay cambios, pide guardar primero. Un cambio posterior no modifica un trabajo ya iniciado: mostrar su revisión origen.
+**Preflight:** comprobar aprobación vigente, dependencias actuales, motor disponible y espacio de trabajo utilizable, y validar medios/timing **según la salida elegida**. La salida se elige explícitamente en P5: «Con voz» (`output.voiceMode: withVoice`) exige audio actual disponible en cada escena; «Sin voz» (`silent`) excluye el consumo de audio, por lo que audio ausente, obsoleto o sin verificar nunca bloquea esa exportación y se conserva en el proyecto. `captionStyle.enabled` se elige explícitamente en P4 y forma parte del digest de aprobación y del recibo. La aplicación exporta una revisión guardada e inmutable; si hay cambios, pide guardar primero. Un cambio posterior no modifica un trabajo ya iniciado: mostrar su revisión origen.
 
 **Trabajo acotado:** uno activo; no simular porcentajes. Si existe total medible, indicar cuadros; si no, etapa y actividad indeterminada. Tiempo restante solo si está calculado de forma razonable, nunca constante inventada.
 
-**Estados:** vacío; comprobando; bloqueado por recursos/audio/aprobación; en espera; renderizando; codificando; cancelando; cancelado; fallido; completado con archivo comprobado; interrumpido tras reapertura. «Abrir archivo» se habilita solo si existe salida válida. Cancelar no anuncia éxito mientras el proceso siga activo. Resultado parcial no aparece como video terminado.
+**Estados:** vacío; comprobando; bloqueado por recursos, aprobación, motor o audio —este último solo si la salida elegida es con voz—; en espera; renderizando; codificando; cancelando; cancelado; fallido; completado con archivo comprobado; interrumpido tras reapertura. «Abrir archivo» se habilita solo si existe salida válida. Cancelar no anuncia éxito mientras el proceso siga activo. Resultado parcial no aparece como video terminado.
 
 ## P6 · Configuración, diagnóstico y revinculación
 
@@ -147,10 +155,10 @@ La identidad contiene geometría, proporciones, materiales, paleta y rig. Por in
 | Recursos: 2 encontrados / 1 ausente [Revisar]               |
 | Companion: conectado   Motor: no disponible [Diagnóstico] |
 | Proveedor opcional: no configurado · M3                    |
-| [Guardar configuración]            [Descargar copia JSON]  |
+| [Guardar configuración] [Copia portable] [Descargar JSON]  |
 | +------------------------------------------------------+  |
 | | Revincular audio: narracion.wav                      |  |
-| | No se encontró assets/audio/narracion.wav             |  |
+| | No se encontró assets/<assetId>.wav                   |  |
 | | [Seleccionar archivo] [Cancelar]                      |  |
 | | Verificar compatibilidad antes de confirmar.          |  |
 | +------------------------------------------------------+  |
@@ -159,11 +167,13 @@ La identidad contiene geometría, proporciones, materiales, paleta y rig. Por in
 
 **Configuración del proyecto:** estilo y parámetros de escena que se guardan en JSON. **Entorno local:** estado de companion, Chromium/FFmpeg y diagnóstico; rutas autorizadas resumidas, sin exponer secretos. **Proveedor:** credenciales solo mediante almacenamiento local separado definido por arquitectura, nunca en JSON ni logs exportados. M1 no exige configurarlas.
 
-**Revinculación (schema 1):** identificar audio esperado, seleccionar archivo permitido, validar tipo/compatibilidad y procedencia según arquitectura, confirmar referencia dentro del espacio controlado. Si cambió el audio, revalidar alineación, encaje y salidas dependientes; no asumir vigencia por mismo nombre. Cancelar conserva referencia y contenido anterior. No interpretar una ruta recibida en JSON como permiso de lectura. Las entidades visuales se resuelven por catálogo procedural, no mediante modelos externos.
+**Revinculación (schema 1):** identificar audio esperado, seleccionar archivo permitido, validar tipo/compatibilidad y procedencia según arquitectura, confirmar referencia dentro del espacio controlado. La ruta del manifest es exactamente `assets/<assetId>.<ext>`, plana dentro de `assets/`; `narracion.wav` se muestra solo como nombre original/visible, nunca como ruta. Si cambió el audio, revalidar alineación, encaje y salidas dependientes; no asumir vigencia por mismo nombre. Cancelar conserva referencia y contenido anterior. No interpretar una ruta recibida en JSON como permiso de lectura. Las entidades visuales se resuelven por catálogo procedural, no mediante modelos externos.
+
+**Portabilidad:** «Guardar copia portable» crea una carpeta nueva con `project.json` y todos los activos referenciados disponibles, con `projectId` nuevo, revisión raíz 0 y fechas nuevas, conservando IDs y versiones de entidades y escenas; confirma solo al completarse, avisa si faltan activos y nunca etiqueta una copia parcial como «completa». Importar desde fuera o clonar limpia la aprobación con aviso. «Descargar copia JSON» es otra acción: no incluye binarios, no confirma guardado y no limpia dirty.
 
 **Diálogo de implementación:** nombre accesible, foco inicial significativo, Tab contenido, Escape cancela si es seguro, retorno al disparador. Error junto al selector sin cerrar diálogo. En el HTML está representado como bloque, no como modal funcional.
 
-Para audio compartido, mostrar todas las escenas afectadas antes de confirmar; recuperar el archivo no prueba por sí solo su vínculo con narración/aprobación. Una entidad procedural ausente/incompatible se diagnostica mediante catálogo/versionado: no se ofrece seleccionar modelo externo ni editar identidad global como «reparación».
+Para audio compartido, mostrar todas las escenas afectadas antes de confirmar; recuperar el archivo no prueba por sí solo su vínculo con la narración ni renueva la aprobación editorial. Una entidad procedural ausente/incompatible se diagnostica mediante catálogo/versionado: no se ofrece seleccionar modelo externo ni editar identidad global como «reparación».
 
 ## Controles compartidos y copy de recuperación
 

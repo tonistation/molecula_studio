@@ -18,7 +18,7 @@
 | Persistencia | JSON legible más carpeta de recursos; un companion local administra un espacio de trabajo controlado. Sin DB. |
 | Primer hito | Guardar y reabrir un borrador parcial, incluso sin guion, audio ni renderizador. |
 | Estilos | Arquitectura multiestilo, con una sola opción inicial: **3D estilizado**. 2D y gráficos en movimiento se muestran como futuros, deshabilitados. |
-| Referencias | Paisajes y personajes 3D, iluminación y encuadres variados; las referencias sugieren subtítulos superiores, pero la UI solo ofrece anclas admitidas por el contrato vigente. Oscuridad, isometría y cámara fija no son restricciones globales. |
+| Referencias | Paisajes y personajes 3D, iluminación y encuadres variados; las referencias sugieren subtítulos superiores, pero la UI solo ofrece anclas admitidas por el contrato vigente, con `upper` como default inicial. Oscuridad, isometría y cámara fija no son restricciones globales. |
 | Edición | Formularios, lista ordenada de escenas, mover arriba/abajo y previsualización vertical. No editor de rigs, modelado libre ni línea de tiempo compleja por arrastre. |
 | Continuidad | Seleccionar/reutilizar elementos de catálogo con identidad y proporciones bloqueadas; instancias de escena referencian la misma entidad, no rediseños independientes. |
 | Generación | Primero guion, audio y recursos de prueba o importados manualmente; integración opcional con proveedores después. |
@@ -33,8 +33,8 @@ Los hitos siguen el plan de entrega canónico. Los bosquejos de editor completo 
 
 | Hito | Disponible al terminar | No es requisito de ese hito |
 | --- | --- | --- |
-| **M1 · Proyecto recuperable** | P1 proyectos, P2 idea/estilo, edición textual mínima en P3, P6 configuración/revinculación; guardar/abrir JSON incompleto; descargar copia; validación y guardas de salida. | WebGL, voz sintética, generación IA, exportar MP4. |
-| **M2 · Prueba audiovisual acotada** | Fixture manual de 10–15 segundos, catálogo procedural, audio permitido y subtítulos; previsualización/captura y MP4 local verificable. Demuestra continuidad y pipeline, no un editor completo. | Editor integral P3/P4/P5, proveedores externos o importación de modelos. |
+| **M1 · Proyecto recuperable** | P1 proyectos, P2 idea/estilo, edición textual mínima en P3, P6 configuración/revinculación; guardar/abrir JSON incompleto; guardar copia portable; descargar copia JSON; validación y guardas de salida. | WebGL, voz sintética, generación IA, exportar MP4. |
+| **M2 · Prueba audiovisual acotada** | Fixture manual de 10–15 segundos, catálogo procedural, audio permitido, subtítulos y aprobación mínima de fixture; previsualización/captura y MP4 local verificable. Demuestra continuidad y pipeline, no un editor completo. | Editor integral P3/P4/P5, aprobación editorial completa, proveedores externos o importación de modelos. |
 | **M3 · Editor básico y adaptadores opcionales** | Guion/storyboard con aprobación, escenas y entidades de catálogo configurables, audio importado, subtítulos, previsualización y exportaciones desde el editor. Proveedores opcionales de guion/voz solo con aprobación explícita antes de cada operación. | Render en nube, lotes masivos, edición geométrica, nuevos estilos, colaboración, pagos o sincronización. |
 | **M4 · Pulido y validación final** | Validación final, accesibilidad, claridad de estados y recuperación; pulido del alcance ya definido. | Nuevas capacidades, nuevos estilos o proveedor obligatorio. |
 
@@ -42,7 +42,7 @@ En M1 los espacios de vista previa y exportación explican «Disponible en una f
 
 ## Gramática común de la interfaz
 
-- Cabecera de proyecto: nombre editable, **Guardar**, **Abrir proyecto**, estado de cambios, última escritura confirmada y revisión guardada. **Descargar copia** es una acción secundaria y nunca sustituye Guardar.
+- Cabecera de proyecto: nombre editable, **Guardar**, **Abrir proyecto**, estado de cambios, última escritura confirmada y revisión guardada. **Guardar copia portable** (carpeta con JSON y activos) y **Descargar copia JSON** son acciones secundarias y nunca sustituyen Guardar; la descarga no incluye binarios ni confirma escritura.
 - Estados de documento: «Sin guardar», «Cambios sin guardar», «Guardando…», «Guardado · revisión 4 · 10:42» y «No se pudo guardar». La hora y revisión de ejemplo de los bosquejos no representan una escritura real.
 - Estado persistente junto al control, no solo notificación temporal. Fallar al guardar mantiene el documento modificado y disponible para reintentar o descargar una copia.
 - Avance por secciones, sin obligar a terminar el pipeline para guardar. «Pendiente de revisión» no equivale a «Error».
@@ -54,9 +54,9 @@ La invalidación depende de las entradas: texto o inputs de voz cambiados invali
 
 El navegador no escribe rutas arbitrarias. El companion recibe un identificador de proyecto autorizado dentro de su espacio de trabajo. Un archivo abierto mediante selector es entrada no confiable: validar primero, no ejecutar instrucciones ni confiar en rutas de su JSON. Los recursos referenciados se importan o revinculan mediante selección explícita y validación del companion.
 
-En schema 1 las entidades visuales proceden del catálogo procedural; no se importan GLB, modelos o fuentes arbitrarios. Los archivos de medios permitidos son audio, separado del JSON. El JSON no contiene recursos embebidos, credenciales ni secretos. La carpeta de audio acompaña al JSON al trasladar un proyecto; **Descargar copia** entrega solo configuración y advierte que no es un paquete portátil completo. No existe sincronización automática ni copia de seguridad en nube.
+En schema 1 las entidades visuales proceden del catálogo procedural; no se importan GLB, modelos o fuentes arbitrarios. Los archivos de medios permitidos son audio, separado del JSON y con ruta plana `assets/<assetId>.<ext>` dentro de la carpeta `assets/`. El JSON no contiene recursos embebidos, credenciales ni secretos. La carpeta `assets/` acompaña al JSON al trasladar un proyecto mediante **Guardar copia portable**, que confirma solo al completarse y avisa de activos faltantes; **Descargar copia JSON** entrega solo configuración y advierte que no es un paquete portátil completo. No existe sincronización automática ni copia de seguridad en nube.
 
-Reabrir/importar conserva referencias y aprobaciones serializadas sin considerarlas prueba de vigencia. Antes de usar audio, alineación o aprobación como actuales, el companion debe resolver su vínculo y revalidar procedencia/dependencias según arquitectura. Hasta entonces la UI muestra «Pendiente de validación» y bloquea usos dependientes, sin regenerar ni pagar automáticamente. No se agregan campos UX alternativos al contrato.
+Reabrir un proyecto del workspace conserva referencias y la aprobación válida; abrir o guardar no renueva la aprobación, y si el contenido cambió se muestra obsoleta por digest, no se borra. Importar un JSON externo o **Guardar copia portable** sí limpia `approval` con aviso explícito, conserva medios, referencias y `mediaBindings`, registra esa edición —revisión y fecha nuevas— antes del commit y la UI muestra «Sin aprobación», no «Pendiente de validación». Los vínculos de audio/alineación siguen sujetos a revalidación: el companion debe resolver vínculo y procedencia antes de usarlos como actuales, y hasta entonces la UI los marca «Pendiente de validación» u «Obsoleto» y bloquea los usos dependientes, sin regenerar ni pagar automáticamente. No se agregan campos UX alternativos al contrato.
 
 ## Identidad visual entre escenas
 
@@ -84,6 +84,6 @@ Escritorio es el contexto principal. En ancho reducido: cabecera envuelve accion
 
 ## Coordinación técnica, no implementación
 
-Evidencia temporal de la comprobación posterior a correcciones G0: `/private/var/folders/ky/xtx1sc_j6yv2js44vhx5fb6h0000gn/T/opencode/molecula-ux-g0-n9XubE` (capturas y `report.json`). No es un recurso requerido por los bosquejos y puede no existir en otro equipo. Quedan pendientes teclado, zoom, contraste y comportamiento real de persistencia. La selección final de anclas y el contrato de procedencia/aprobación se alinean con la corrección del autor de arquitectura; aquí no se agregan campos JSON.
+Evidencia temporal de la comprobación posterior a correcciones G0: `/private/var/folders/ky/xtx1sc_j6yv2js44vhx5fb6h0000gn/T/opencode/molecula-ux-g0-n9XubE` (capturas y `report.json`). No es un recurso requerido por los bosquejos y puede no existir en otro equipo. Quedan pendientes teclado, zoom, contraste y comportamiento real de persistencia. El ancla inicial es `upper`, con `center`/`lower` disponibles; la importación externa o la copia portable limpia la aprobación y exige nueva revisión editorial, mientras reabrir conserva la válida. Aquí no se agregan campos JSON.
 
 La recomendación base del coordinador es React/TypeScript/Vite para UI, companion Node local, Three.js para el primer estilo, subtítulos SVG/DOM y captura Chromium/FFmpeg. Este documento define experiencia y estados, no instala dependencias ni valida esas APIs. La arquitectura deberá concretar contratos y motores; el HTML es independiente de cualquier framework.

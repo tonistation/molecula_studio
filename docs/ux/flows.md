@@ -18,7 +18,9 @@ Cerrar → P1 Abrir proyecto → leer/validar JSON → mostrar mismo borrador
 4. «Guardado» significa confirmación real del companion tras completar la persistencia acordada, no enviar una petición ni actualizar una marca local. Si el usuario editó durante la escritura, el éxito corresponde a la instantánea enviada y los cambios nuevos siguen «sin guardar».
 5. Reabrir restaura idea, estilo, configuraciones, escenas parciales y referencias disponibles. Trabajos que figuraban activos quedan «Interrumpidos: requieren revisión», nunca se reanudan automáticamente.
 
-**Medios y aprobación al reabrir/importar:** conservar referencias no certifica su vigencia. Mostrar «Pendiente de validación» y bloquear reproducción/exportación dependiente hasta resolver vínculo y revalidar procedencia, entradas y aprobación según arquitectura. Si faltan vínculos o evidencia, conservar contenido sin tratarlo como actual ni regenerarlo automáticamente. La UX no introduce campos nuevos de procedencia.
+**Medios y aprobación al reabrir:** reabrir un proyecto del workspace conserva la aprobación válida; si el contenido cambió, se muestra obsoleta por digest y no se borra. Conservar referencias no certifica la vigencia de medios: mostrar «Pendiente de validación» u «Obsoleto» y bloquear reproducción/exportación dependiente hasta resolver vínculo y revalidar procedencia y entradas. Si faltan vínculos o evidencia, conservar contenido sin tratarlo como actual ni regenerarlo automáticamente. La UX no introduce campos nuevos de procedencia.
+
+**Importar desde fuera o clonar:** importar un JSON externo o **Guardar copia portable** limpia `approval` con aviso explícito, conserva medios, referencias y `mediaBindings`, y registra la edición —revisión y fecha nuevas— antes del commit; la UI muestra «Sin aprobación», nunca «Pendiente de validación». Exportar exige una nueva aprobación editorial: un sello importado no se reutiliza como confianza local ni reanuda jobs.
 
 **Fallo de guardado:** mantener borrador y estado dirty; conservar última revisión/hora confirmada; explicar permiso/espacio/conexión cuando se conozca; reintentar sin generar duplicados involuntarios. Si el proceso muere antes de la primera escritura exitosa, la edición en memoria puede perderse: no prometer autosave o recuperación inexistentes.
 
@@ -42,15 +44,16 @@ Abrir proyecto
 
 La confirmación «Descartar» autoriza abandonar cambios solo cuando haya un reemplazo válido listo; un error de lectura/importación no debe vaciar el editor. Si se opta por «Guardar y continuar» y falla la escritura, detener la navegación. En navegación interna aplicar guarda; al cerrar pestaña usar advertencia nativa cuando sea viable, sin prometer texto personalizado ni bloquear el sistema operativo.
 
-**Separar dos operaciones:**
+**Separar operaciones:**
 
 | Acción | Significado | Qué no implica |
 | --- | --- | --- |
 | Guardar | Actualiza el JSON canónico del proyecto en el espacio controlado y confirma revisión. | No es una descarga del navegador. |
-| Descargar copia | Solicita exportación de configuración JSON del borrador; indicar si incluye cambios no guardados. No limpia estado dirty. | No verifica que el navegador haya escrito en disco; no actualiza revisión canónica ni incluye recursos. |
+| Guardar copia portable | Crea una carpeta nueva con `project.json` y todos los activos referenciados disponibles; confirma solo al completarse la copia. | No sobrescribe el proyecto abierto, no reutiliza su `projectId` y no es «Descargar copia JSON». |
+| Descargar copia JSON | Solicita exportación de configuración JSON del borrador; indicar si incluye cambios no guardados. No limpia estado dirty. | No verifica que el navegador haya escrito en disco; no actualiza revisión canónica ni incluye recursos; no es portable por sí sola. |
 | Abrir proyecto | Recupera un proyecto local autorizado o importa un JSON desde selector y valida antes de activarlo. | El nombre/ruta del navegador no otorga acceso al sistema de archivos. |
 
-**Portabilidad:** copiar JSON junto con su carpeta de audio conserva referencias relativas, sujetas a validación local. Schema 1 usa entidades de catálogo procedural, no importación de modelos o fuentes. Copiar solo JSON permite abrir texto/identidades, pero muestra audio ausente y bloquea operaciones dependientes. Ni presencia del archivo ni nombre idéntico prueban vigencia. No leer rutas absolutas de terceros. No empaquetador ZIP requerido en MVP.
+**Portabilidad:** **Guardar copia portable** produce una carpeta nueva con `project.json` y todos los activos referenciados disponibles, usando `projectId` nuevo, revisión raíz 0 y fechas nuevas, y conservando IDs y versiones de entidades y escenas. Se confirma solo al completarse la copia; si faltan activos se avisa cuáles y la copia queda como borrador, nunca etiquetada «completa». Para transportarla se mueve la carpeta entera junto con `assets/` —rutas planas `assets/<assetId>.<ext>`—, sujeta a validación local; no hay ZIP en v0.1. Schema 1 usa entidades de catálogo procedural, no importación de modelos o fuentes. Importar desde fuera o clonar limpia la aprobación con aviso y exige nueva revisión editorial. Copiar solo el JSON permite abrir texto/identidades, pero muestra audio ausente y bloquea operaciones dependientes. Ni presencia del archivo ni nombre idéntico prueban vigencia. No leer rutas absolutas de terceros.
 
 ## F3 · Escribir, ordenar y aprobar — M1 texto; M3 editor
 
@@ -109,7 +112,8 @@ Si el audio es compartido, mostrar escenas afectadas antes de confirmar. Recuper
 **M2:** demostrar un MP4 audiovisual local de 10–15 s mediante fixture preparada, catálogo procedural, audio y subtítulos. No requiere el editor integral ni la pantalla de trabajos completa. **M3:** ofrecer el recorrido de editor siguiente, conservando la prueba de M2 como regresión. **M4:** pulir y validar finalmente estos comportamientos, sin introducir un pipeline nuevo.
 
 ```text
-P4 revisar → P5 preflight → guardar revisión si hay cambios
+P4 revisar → P5 elegir salida (con voz / sin voz) → preflight según esa salida
+  → guardar revisión si hay cambios
   → instantánea aprobada y válida → confirmar exportación local
   → trabajo (uno activo) → capturar → codificar → verificar archivo
      ├─ válido → completado + abrir resultado
@@ -117,7 +121,7 @@ P4 revisar → P5 preflight → guardar revisión si hay cambios
      └─ cancelar → cancelando → cancelado; no publicar parcial
 ```
 
-- Preflight identifica audio ausente, voz/timing sin vínculo validado, aprobación pendiente/caducada, catálogo incompatible, motor indisponible y problemas de destino. Abrir/importar nunca vuelve actuales esos medios por sí solo. Acciones «Revisar guion», «Revincular audio» o «Diagnóstico» conducen al punto correcto.
+- Preflight identifica aprobación pendiente/obsoleta, catálogo incompatible, motor indisponible y problemas de destino; sobre medios, evalúa solo lo que consume la salida elegida explícitamente en P5: «Con voz» (`withVoice`) exige audio actual disponible en cada escena y timing vinculado, mientras «Sin voz» (`silent`) excluye el consumo de audio y nunca se bloquea por audio ausente u obsoleto. Reabrir conserva la aprobación válida; importar o clonar la limpia y exige nueva aprobación editorial, sin volver actuales los medios por sí solo. Acciones «Revisar guion», «Revincular audio» o «Diagnóstico» conducen al punto correcto.
 - Mostrar fase y avance medible. Si falta información, usar «Preparando…», no un porcentaje inventado.
 - Un resultado anterior sigue visible como «Revisión anterior». No sobrescribirlo al iniciar un trabajo; una salida fallida no elimina el último MP4 válido.
 - Cerrar/reabrir: trabajos activos se muestran interrumpidos/obsoletos y se reconcilian con el servicio local antes de ofrecer un nuevo intento; no lanzar una segunda instancia ni reanudar sin consentimiento. Si existe aún un proceso, mostrar su estado comprobado y permitir decidir cancelarlo/seguir observando.
@@ -159,7 +163,8 @@ Si no hay estimación fiable: «Coste no disponible; puede generar cargos en su 
 - [ ] Edición durante un guardado mantiene dirty si el borrador es posterior a la instantánea persistida.
 - [ ] Simular permiso denegado, disco lleno o desconexión: no mostrar «Guardado», no perder borrador y permitir reintentar.
 - [ ] Interrumpir escritura: el archivo anterior sigue válido o hay recuperación explícita definida por arquitectura; no aceptar JSON truncado como éxito.
-- [ ] Descargar copia no limpia dirty ni actualiza última escritura canónica; advertir «Solo configuración; recursos no incluidos».
+- [ ] Descargar copia JSON no limpia dirty ni actualiza última escritura canónica; advertir «Solo configuración; recursos no incluidos».
+- [ ] Guardar copia portable crea una carpeta nueva con JSON y activos, `projectId` nuevo, revisión 0 y fechas nuevas, conserva IDs/versiones de entidades y escenas, confirma solo al completarse y avisa de activos faltantes sin llamar «completa» a una copia parcial.
 - [ ] Cancelar selector, abrir JSON inválido, demasiado grande o de versión futura conserva proyecto activo y cambios.
 - [ ] Confirmar salida con cambios: guardar y continuar solo navega tras éxito; cancelar vuelve al editor; error de apertura no vacía trabajo.
 - [ ] Abrir JSON con ruta externa/traversal no lee archivos fuera del espacio autorizado; mostrar rechazo/revinculación.
@@ -170,7 +175,8 @@ Si no hay estimación fiable: «Coste no disponible; puede generar cargos en su 
 ### M2 · Prueba audiovisual acotada
 
 - [ ] Exportar fixture manual de 10–15 s con catálogo procedural, audio y subtítulos, sin proveedor ni editor completo; verificar MP4 audiovisual y continuidad.
-- [ ] Apertura/importación conserva referencias pero bloquea uso de medios/aprobaciones hasta validar vínculo y vigencia conforme a arquitectura.
+- [ ] Reabrir un proyecto del workspace conserva la aprobación válida y sus referencias; si el contenido cambió, la aprobación se muestra obsoleta por digest y no se borra.
+- [ ] Importar un JSON externo o guardar copia portable limpia `approval` con aviso, conserva medios, referencias y `mediaBindings`, registra revisión/fecha antes del commit y muestra «Sin aprobación»; el uso de medios sigue bloqueado hasta validar vínculo y vigencia.
 
 ### M3 · Editor básico, medios y salida local
 

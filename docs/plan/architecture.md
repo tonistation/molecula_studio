@@ -125,7 +125,7 @@ Una pista seleccionada debe caber en su escena: nunca estirar, cortar ni ajustar
 
 ## Jobs, revisiones y reintentos
 
-Los jobs no forman parte del JSON de proyecto. El companion conserva un journal local sanitizado fuera del bundle portable; al reiniciar marca `queued/running` como `interrupted`. No reanuda gastos ni procesos automáticamente. A diferencia de ese journal, bindings de medios y aprobación son metadatos editoriales portables, no estados de ejecución; reabrir/importar recalcula su vigencia sin depender de un job existente ni llamar red. Importar externamente limpia aprobación con aviso, conserva medios/bindings y exige revisión editorial nueva.
+Los jobs no forman parte del JSON de proyecto. El companion conserva un journal local sanitizado fuera del bundle portable; al reiniciar marca `queued/running` como `interrupted`. No reanuda gastos ni procesos automáticamente. A diferencia de ese journal, bindings de medios y aprobación son metadatos editoriales portables, no estados de ejecución; reabrir/importar recalcula los digests esperados para comparar, sin reescribir bindings ni aprobación, y sin depender de un job existente ni llamar red. Importar externamente limpia aprobación con aviso, conserva medios/bindings y exige revisión editorial nueva.
 
 | Campo de job | Contrato |
 |---|---|

@@ -92,7 +92,7 @@
     <header class="intro">
       <p class="eyebrow">Molecula Studio / Plan UX / Baja fidelidad</p>
       <h1>Un borrador que se puede retomar.</h1>
-      <p>Seis pantallas propuestas para un estudio local. M1: guardar/abrir JSON. M2: prueba audiovisual de 10–15 s con fixture, sin editor completo. M3: editor básico y proveedores opcionales con aprobación explícita. M4: pulido y validación final.</p>
+      <p>Seis pantallas propuestas para un estudio local. M1: guardar/abrir JSON y copia portable. M2: prueba audiovisual de 10–15 s con fixture y aprobación mínima, sin editor completo. M3: editor básico, aprobación editorial completa y proveedores opcionales con aprobación explícita. M4: pulido y validación final.</p>
       <p class="notice"><strong>Solo diseño. No es un producto funcional.</strong> Todos los campos, botones, revisiones, tiempos y estados son representaciones estáticas. No guardan archivos, no generan contenido, no reproducen ni exportan. Solo funcionan los enlaces de navegación de este documento.</p>
       <p><a href="README.md">Alcance y fases</a> · <a href="screens.md">Especificación de pantallas</a> · <a href="flows.md">Flujos y aceptación</a></p>
     </header>
@@ -100,7 +100,7 @@
       <ol class="index">
         <li><a href="#p1">P1 · Proyectos y apertura<br><small>M1 · Recuperar trabajo</small></a></li>
         <li><a href="#p2">P2 · Idea y estilo<br><small>M1 · Guardar incompleto</small></a></li>
-        <li><a href="#p3">P3 · Guion y storyboard<br><small>M1 texto / M3 editor y aprobación</small></a></li>
+        <li><a href="#p3">P3 · Guion y storyboard<br><small>M1 texto · M2 aprobación mínima · M3 editor</small></a></li>
         <li><a href="#p4">P4 · Estudio y vista vertical<br><small>M2 fixture / M3 editor completo</small></a></li>
         <li><a href="#p5">P5 · Exportaciones<br><small>M2 prueba MP4 / M3 UI completa</small></a></li>
         <li><a href="#p6">P6 · Configuración y recursos<br><small>M1 · Revinculación</small></a></li>
@@ -116,7 +116,8 @@
           <div class="line row"><div><strong>El viaje de la sal</strong><br><small>Borrador · revisión 4 · faltan voz y recursos</small></div><span class="action">Abrir</span></div>
           <div class="line row"><div><strong>El movimiento del brazo</strong><br><small>Archivo movido · seleccionar ubicación</small></div><span class="action">Seleccionar archivo</span></div>
           <aside class="help"><strong>Primera vez / estado vacío</strong><br>Comience con una idea o abra un archivo JSON. No necesita terminar un guion para guardar su avance.</aside>
-          <p class="small muted">Abrir importa una configuración validada en el espacio controlado, sin confiar en rutas del JSON. Conserva referencias; medios y aprobación quedan pendientes de comprobar vínculo/vigencia antes de usarlos.</p>
+          <p class="small muted">Abrir importa una configuración validada en el espacio controlado, sin confiar en rutas del JSON. Importar desde fuera limpia la aprobación con aviso —revisión y fecha nuevas antes del commit—, conserva medios, referencias y <code>mediaBindings</code>, y muestra «Sin aprobación»; reabrir un proyecto del workspace conserva la aprobación válida. Los medios siguen pendientes de comprobar vínculo/vigencia antes de usarlos.</p>
+          <p class="small muted">Guardar copia portable crea una carpeta nueva con JSON y todos los activos disponibles —<code>projectId</code> nuevo, revisión 0, fechas nuevas, mismos IDs y versiones—; confirma solo al completarse y avisa si falta algún activo, sin llamar «completa» a una copia parcial. No es «Descargar copia JSON», que no incluye binarios ni confirma guardado.</p>
         </div>
       </div>
       <div class="state-strip"><span class="badge">Vacío</span><span class="badge">Leyendo archivo</span><span class="badge pending">JSON inválido: conservar editor</span><span class="badge pending">Versión futura: no abrir</span><span class="badge">Selector cancelado: sin cambios</span></div>
@@ -126,7 +127,7 @@
     <section class="sheet" id="p2" aria-labelledby="p2-title">
       <div class="sheet-header"><h2 id="p2-title">P2 · Idea y estilo</h2><a href="#indice">Volver al índice</a></div>
       <div class="shell">
-        <div class="toolbar"><div><strong>El viaje de la sal</strong><p class="small">Cambios sin guardar · última escritura: sin guardar</p></div><div class="actions"><span class="action primary">Guardar</span><span class="action">Abrir proyecto</span><span class="action">Descargar copia</span></div></div>
+        <div class="toolbar"><div><strong>El viaje de la sal</strong><p class="small">Cambios sin guardar · última escritura: sin guardar</p></div><div class="actions"><span class="action primary">Guardar</span><span class="action">Abrir proyecto</span><span class="action">Guardar copia portable</span><span class="action">Descargar copia JSON</span></div></div>
         <div class="steps"><span class="current">1 · Idea</span><span>2 · Guion</span><span>3 · Estudio</span><span>4 · Exportar</span><span>Configuración</span></div>
         <div class="content grid">
           <div>
@@ -137,7 +138,7 @@
             <div class="cards"><div class="card selected"><strong>3D estilizado</strong><p class="small">Seleccionado · primera opción prevista</p></div><div class="card future"><strong>2D</strong><p class="small">Futuro · no disponible</p></div><div class="card future"><strong>Gráficos en movimiento</strong><p class="small">Futuro · no disponible</p></div></div>
             <div class="actions" style="margin-top:1.25rem"><span class="action primary">Guardar borrador</span><span class="action">Ir al guion manual</span></div>
           </div>
-          <aside class="card"><h3>Guardar no exige terminar</h3><p>El JSON conserva idea, estilo y configuración sin audio ni credenciales.</p><p class="small">Un único estilo inicial; paisaje y personaje se resolverán con presets compatibles, no con modelado libre.</p><div class="help small">M1: vista previa y generación no disponibles todavía.</div><p class="small"><strong>Descargar copia</strong> solo exporta configuración; no incluye recursos y no confirma guardado canónico.</p></aside>
+          <aside class="card"><h3>Guardar no exige terminar</h3><p>El JSON conserva idea, estilo y configuración sin audio ni credenciales.</p><p class="small">Un único estilo inicial; paisaje y personaje se resolverán con presets compatibles, no con modelado libre.</p><div class="help small">M1: vista previa y generación no disponibles todavía.</div><p class="small"><strong>Guardar copia portable</strong> escribe una carpeta con JSON y activos; <strong>Descargar copia JSON</strong> solo solicita configuración sin recursos y no confirma guardado canónico.</p></aside>
         </div>
       </div>
       <div class="state-strip"><span class="badge">Sin guardar</span><span class="badge">Guardando…</span><span class="badge">Guardado tras escritura real</span><span class="badge pending">No se pudo guardar · Reintentar</span></div>
