@@ -2,7 +2,24 @@
 
 Plan de una aplicación local para crear videos animados verticales a partir de guiones, escenas, voz y subtítulos. La visión contempla varios estilos; la primera entrega propone un único estilo 3D.
 
-**Estado: planificación (M0), sin producto implementado.** Este repositorio no ofrece todavía editor, guardado de proyectos ni exportación de video. Los documentos y bosquejos definen lo que se propone construir, no funcionalidades disponibles.
+**Estado: implementación de M1 en curso.** Ya existen el schema ejecutable, el `ProjectStore` con commits atómicos, la frontera HTTP local del companion y un estudio mínimo en React para crear/editar/guardar/reabrir borradores. Todavía **no** hay render, voz, proveedores ni exportación MP4; nada de eso se declara disponible.
+
+## Ejecutar localmente
+
+Requiere Node.js 26 (`.nvmrc`).
+
+```sh
+npm install
+npm start   # compila el estudio (React + Vite) y levanta el companion
+```
+
+Abrí `http://127.0.0.1:4787`. El companion sirve el estudio en loopback con un token efímero inyectado en la página; no hay CORS abierto ni acceso al home completo. El workspace por defecto es `./workspace` (`MOLECULA_WORKSPACE` para cambiarlo).
+
+```sh
+npm run typecheck       # raíz + studio
+npm test                # unit + integración (disco real)
+npm run test:e2e        # navegador real (Lightpanda) contra el companion
+```
 
 ## Por dónde empezar
 
@@ -34,6 +51,6 @@ Es una propuesta visual estática, no la aplicación ni una prueba de persistenc
 
 **Continuidad visual requerida:** personajes y objetos deben conservar identidad y proporciones entre escenas. Se propone un registro de entidades reutilizables en el JSON; cada aparición referencia `entityId` y versión, con estado por escena y proporciones bloqueadas. Las variantes deben ser intencionales, sin editor avanzado en el MVP. Renderizar mediante código no garantiza continuidad si cada escena regenera sus entidades. Véase [continuidad visual](docs/plan/visual-continuity.md), pendiente de integración.
 
-Primero se revisará el plan completo, incluidos los bosquejos; el desarrollo del producto requiere autorización posterior. No hay comandos de instalación, ejecución o pruebas del producto definidos, ni proveedores activados. No se afirma rendimiento, calidad de exportación ni reproducibilidad comprobada.
+La primera fase implementada cubre persistencia y recuperación, no generación: guardar solo confirma tras verificar los bytes en disco, y un fallo de escritura conserva la revisión anterior. El render, la voz sintética y la exportación pertenecen a M2/M3 y requieren trabajo y autorización propios. No se afirma rendimiento, calidad de exportación ni reproducibilidad comprobada.
 
 Repositorio de referencia: [tonistation/molecula_studio](https://github.com/tonistation/molecula_studio).
