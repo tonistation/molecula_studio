@@ -51,8 +51,11 @@ M1 conserva visuales del storyboard aunque aún no los dibuje. No debe eliminar 
 
 ### Evidencia local de G1 — F08 (2026-11-04)
 
-**Estado: criterios locales verificados; revisión independiente F08 pendiente.**
-No se declara G1 aprobado por este registro ni PASS de M2/M3/M4.
+**Estado: G1 cerrado en su alcance técnico local; revisión independiente F08 completada sin bloqueantes.**
+La revisión final verificó 297/297 pruebas y 25/25 E2E, typecheck y diff check;
+la unidad revisada quedó en el commit local `d4348cf573d897137b4dc2310e5cdda5f36c5ce8`.
+Esto no acredita aceptación visual humana ni PASS de M2/M3/M4. La autorización
+posterior del usuario permite continuar con V01 local, no proveedores ni render nativo.
 Ejecución: typecheck correcto, **297/297 unitarias/integración** y **25/25 E2E**
 (22 Lightpanda DOM, 3 Chrome para interfaces nativas), cero omisiones.
 
@@ -87,6 +90,33 @@ render ni validación visual de proporciones. No se activaron proveedores.
 | V06 | Colas, revisión, cancelación y límites | V05 | Aborto mata hijos propios, disco/buffer acotados; preflight bloquea medios/aprobación obsoletos y recibo vincula MP4/opciones; R11, R18 |
 | V07 | Comparativa preview/export y continuidad | V03–V06 | Frames/poses/captions; mismo auto entre escenas y ratios modelo; R08–R10, R19, R20 |
 | V08 | Demo reproducible de prueba vertical | V07 | Reabrir fixture, seek, exportar con/sin voz; inspección humana y técnica |
+
+### Evidencia local de V01 — reloj y selección de escena (2026-11-04)
+
+**Implementado localmente; revisión técnica independiente de V01 completada sin bloqueantes.**
+`evaluateFrame(snapshot, frameIndex)` en `src/shared/timeline.ts` devuelve solo
+metadatos de reloj/escena y seed persistida, no estado visual ni readiness.
+Reutiliza el validador F02: rechaza layouts inválidos y estilos inertes, sin
+modificar el snapshot. Un borrador parcial sigue siendo muestreable sin medios.
+
+| Criterio V01 | Oráculo en `tests/unit/timeline.test.ts` |
+|---|---|
+| Reloj único y fronteras | `timeMs = frameIndex × 1000 / fps`, sin redondeo; `sceneTimeMs = timeMs − startMs`. Intervalos `[startMs, endMs)`, exactamente una escena por frame; frontera de 1100 ms en frame 33. |
+| Frame final y rangos | Último índice `totalFrames − 1`, anterior al endpoint; endpoint, negativos, fracciones, NaN/infinito y enteros inseguros rechazados. Proyecto vacío no tiene frame 0. |
+| Seek inverso (R08) | Todos los frames del fixture se comparan en orden inverso y pedidos fuera de orden; mismo estado exacto, sin cursor ni deltas. Error o mutación del resultado no altera snapshot ni muestreo posterior. |
+| Seed persistida (R08) | Roundtrip serialize/parse de seeds raíz 0 y uint32 máximo; seeds de entities intactas. No se genera ni reseedea aleatoriedad. Persistencia en disco/reinicio sigue respaldada por F08, no por esta prueba unitaria. |
+| Tiempo local (parte de R10) | Selección y tiempo local de escena deterministas; no consume audio ni palabras, ni declara sincronía audiovisual probada. |
+
+TDD: ocho casos nuevos fallaron primero por evaluador no implementado (los tres
+del reloj existente pasaban); después **11/11** pasan. La regresión completa se
+registra en [setup V01](../dev/setup.md#timeline-determinista-v01).
+El revisor repitió **305/305** pruebas, **11/11** enfocadas, typecheck y diff
+check; verificó además **2 163 600** comparaciones racionales de fronteras y
+**1800** frames con snapshots congelados. Los **25/25 E2E** son evidencia del
+implementador, no una repetición independiente.
+La interpolación de cámara, PRNG por objeto, poses y overlays siguen en V02/V03;
+la revisión de bindings/audio en V04 y las capturas comparativas en V07.
+No se declara G2, rendimiento, calidad visual ni audio audible.
 
 **Gate G2:** salida 1080×1920 a 30 fps, duración exacta esperada, audio audible y subtítulos incluidos. Instrumentar contadores de frames, tiempos y picos de memoria; no declarar rendimiento sin máquina de referencia y resultados.
 
@@ -165,7 +195,8 @@ Capturar console/runtime errors explícitamente; una navegación exitosa no demu
 | Elemento | Estado hoy | Antes de declarar listo |
 |---|---|---|
 | Schema ejecutable | Implementado y probado localmente en M1 | Mantener corpus/roundtrip; no equivale a renderer |
-| Guardado atómico | F03/F08 con disco y procesos reales; revisión F08 pendiente | Revisar evidencia G1; sin promesa de durabilidad ante corte eléctrico |
+| Guardado atómico | F03/F08 con disco y procesos reales; revisión F08 completada, G1 técnico local cerrado | Mantener evidencia G1; sin promesa de durabilidad ante corte eléctrico |
+| Timeline | V01: reloj/escena/seed probados localmente; revisión técnica independiente completada sin bloqueantes | V02–V07: estado visual, audio y capturas; sin PASS audiovisual |
 | Renderer | Sin implementar por esta tarea | V05–V08 con MP4 y comparación visual |
 | Límites de recursos | Defaults propuestos | V06/H01 con watchdog y fallo controlado |
 | Rendimiento | Sin mediciones nuevas | Máquina de referencia, picos RSS/disco/tiempo y latencias |

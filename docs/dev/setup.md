@@ -1,10 +1,12 @@
-# Entorno de desarrollo M1
+# Entorno de desarrollo M1 y timeline V01
 
 Este documento describe lo que existe hoy en M1: schema, `ProjectStore`,
 frontera HTTP loopback y el estudio React que guarda, reabre e importa borradores
 con manifest, revinculación explícita de recursos (F05), copias del borrador
 y protección de salida (F06), con roundtrip y recuperación entre procesos reales
-(F08). La evidencia local por criterio está en [G1](../plan/delivery.md#evidencia-local-de-g1--f08-2026-11-04); requiere revisión independiente. No
+(F08), más el muestreo determinista de reloj/escena V01. La evidencia por criterio
+está en [G1](../plan/delivery.md#evidencia-local-de-g1--f08-2026-11-04), cerrado
+en alcance técnico local tras revisión independiente F08. No
 promete render, proveedores ni exportación: esa evidencia pertenece a M2 en
 adelante.
 
@@ -89,7 +91,7 @@ src/
   shared/                 # isomorfo, sin dependencias de Node salvo WebCrypto
     canonical.ts          # RFC 8785 JCS (binding-v1)
     digests.ts            # sha256Hex + proyecciones de bindings
-    timeline.ts           # totalFrames / frameTimeMs
+    timeline.ts           # totalFrames / frameTimeMs / evaluateFrame (V01)
     schema/
       limits.ts           # SCHEMA_VERSION y LIMITS (única fuente de verdad)
       types.ts            # modelo Project, Issue, ParseOutcome
@@ -150,6 +152,7 @@ Desde `src/shared/canonical.ts`, `src/shared/digests.ts` y `src/shared/timeline.
 - `bindingDigests(project): Promise<BindingDigests>`
 - `totalFrames(durationMs, fps): number`
 - `frameTimeMs(frameIndex, fps): number`
+- `evaluateFrame(snapshot, frameIndex): FrameSample` (V01; metadatos, no render)
 
 ## Límites de entrada aplicados antes de validar
 
@@ -265,8 +268,11 @@ si un documento válido tiene fechas posteriores al reloj local.
 
 Verificación local del 2026-11-04: `npm run typecheck`, **297 pruebas
 unitarias/integración** y **25 E2E** (22 Lightpanda, 3 Chrome), sin omisiones.
-La revisión independiente de esta unidad sigue pendiente; no es un PASS global
-de producto ni autoriza M2, proveedores o despliegue.
+La revisión independiente final F08 completó esos mismos checks sin bloqueantes;
+unidad revisada en `d4348cf573d897137b4dc2310e5cdda5f36c5ce8`.
+G1 queda cerrado en alcance técnico local, no como PASS global de producto ni
+aceptación visual humana. La autorización posterior permite V01 local; no
+habilita proveedores, despliegue ni ejecución nativa de medios.
 
 | Recorrido | Evidencia reproducible |
 |---|---|
@@ -323,6 +329,43 @@ etiqueta exactos: la reapertura comprueba el control por su etiqueta parcial y
 su valor, sin clicks forzados ni afirmaciones de layout. Context7 siguió sin cuota;
 se consultó la documentación oficial de
 [routing de Playwright](https://playwright.dev/docs/api/class-browsercontext#browser-context-route).
+
+## Timeline determinista (V01)
+
+`evaluateFrame(project, frameIndex)` comparte el reloj F02 y valida el snapshot
+schema 1 en cada llamada; no mantiene estado ni modifica el proyecto. Devuelve
+`{frameIndex, timeMs, sceneIndex, sceneId, sceneTimeMs, seed}` sin referencias
+mutables al documento. No interpreta visuales ni consume activos/bindings.
+
+- Dominio: índices enteros seguros en `[0, ceil(durationMs × fps / 1000))`.
+  Vacío y endpoint no tienen muestra: `RangeError`, sin clamp silencioso.
+- Tiempo: `frameIndex × 1000 / fps`, conserva fracciones; tiempo local por resta.
+  Escenas contiguas con intervalo activo `[startMs, startMs + durationMs)`.
+- Rechaza snapshots inválidos y estilos en solo lectura. Visual/audio nulos,
+  palabras vacías y medios faltantes no impiden muestrear un borrador válido.
+- Seed raíz se expone sin cambiarla; seeds/versiones de entidades permanecen en
+  el documento. No hay PRNG nuevo: diseño procedural corresponde a V02.
+
+`tests/unit/timeline.test.ts`: tres pruebas F02 existentes + ocho nuevas V01.
+RED: **3 pasan / 8 fallan** con cuerpo del evaluador aún no implementado (exit 1);
+GREEN: **11/11**, cero omisiones. Cubre fronteras, todos los frames del fixture,
+último frame, seek inverso/fuera de orden, errores sin mutación y seed roundtrip.
+La [matriz V01](../plan/delivery.md#evidencia-local-de-v01--reloj-y-selección-de-escena-2026-11-04)
+delimita los criterios. La revisión técnica independiente de V01 se completó
+sin bloqueantes: repitió **305/305** pruebas, **11/11** enfocadas, typecheck y
+diff check; además verificó **2 163 600** comparaciones de fronteras contra
+aritmética racional y **1800** frames con snapshots congelados.
+
+Regresión completa de esta unidad: `npm run typecheck` y `git diff --check`
+con exit 0; `npm test` **305/305** y `npm run test:e2e` **25/25**
+(22 Lightpanda DOM, 3 Chrome para interfaces nativas), cero fallos/omisiones.
+Los **25/25 E2E** fueron ejecutados por el implementador, no repetidos por el
+revisor independiente. Verifican que M1 sigue funcionando; no integran aún este
+sampler en UI.
+
+Sin evidencia nueva de poses/cámara, overlays, sincronía audible, capturas ni
+rendimiento. Validar por llamada es intencionalmente conservador; no hay medición
+ni optimización del futuro hot path de render. El schema/formato no cambió.
 
 ## Modo solo lectura
 
