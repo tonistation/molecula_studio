@@ -366,6 +366,9 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
       </div>}
 
       {importNotice !== undefined && <div className="banner banner-warn" role="status">{importNotice}</div>}
+      {draft.approval === null && <p className="muted small" role="status">
+        Sin aprobación: se requiere revisión editorial antes de exportar.
+      </p>}
       {relinking && <p role="status">Operación en curso…</p>}
 
       {readOnly && (

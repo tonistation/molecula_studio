@@ -297,7 +297,9 @@ export class ProjectStore {
             updatedAt: '',
             mode: 'read-only',
             missingAssets: [],
-            orphanTemps: [],
+            // Corrupt canonical JSON must not hide crash recovery evidence.
+            // Report leftovers without parsing or promoting their contents.
+            orphanTemps: await this.#scanTemps(this.#projectDir(projectId)),
           });
           continue;
         }

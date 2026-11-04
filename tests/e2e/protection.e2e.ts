@@ -423,7 +423,7 @@ test('F06 conflict copy uses dirty snapshot, cancellation preserves source, open
     const copyId = (await readdir(root)).find((name) => name.startsWith('p-') && name !== id)!;
     assert.equal(JSON.parse(await readFile(join(root, copyId, 'project.json'), 'utf8')).idea, 'Unsaved snapshot');
     await page.getByText('Cambios sin guardar', { exact: true }).waitFor();
-    await page.getByText(/Sin aprobación/).waitFor();
+    await page.getByText(/Copia portable creada.*Sin aprobación/).waitFor();
     await page.getByRole('button', { name: 'Abrir copia', exact: true }).click();
     await page.getByRole('button', { name: 'Seguir editando', exact: true }).click();
     assert.equal(await page.getByLabel('Idea').inputValue(), 'Unsaved snapshot');

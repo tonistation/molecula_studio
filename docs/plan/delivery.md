@@ -1,6 +1,6 @@
 # Entregas verificables antes de conectar proveedores
 
-El desarrollo se organiza en incrementos completos: **M0 plan → M1 guardar/reabrir → M2 prueba audiovisual determinista → M3 editor/adaptadores → M4 validación v0.1**. El resultado de esta intervención es documentación; ninguna prueba de producto se declara aprobada.
+El desarrollo se organiza en incrementos completos: **M0 plan → M1 guardar/reabrir → M2 prueba audiovisual determinista → M3 editor/adaptadores → M4 validación v0.1**. El plan original se conserva como contrato; la evidencia local de M1 se registra por criterio a continuación, sin declarar aprobado el producto completo.
 
 ## Reglas de ejecución futura
 
@@ -48,6 +48,30 @@ No instalar dependencias, activar servicios, leer secretos, ejecutar proveedores
 **Gate G1:** demo offline real con evidencia de archivo y reapertura, prueba de fallo de escritura, importación no destructiva y dos escritores. Ningún badge «guardado» depende de descargar un archivo o almacenar solo en memoria/localStorage.
 
 M1 conserva visuales del storyboard aunque aún no los dibuje. No debe eliminar campos desconocidos de una versión de estilo que solo puede abrir en modo lectura.
+
+### Evidencia local de G1 — F08 (2026-11-04)
+
+**Estado: criterios locales verificados; revisión independiente F08 pendiente.**
+No se declara G1 aprobado por este registro ni PASS de M2/M3/M4.
+Ejecución: typecheck correcto, **297/297 unitarias/integración** y **25/25 E2E**
+(22 Lightpanda DOM, 3 Chrome para interfaces nativas), cero omisiones.
+
+| Criterio G1 / F08 | Estado acotado | Oráculo y referencia de prueba |
+|---|---|---|
+| Demo offline, archivo y reapertura (R01–R02) | Verificado localmente | `tests/e2e/process-roundtrip.e2e.ts` → `empty and partial`: UI guarda vacío y parcial; navegador y CLI terminan, PIDs nuevos recuperan mismo JSON y bytes, nulls y activo faltante. Routing bloquea red externa y verifica su propio bloqueo; companion de prueba impide TCP/DNS no loopback. |
+| Identidad, proporciones y bindings obsoletos (R18–R19, parte de persistencia) | Verificado como datos | `imported approval notice` en ese E2E: comparación profunda de entities/instancias, audio/words/bindings; digests históricos siguen distintos del input actual tras guardar/reiniciar/transportar. No acredita continuidad visual ni preflight de exportación, aún inexistentes. |
+| Importación limpia aprobación con aviso sin perder medios (R04–R05) | Verificado localmente | Mismo caso: aviso explícito, `approval: null`, estado persistente Sin aprobación, relink real y bytes íntegros en segundo workspace. `tests/integration/store/import-relink.test.ts` → `import clears a foreign approval` registra revisión/fecha; `a portable folder carries assets` distingue carpeta completa de JSON solo. |
+| Importación/apertura no destructiva (R04) | Verificado localmente, evidencia complementaria F05/F06 | `tests/e2e/studio.e2e.ts`: importación inválida sin publicación. `tests/e2e/review-recovery.e2e.ts` → `failed reload and corrupt disk`: editor dirty intacto ante reemplazo truncado, copia recuperable; `tests/e2e/protection.e2e.ts` → `exit and reload cancellation`: apertura inexistente/fallida no vacía borrador. Estos casos usan companion real en el proceso de pruebas, no reinicio de OS. |
+| Fallo de escritura conserva anterior/dirty (R03) | Verificado localmente | `tests/integration/process-recovery.test.ts` → `failed write and SIGKILL`: escritura real fallida/interrumpida, proceso nuevo recupera canónico anterior exacto. `tests/e2e/protection.e2e.ts` → `exit and reload cancellation` / `uncertain save`: dirty y navegación protegidos, incertidumbre no confirmada falsamente. |
+| Dos escritores y dueño muerto | Verificado con procesos reales | `process-recovery.test.ts` → `live lock`: CLI competidor rechazado incluso con force unlock mientras vive el dueño; después de SIGKILL solo recuperación explícita permite abrir, sin cambiar el archivo. La concurrencia de revisiones/digests entre solicitudes se prueba además en `tests/integration/store/project-store.test.ts`. |
+| Temporales huérfanos | Verificado localmente | `failed write and SIGKILL`: temporal parcial real y candidato válido nunca se promueven. También aparecen en listado si `project.json` es inválido; se conservan ambos sin reparación silenciosa. |
+| Token nuevo y recuperación del navegador | Verificado localmente | `process-roundtrip.e2e.ts` → `token rotation`: token anterior rechazado, memoria dirty intacta y archivo sin cambios; descarte explícito y refresh recuperan canónico y permiten guardar. `empty and partial` comprueba rotación y rechazo del token anterior después de reiniciar ambos procesos. |
+
+Procedimiento, helpers y límites de red: [setup F08](../dev/setup.md#reinicio-offline-y-recuperación-entre-procesos-f08).
+No hay autosave: terminar un proceso pierde cambios no confirmados en memoria.
+SIGKILL de hijos propios no acredita corte eléctrico. El alcance multimedia sigue
+siendo inspección pasiva de cabeceras, no decodificación completa, escucha,
+render ni validación visual de proporciones. No se activaron proveedores.
 
 ## M2 — Prueba vertical con fixtures, no gastos
 
@@ -140,8 +164,8 @@ Capturar console/runtime errors explícitamente; una navegación exitosa no demu
 
 | Elemento | Estado hoy | Antes de declarar listo |
 |---|---|---|
-| Schema ejecutable | Propuesto en documento | F02 con fixtures/corpus y roundtrip |
-| Guardado atómico | Diseño propuesto | F03/F08 en filesystem real |
+| Schema ejecutable | Implementado y probado localmente en M1 | Mantener corpus/roundtrip; no equivale a renderer |
+| Guardado atómico | F03/F08 con disco y procesos reales; revisión F08 pendiente | Revisar evidencia G1; sin promesa de durabilidad ante corte eléctrico |
 | Renderer | Sin implementar por esta tarea | V05–V08 con MP4 y comparación visual |
 | Límites de recursos | Defaults propuestos | V06/H01 con watchdog y fallo controlado |
 | Rendimiento | Sin mediciones nuevas | Máquina de referencia, picos RSS/disco/tiempo y latencias |

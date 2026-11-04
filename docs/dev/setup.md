@@ -3,7 +3,8 @@
 Este documento describe lo que existe hoy en M1: schema, `ProjectStore`,
 frontera HTTP loopback y el estudio React que guarda, reabre e importa borradores
 con manifest, revinculación explícita de recursos (F05), copias del borrador
-y protección de salida (F06). No
+y protección de salida (F06), con roundtrip y recuperación entre procesos reales
+(F08). La evidencia local por criterio está en [G1](../plan/delivery.md#evidencia-local-de-g1--f08-2026-11-04); requiere revisión independiente. No
 promete render, proveedores ni exportación: esa evidencia pertenece a M2 en
 adelante.
 
@@ -49,6 +50,10 @@ nativas. Si falta Lightpanda, las pruebas
 correspondientes se marcan `skipped`, que **no** es un pase. El comando E2E
 compila previamente el estudio; si falta Chrome, su prueba falla explícitamente.
 No se acredita revisión visual.
+
+F08 agrega tres E2E DOM con **procesos nuevos de Lightpanda y del companion**,
+no solo pestañas o instancias HTTP nuevas. Esos recorridos fallan explícitamente
+si Lightpanda no está disponible (no se sustituyen por un pase ni por Chrome).
 
 ## Comandos
 
@@ -255,6 +260,69 @@ si un documento válido tiene fechas posteriores al reloj local.
   Chrome existente; los otros recorridos usan Lightpanda. Se capturan errores JS y de consola y se
   admiten únicamente los errores HTTP exactos provocados por casos negativos.
   No hay evidencia nueva de layout, accesibilidad visual, codecs ni render.
+
+## Reinicio offline y recuperación entre procesos (F08)
+
+Verificación local del 2026-11-04: `npm run typecheck`, **297 pruebas
+unitarias/integración** y **25 E2E** (22 Lightpanda, 3 Chrome), sin omisiones.
+La revisión independiente de esta unidad sigue pendiente; no es un PASS global
+de producto ni autoriza M2, proveedores o despliegue.
+
+| Recorrido | Evidencia reproducible |
+|---|---|
+| Vacío y parcial | `tests/e2e/process-roundtrip.e2e.ts`, caso `empty and partial`: crear/editar/guardar desde UI, terminar y esperar salida del navegador y CLI productivo, iniciar PIDs nuevos y comparar JSON completo y bytes; conserva nulls, arrays y manifest faltante. |
+| Identidad y medios históricos | Mismo archivo, caso `imported approval notice`: aviso de aprobación eliminada y estado persistente **Sin aprobación**; entities completas (seed, versión, identidad y proporciones), instancias, audio, palabras y bindings deliberadamente obsoletos se conservan. Revincula bytes sintéticos sin reproducirlos, guarda, reinicia ambos procesos y transporta la carpeta a un segundo workspace aislado. Compara contenido y bytes del recurso. |
+| Token rotado | Caso `token rotation`: reinicio del CLI en el puerto previo, token nuevo; la página vieja recibe 401, conserva dirty y no cambia el archivo. Tras descarte explícito de esa edición de prueba y recarga, recupera el último commit y guarda con el token nuevo. No renueva credenciales ni descarta cambios automáticamente. |
+| Escritores reales | `tests/integration/process-recovery.test.ts`, caso `live lock`: un segundo CLI se rechaza incluso con force unlock mientras el dueño vive; SIGKILL del hijo propio deja lock y exige recuperación explícita del dueño muerto. |
+| Escritura interrumpida | Caso `failed write and SIGKILL`: fallo previo a escribir y muerte después de escribir realmente 17 bytes de temporal; otro proceso recupera los bytes canónicos anteriores. Reporta temporales parciales o válidos sin promoverlos, también si el canónico está corrupto. |
+
+### Cómo se aísla la evidencia
+
+- `tests/helpers/companion-process.ts` crea exclusivamente raíces `mkdtemp`,
+  comprueba puertos loopback aleatorios (también el puerto al reutilizarlo) y
+  conserva referencias únicamente a hijos propios. El cierre espera su salida;
+  SIGKILL es intencional en dos escenarios, limitado a esos hijos/raíces.
+  No toca el workspace real ni mata procesos para obtener un puerto.
+- Los recorridos normales usan `src/companion/main.ts`. Solo la inyección de
+  fallo usa `tests/helpers/fault-companion.ts`: mismo HTTP/ProjectStore con
+  operaciones de disco reales envueltas; ningún interruptor de fallo entra al CLI
+  productivo. La integración usa un HTML inerte propio para obtener el token,
+  por lo que `npm test` no exige un build previo; los E2E sí usan el build real.
+- `tests/helpers/process-browser.ts` instala routing antes de cargar la app:
+  permite solo el origen loopback del companion y aborta lo demás. Un intento
+  controlado a TEST-NET prueba el bloqueo; luego exige cero solicitudes externas
+  de la app, cero errores runtime y cero errores de consola, salvo los dos 401
+  exactos del caso de token obsoleto. El probe se aísla en otra página.
+- `tests/helpers/loopback-only.ts`, precargado solo en hijos de prueba, rechaza
+  conexiones TCP y lookup DNS no loopback (callback y promesas, incluido el
+  import nombrado de `node:dns/promises`) antes de salir; cada hijo verifica esa
+  barrera. No es firewall del sistema ni certifica tráfico UDP/WebRTC o actividad
+  fuera del proceso instrumentado. La evidencia offline es de estos recorridos
+  HTTP/DOM; no se afirma aislamiento universal de red del sistema operativo.
+- No hay esperas fijas para completar operaciones: readiness tiene reintento
+  acotado y deadline; la interrupción espera el marcador de escritura parcial.
+
+`tests/unit/process-helpers.test.ts` cubre las dos correcciones residuales de
+revisión: resolutores DNS sustituidos por stubs de registro antes de cargar la
+barrera (sin red externa), y rechazo inyectado de `browser.close()` que aun así
+detiene y espera la salida del hijo propio mediante `finally`.
+
+### Límites de esta evidencia
+
+La UI muestra **Sin aprobación** siempre que `approval` sea null, también al
+reabrir sin el aviso de importación. Esto no implementa aprobar ni exportar.
+Los digests obsoletos se comparan y preservan, no se renuevan. Identidad y
+proporciones están verificadas como datos persistidos, **no** como continuidad
+visual renderizada. No se ejecuta codec nativo, audio, renderer ni FFmpeg.
+Siguen vigentes los límites de inspección F05: cabeceras/contenedores, techo
+conservador de 100 MiB y watchdog de 10 s, sin validación completa de codecs.
+SIGKILL no simula pérdida de energía ni certifica durabilidad física.
+
+Lightpanda incluye el contenido inicial del textarea en ciertos nombres de
+etiqueta exactos: la reapertura comprueba el control por su etiqueta parcial y
+su valor, sin clicks forzados ni afirmaciones de layout. Context7 siguió sin cuota;
+se consultó la documentación oficial de
+[routing de Playwright](https://playwright.dev/docs/api/class-browsercontext#browser-context-route).
 
 ## Modo solo lectura
 
