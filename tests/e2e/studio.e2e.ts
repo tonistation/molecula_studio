@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,8 @@ import { chromium } from 'playwright-core';
 
 import { parseProjectText } from '../../src/shared/schema/parse.ts';
 import { startCompanionServer } from '../../src/companion/server/http.ts';
+import { emptyProject } from '../../src/shared/schema/empty.ts';
+import { wavBytes } from '../helpers/media.ts';
 
 /**
  * Browser E2E of the M1 loop (create → edit → save → reopen) against the real
@@ -96,6 +98,10 @@ test('studio E2E: create, edit, save and reopen a draft in a real browser', asyn
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
     const context = browser.contexts()[0] ?? (await browser.newContext());
     const page = await context.newPage();
+    const runtimeErrors: string[] = [];
+    const consoleErrors: string[] = [];
+    page.on('pageerror', (error) => runtimeErrors.push(error.message));
+    page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
 
     await page.goto(handle.origin, { waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: 'Molecula Studio' }).waitFor();
@@ -131,6 +137,94 @@ test('studio E2E: create, edit, save and reopen a draft in a real browser', asyn
     assert.equal(await page.getByLabel('Idea').inputValue(), 'Explicar cómo llega la sal a nuestra mesa.');
     assert.equal(await page.getByLabel('Texto').inputValue(), 'El agua se evapora y deja sal.');
     await page.getByText(/rev\. 1/).waitFor();
+
+    await page.getByRole('button', { name: 'Proyectos', exact: true }).click();
+    const external = {
+      ...emptyProject({ projectId: 'p-external', now: '2026-11-01T00:00:00.000Z', title: 'Externo' }),
+      approval: { contentDigest: 'a'.repeat(64), approvedRevision: 0, approvedAt: '2026-11-01T00:00:00.000Z' },
+      assets: [{ assetId: 'voz', kind: 'audio', path: 'assets/voz.wav', mimeType: 'audio/wav', byteLength: 1,
+        sha256: null, durationMs: 1000, source: { origin: 'user', license: 'CC0', attribution: '' } }],
+    };
+    const upload = { name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(external)) };
+    await page.getByLabel('JSON externo').setInputFiles({ ...upload, buffer: Buffer.from('{invalid') });
+    await page.getByRole('alert').waitFor();
+    assert.equal((await readdir(workspace)).filter((name) => !name.startsWith('.')).length, 1);
+    await page.getByLabel('JSON externo').setInputFiles(upload);
+    await page.getByText(/La aprobación importada se eliminó/).waitFor();
+    await page.getByRole('heading', { name: 'Manifest de recursos' }).waitFor();
+    await page.evaluate(() => {
+      const original = File.prototype.arrayBuffer;
+      File.prototype.arrayBuffer = async function () {
+        const bytes = await original.call(this);
+        await new Promise<void>((resolve) => { (globalThis as unknown as { releaseFileRead: () => void }).releaseFileRead = resolve; });
+        File.prototype.arrayBuffer = original;
+        return bytes;
+      };
+    });
+    await page.getByLabel('Revincular voz').setInputFiles({ name: 'voice.wav', mimeType: 'audio/wav', buffer: Buffer.from(wavBytes()) });
+    await page.waitForFunction(() => typeof (globalThis as unknown as { releaseFileRead?: unknown }).releaseFileRead === 'function');
+    await page.getByLabel('Idea').fill('No perder este borrador');
+    await page.evaluate(() => (globalThis as unknown as { releaseFileRead: () => void }).releaseFileRead());
+    await page.getByRole('alert').waitFor();
+    assert.equal((parseProjectText(await readFile(join(workspace, 'p-external', 'project.json'))) as { project: { revision: number } }).project.revision, 1);
+    assert.deepEqual(await readdir(join(workspace, 'p-external', 'assets')), []);
+    assert.equal(await page.getByLabel('Revincular voz').isDisabled(), true);
+    await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+    await page.getByText(/Guardado · rev\. 2/).waitFor();
+    // Hold a real HTTP response after its disk write: pending UI cannot accept
+    // edits/navigation and then overwrite them with an older response.
+    await page.evaluate(() => {
+      const original = globalThis.fetch.bind(globalThis);
+      globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
+        const response = await original(...args);
+        if (String(args[0]).includes('/assets/')) {
+          await new Promise<void>((resolve) => { (globalThis as unknown as { releaseRelink: () => void }).releaseRelink = resolve; });
+          globalThis.fetch = original;
+        }
+        return response;
+      };
+    });
+    await page.getByLabel('Revincular voz').setInputFiles({ name: 'voice.wav', mimeType: 'audio/wav', buffer: Buffer.from(wavBytes()) });
+    await page.getByText('Operación en curso…').waitFor();
+    assert.equal(await page.getByLabel('Idea').isDisabled(), true);
+    assert.equal(await page.getByRole('button', { name: 'Proyectos', exact: true }).isDisabled(), true);
+    await page.waitForFunction(() => typeof (globalThis as unknown as { releaseRelink?: unknown }).releaseRelink === 'function');
+    await page.evaluate(() => (globalThis as unknown as { releaseRelink: () => void }).releaseRelink());
+    await page.getByText(/Recurso revinculado/).waitFor();
+    assert.deepEqual(await readFile(join(workspace, 'p-external', 'assets', 'voz.wav')), Buffer.from(wavBytes()));
+    assert.equal(await page.getByLabel('Idea').inputValue(), 'No perder este borrador');
+    await page.getByLabel('Revincular voz').setInputFiles({ name: 'different.wav', mimeType: 'audio/wav', buffer: Buffer.from(wavBytes({ durationMs: 800 })) });
+    await page.getByRole('button', { name: 'Confirmar sustitución' }).waitFor();
+    await page.getByRole('button', { name: 'Cancelar sustitución' }).click();
+    assert.deepEqual(await readFile(join(workspace, 'p-external', 'assets', 'voz.wav')), Buffer.from(wavBytes()));
+    await page.getByLabel('Revincular voz').setInputFiles({ name: 'different.wav', mimeType: 'audio/wav', buffer: Buffer.from(wavBytes({ durationMs: 800 })) });
+    await page.getByRole('button', { name: 'Confirmar sustitución' }).click();
+    await page.getByText(/Recurso revinculado con identificador nuevo/).waitFor();
+    const replaced = parseProjectText(await readFile(join(workspace, 'p-external', 'project.json')));
+    assert.ok(replaced.ok);
+    assert.notEqual(replaced.project.assets[0]?.assetId, 'voz');
+    assert.deepEqual(await readFile(join(workspace, 'p-external', replaced.project.assets[0]!.path)), Buffer.from(wavBytes({ durationMs: 800 })));
+    const externalEdit = JSON.stringify({ ...replaced.project, idea: 'External same-revision edit' });
+    await writeFile(join(workspace, 'p-external', 'project.json'), externalEdit);
+    await page.getByLabel(`Revincular ${replaced.project.assets[0]!.assetId}`).setInputFiles({ name: 'same.wav', mimeType: 'audio/wav', buffer: Buffer.from(wavBytes({ durationMs: 800 })) });
+    await page.getByRole('alert').waitFor();
+    assert.equal(await page.getByLabel('Idea').inputValue(), 'No perder este borrador');
+    assert.equal(await readFile(join(workspace, 'p-external', 'project.json'), 'utf8'), externalEdit);
+    await page.getByRole('button', { name: 'Proyectos', exact: true }).click();
+    await page.getByLabel('JSON externo').setInputFiles(upload);
+    await page.getByRole('button', { name: 'Crear copia importada' }).waitFor();
+    const originalBytes = await readFile(join(workspace, 'p-external', 'project.json'));
+    await page.getByRole('button', { name: 'Crear copia importada' }).click();
+    await page.getByRole('heading', { name: 'Manifest de recursos' }).waitFor();
+    assert.deepEqual(await readFile(join(workspace, 'p-external', 'project.json')), originalBytes);
+    assert.equal((await readdir(workspace)).filter((name) => !name.startsWith('.')).length, 3);
+    assert.deepEqual(runtimeErrors, []);
+    // Resource errors are expected only for the deliberately rejected invalid
+    // import, three collision checks and one stale-digest rejection; no JS errors are ignored.
+    assert.deepEqual(consoleErrors.sort(), [
+      ...Array<string>(4).fill('Failed to load resource: the server responded with a status of 409 (Conflict)'),
+      'Failed to load resource: the server responded with a status of 422 (Unprocessable Entity)',
+    ].sort());
 
     await page.close();
   } finally {

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { api, describeError, type ProjectSummary } from '../api.ts';
+import { ApiError, api, describeError, type ProjectSummary } from '../api.ts';
+import { LIMITS } from '../../../src/shared/schema/limits.ts';
 
 interface ProjectListProps {
-  onOpen: (projectId: string) => Promise<void>;
+  onOpen: (projectId: string, notice?: string) => Promise<void>;
 }
 
 /**
@@ -17,6 +18,38 @@ export function ProjectList({ onOpen }: ProjectListProps) {
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
+  const [collision, setCollision] = useState<{ text: string; projectId: string } | null>(null);
+
+  const importText = async (text: string, asCopy = false) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.importProject(text, asCopy ? 'copy' : 'reject');
+      setCollision(null);
+      await load();
+      const notice = [
+        result.approvalCleared ? 'La aprobación importada se eliminó; se requiere una nueva revisión editorial.' : 'JSON importado en el workspace local.',
+        result.receipt.sync === 'uncertain' ? 'Persistencia incierta: verificación de disco pendiente.' : '',
+      ].filter(Boolean).join(' ');
+      await onOpen(result.projectId, notice);
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === 'project-exists' && typeof caught.details.projectId === 'string') {
+        setCollision({ text, projectId: caught.details.projectId });
+      } else setError(describeError(caught));
+    } finally { setBusy(false); }
+  };
+
+  const importFile = async (file: File) => {
+    setCollision(null);
+    setError(null);
+    setBusy(true);
+    try {
+      if (file.size > LIMITS.maxJsonBytes) throw new Error('El JSON supera el máximo de 2 MiB.');
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+      await importText(text);
+    } catch (caught) { setError(describeError(caught)); }
+    finally { setBusy(false); }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -76,6 +109,26 @@ export function ProjectList({ onOpen }: ProjectListProps) {
           {error}
         </div>
       )}
+
+      <section className="panel">
+        <h2>Importar JSON externo</h2>
+        <label className="field">
+          <span>JSON externo</span>
+          <input type="file" accept=".json,application/json" disabled={busy}
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              if (file !== undefined) void importFile(file);
+            }} />
+        </label>
+        <p className="muted small">El original no se modifica. Los recursos se seleccionan por separado; no se buscan rutas ni URLs del documento.</p>
+        {collision !== null && <div className="banner banner-warn" role="status">
+          <p>Ya existe {collision.projectId}. No se sobrescribirá.</p>
+          <button type="button" disabled={busy} onClick={() => void open(collision.projectId)}>Abrir existente</button>
+          <button type="button" disabled={busy} onClick={() => void importText(collision.text, true)}>Crear copia importada</button>
+          <button type="button" disabled={busy} onClick={() => setCollision(null)}>Cancelar importación</button>
+        </div>}
+      </section>
 
       <section className="panel">
         <h2>Nuevo proyecto</h2>

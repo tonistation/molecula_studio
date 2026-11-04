@@ -1,7 +1,8 @@
 # Entorno de desarrollo M1
 
 Este documento describe lo que existe hoy en M1: schema, `ProjectStore`,
-frontera HTTP loopback y el estudio React que guarda y reabre borradores. No
+frontera HTTP loopback y el estudio React que guarda, reabre e importa borradores
+con manifest y revinculación explícita de recursos (F05). No
 promete render, proveedores ni exportación: esa evidencia pertenece a M2 en
 adelante.
 
@@ -103,6 +104,7 @@ studio/                   # app React + Vite (F04)
     screens/
       ProjectList.tsx     # P1: crear y abrir
       Editor.tsx          # P2/P3: idea, estilo, subtítulos, escenas
+      AssetManifest.tsx   # manifest, archivo elegido y sustitución explícita
 tests/
   unit/                   # canonical, timeline, schema, hostile, digests
   integration/            # roundtrip real por disco + frontera HTTP
@@ -166,11 +168,15 @@ en una URL ni se escribe en logs.
 | `GET /api/projects/:id` | Lee y revalida el documento desde disco |
 | `PUT /api/projects/:id` | Guarda con `expectedRevision` + `operationId` (idempotente) |
 | `POST /api/projects/:id/copy` | Copia portable con identidad nueva y `approval: null` |
+| `POST /api/imports` | `{text, collision?: 'reject' \| 'copy'}`; valida y publica JSON externo sin sobrescribir |
+| `PUT /api/projects/:id/assets/:assetId` | Bytes crudos; MIME del manifest; `x-confirm-replace: 1` para contenido distinto; snapshot mediante `x-expected-revision` y `x-expected-digest` (SHA-256); la UI envía ambos |
 
 Controles: bind solo a `127.0.0.1`; `Host` debe ser el origen del companion
 (anti DNS rebinding); `Origin` debe estar en la allowlist y toda petición que
 cambia estado lo exige (anti CSRF); sin cabeceras CORS; cuerpos JSON de 2 MiB
-más 64 KiB de margen; handles opacos, nunca rutas; los errores no devuelven
+más 64 KiB de margen (importación: envoltorio acotado a seis veces 2 MiB +
+1 KiB para escapes JSON, manteniendo el límite de 2 MiB del documento fuente);
+activos crudos hasta 50 MiB exactos; handles opacos, nunca rutas; los errores no devuelven
 rutas del workspace ni stack traces.
 
 Códigos de error estables: 401 `unauthorized`, 403 `origin-*`/`host-not-allowed`,
@@ -199,3 +205,87 @@ se valida el envoltorio y los límites, y cada `visual` no nulo se conserva como
 JSON inerte (`{ inert: payload }`) con `mode: 'read-only'`. El payload original
 también queda en `inertVisual` (array `{ sceneId, visual }`) para copiarlo sin
 interpretarlo. Nunca se hace preview, export ni jobs con ese contenido.
+
+## Importación y revinculación (F05)
+
+1. En Proyectos, seleccione **JSON externo**. Solo se lee ese archivo, no su
+   carpeta ni rutas/URLs declaradas en él. El original permanece intacto.
+2. Si el ID está libre se conserva. Si ya existe, elija **Abrir existente**,
+   **Crear copia importada** con ID nuevo o cancelar; nunca se sobrescribe.
+3. Una aprobación externa se elimina con revisión/fecha actualizadas (la copia
+   nueva comienza en revisión 0). El aviso permanece en el editor, separado de
+   los mensajes transitorios. Visuales, medios y bindings históricos se conservan.
+4. El manifest muestra recursos faltantes. Guarde el borrador antes de elegir
+   un archivo para **Revincular**. Un hash distinto exige confirmación y crea un
+   assetId nuevo; actualiza referencias y revisiones sin renovar bindings.
+5. La restauración idéntica no edita el JSON. Incorporar hash/metadatos sí es
+   una edición persistente. Durante la petición no se permite editar ni navegar;
+  si se edita mientras se lee el archivo local, no se aplica una respuesta vieja
+  sobre ese borrador. Un resultado incierto se muestra como tal, no como rollback.
+  El digest detecta cambios externos aunque no cambie la revisión. Se comprueba
+  antes de inspeccionar y se relee el snapshot antes de escribir los recursos y
+  de publicar el JSON.
+
+Las carpetas de proyecto y `assets/` deben ser directorios normales, sin symlinks.
+La publicación usa staging, fsync de archivos y directorios y rename. Un fallo
+previo a publicar no crea un proyecto visible. Un fallo de sync posterior devuelve
+recibo `uncertain`; `ProjectStore.verifyReceipt` relee el digest, sin garantizar
+persistencia física. Un relink fallido limpia archivos nuevos solo si puede probar
+que sigue vigente el JSON anterior; ante ambigüedad conserva ambos archivos para
+recuperación. No hay recolección automática de esos archivos huérfanos.
+Restaurar un archivo idéntico también sincroniza el directorio del proyecto, no
+solo `assets/`: así se persiste una entrada de carpeta recreada. Si falla ese sync,
+la operación devuelve error (los bytes pueden estar visibles, no promete rollback);
+el reintento vuelve a sincronizar el padre aunque la carpeta ya exista.
+
+### Alcance de inspección de medios
+
+- WAV PCM/float: comprueba RIFF completo, chunks, canales, frecuencia,
+  bits/alineación/byteRate coherentes y duración derivada del tamaño de datos.
+- MP3: recorre frames Layer III completos y frecuencia consistente; rechaza
+  colas truncadas/no soportadas. No decodifica muestras ni certifica audibilidad.
+- PNG/JPEG: firma, dimensiones y estructura acotada del contenedor (PNG exige
+  IHDR, IDAT e IEND; JPEG segmentos completos, SOF, SOS y terminador).
+- Se aplican 50 MiB, 2 canales, 48 kHz, 60 s y 4096 px/16 megapíxeles.
+- El tamaño decodificado se acota conservadoramente desde cabeceras a **100 MiB**:
+  PNG/JPEG se presupuestan como RGBA8 o RGBA16 según profundidad; audio como
+  muestras float64. Un PNG RGBA16 de 4000×4000 se rechaza por requerir 128 000 000
+  bytes. Formatos de muestra desconocidos, PNG animado y múltiples frames JPEG se
+  rechazan en lugar de adivinar el presupuesto.
+- La inspección se ejecuta en un worker Node descartable, con watchdog del padre
+  de **10 s** (incluye inicio/transferencia). Al vencer se termina el worker y solo
+  después se devuelve error; no se escriben recursos por una inspección rechazada.
+  Se admiten como máximo dos inspecciones concurrentes, sin cola ilimitada; una
+  petición adicional falla con `inspection-busy`. No se desprenden los bytes del
+  llamador: se transfiere una copia de hasta 50 MiB.
+
+**No es validación completa de codecs:** no comprueba CRC/deflate de PNG ni
+decodifica JPEG/MP3. El presupuesto de 100 MiB es de datos de salida derivados
+de cabeceras, no una medición ni un límite de memoria total de un codec real
+(incluidos metadatos comprimidos, buffers auxiliares y memoria nativa). El límite
+de heap JS del worker tampoco limita sus ArrayBuffers o la memoria del proceso.
+Los archivos son datos pasivos; que un
+archivo esté presente o revinculado no habilita preview/export ni declara medios
+actuales. Antes de consumirlos en M2 se requiere decodificador acotado y rechazo
+de contenido que no pueda verificarse. No se ejecutan herramientas externas ni
+se instalaron dependencias nuevas para esta unidad.
+
+### Evidencia y límites de verificación
+
+`tests/integration/store/import-relink.test.ts` usa dos workspaces reales y
+fallos de disco inyectados; cubre identidad/colisión, aprobación, visual inerte,
+restauración/reemplazo, bindings históricos, symlinks, validación previa a escribir,
+revisión/digest obsoletos, sync de la carpeta recreada y fsync incierto.
+`tests/integration/companion/server.test.ts` comprueba rutas exactas, autorización,
+el límite del JSON escapado y rechazo HTTP de RGBA16 sobredimensionado.
+`tests/unit/inspection-runner.test.ts` ejecuta un worker realmente bloqueado en
+un bucle CPU, acredita que el padre sigue respondiendo y verifica su terminación
+antes del rechazo (deadline abreviado de 1 s en prueba, techo productivo de 10 s).
+
+`tests/e2e/studio.e2e.ts` usa Lightpanda/CDP y disco real: importación inválida,
+aviso de aprobación, borrador dirty, lectura tardía, respuesta HTTP retenida,
+cancelar/confirmar sustitución, digest externo con misma revisión y colisión como copia. Captura errores JS y de
+consola; solo admite los errores HTTP exactos provocados por casos negativos.
+Es evidencia DOM/lógica, **no** revisión visual, de layout o de codecs. Context7
+no estuvo disponible por cuota; se consultó documentación oficial de React para
+limpieza de efectos y descarte de respuestas tardías.

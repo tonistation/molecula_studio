@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import type { Project, ProjectMode, Scene } from '../../../src/shared/schema/types.ts';
+import type { Asset, Project, ProjectMode, Scene } from '../../../src/shared/schema/types.ts';
+import { AssetManifest } from './AssetManifest.tsx';
 import { ApiError, api, describeError, type ReadResult } from '../api.ts';
 import {
   createScene,
@@ -14,6 +15,7 @@ import {
 
 interface EditorProps {
   opened: ReadResult;
+  importNotice?: string | undefined;
   onBack: () => void;
   onOpenProject: (projectId: string) => Promise<void>;
 }
@@ -24,7 +26,7 @@ interface EditorProps {
  * Saving is explicit. «Guardado» appears only after the companion confirms the
  * persisted revision; edits made while saving keep the draft dirty.
  */
-export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
+export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorProps) {
   const [draft, setDraft] = useState<Project>(opened.project);
   const [confirmedRevision, setConfirmedRevision] = useState(opened.revision);
   const [digest, setDigest] = useState(opened.digest);
@@ -34,22 +36,39 @@ export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [missingAssets, setMissingAssets] = useState(opened.missingAssets);
+  const [relinking, setRelinking] = useState(false);
+  const relinkLock = useRef(false);
+  const live = useRef({ draft, dirty, saving, confirmedRevision, digest });
+  live.current = { draft, dirty, saving, confirmedRevision, digest };
   const editSequence = useRef(0);
   const mode: ProjectMode = opened.mode;
   const readOnly = mode === 'read-only';
 
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!dirty && !saving && !relinking) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty, saving, relinking]);
+
   const edit = (mutate: (project: Project) => Project) => {
-    if (readOnly) return;
+    if (readOnly || relinkLock.current) return;
     setDraft((previous) => mutate(structuredClone(previous)));
     editSequence.current += 1;
+    live.current.dirty = true;
     setDirty(true);
     setNotice(null);
     setConflict(false);
   };
 
   const save = async () => {
-    if (readOnly || saving) return;
+    if (readOnly || saving || relinkLock.current) return;
     setSaving(true);
+    live.current.saving = true;
     setError(null);
     setNotice(null);
     setConflict(false);
@@ -86,18 +105,41 @@ export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
   };
 
   const reload = async () => {
+    if (saving || relinkLock.current) return;
+    if (dirty && !window.confirm('Se perderán los cambios sin guardar. ¿Recargar desde disco?')) return;
+    setRelinking(true);
+    relinkLock.current = true;
     try {
       const fresh = await api.read(draft.projectId);
       setDraft(fresh.project);
       setConfirmedRevision(fresh.revision);
       setDigest(fresh.digest);
+      setMissingAssets(fresh.missingAssets);
       setDirty(false);
       setError(null);
       setConflict(false);
       setNotice(`Recargado desde disco · rev. ${fresh.revision}`);
     } catch (caught) {
       setError(describeError(caught));
-    }
+    } finally { relinkLock.current = false; setRelinking(false); }
+  };
+
+  const relink = async (asset: Asset, bytes: Uint8Array, replace: boolean) => {
+    const current = live.current;
+    if (current.dirty || current.saving || readOnly || relinkLock.current) throw new Error('Guarde los cambios antes de revincular.');
+    relinkLock.current = true;
+    setRelinking(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.relink(current.draft.projectId, asset.assetId, bytes, asset.mimeType, replace, current.confirmedRevision, current.digest);
+      const fresh = await api.read(current.draft.projectId);
+      setDraft(fresh.project);
+      setConfirmedRevision(fresh.revision);
+      setDigest(fresh.digest);
+      setMissingAssets(fresh.missingAssets);
+      setNotice(`Recurso revinculado${result.replaced ? ' con identificador nuevo' : ''}. Los vínculos editoriales no se renuevan.${result.receipt?.sync === 'uncertain' ? ' Persistencia incierta: verifique el disco.' : ''}`);
+    } finally { relinkLock.current = false; setRelinking(false); }
   };
 
   const copyPortable = async () => {
@@ -110,7 +152,7 @@ export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
       const missing = result.missingAssets.length > 0
         ? ` Faltan activos: ${result.missingAssets.join(', ')}; la copia queda como borrador, no «completa».`
         : '';
-      setNotice(`Copia portable creada: ${result.projectId}.${missing}`);
+      setNotice(`Copia portable creada: ${result.projectId}.${missing}${result.receipt.sync === 'uncertain' ? ' Persistencia incierta: verificación de disco pendiente.' : ''}`);
     } catch (caught) {
       setError(describeError(caught));
     } finally {
@@ -120,10 +162,11 @@ export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
 
   const download = () => {
     downloadJson(draft);
-    setNotice('Copia JSON descargada: no incluye activos, no confirma guardado y no limpia «sin guardar».');
+    setNotice('Descarga solicitada: no incluye activos, no confirma guardado y no limpia «sin guardar».');
   };
 
   const back = () => {
+    if (saving || relinkLock.current) return;
     if (dirty && !window.confirm('Hay cambios sin guardar. ¿Salir igual? Se perderán los cambios no guardados.')) {
       return;
     }
@@ -170,6 +213,7 @@ export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
 
   return (
     <main className="screen screen-editor">
+      <fieldset className="editor-fields" disabled={relinking}>
       <header className="editor-header">
         <div className="editor-title">
           <label className="field">
@@ -188,7 +232,7 @@ export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
           </p>
         </div>
         <div className="editor-actions">
-          <button type="button" className="ghost" onClick={back}>
+          <button type="button" className="ghost" onClick={back} disabled={saving}>
             Proyectos
           </button>
           <button type="button" className="ghost" onClick={download}>
@@ -202,6 +246,9 @@ export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
           </button>
         </div>
       </header>
+
+      {importNotice !== undefined && <div className="banner banner-warn" role="status">{importNotice}</div>}
+      {relinking && <p role="status">Operación en curso…</p>}
 
       {readOnly && (
         <div className="banner banner-warn" role="status">
@@ -226,8 +273,14 @@ export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
             <button
               type="button"
               className="ghost"
+              disabled={saving}
               onClick={() => {
-                void onOpenProject(copiedId).catch((caught: unknown) => setError(describeError(caught)));
+                if (dirty && !window.confirm('Hay cambios sin guardar. ¿Descartarlos y abrir la copia?')) return;
+                relinkLock.current = true;
+                setRelinking(true);
+                void onOpenProject(copiedId)
+                  .catch((caught: unknown) => setError(describeError(caught)))
+                  .finally(() => { relinkLock.current = false; setRelinking(false); });
               }}
             >
               Abrir copia
@@ -235,13 +288,13 @@ export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
           )}
         </div>
       )}
-      {opened.missingAssets.length > 0 && (
+      {missingAssets.length > 0 && (
         <div className="banner banner-warn" role="status">
-          Faltan recursos: {opened.missingAssets.join(', ')}. Podés editar y guardar; reproducir/exportar quedará
-          bloqueado hasta revincular (F05).
+          Faltan recursos: {missingAssets.join(', ')}. Puede editar y guardar; no se pueden consumir medios faltantes.
         </div>
       )}
 
+      <AssetManifest assets={draft.assets} missingAssets={missingAssets} disabled={readOnly || dirty || saving || relinking} onRelink={relink} />
       <div className="editor-grid">
         <section className="panel">
           <h2>Idea y estilo</h2>
@@ -426,6 +479,7 @@ export function Editor({ opened, onBack, onOpenProject }: EditorProps) {
           </p>
         </section>
       </div>
+      </fieldset>
     </main>
   );
 }

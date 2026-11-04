@@ -98,7 +98,7 @@ export class ProjectNotFoundError extends StoreError {
   }
 }
 
-export type ConflictReason = 'revision' | 'digest' | 'operation';
+export type ConflictReason = 'revision' | 'digest' | 'operation' | 'asset-content';
 
 export class ConflictError extends StoreError {
   readonly projectId: string;
@@ -108,6 +108,7 @@ export class ConflictError extends StoreError {
   readonly expectedDigest?: string;
   readonly actualDigest?: string;
   readonly operationId?: string;
+  readonly assetId?: string;
 
   constructor(args: {
     projectId: string;
@@ -117,6 +118,7 @@ export class ConflictError extends StoreError {
     expectedDigest?: string;
     actualDigest?: string;
     operationId?: string;
+    assetId?: string;
   }) {
     super('conflict', conflictMessage(args));
     this.projectId = args.projectId;
@@ -126,6 +128,7 @@ export class ConflictError extends StoreError {
     this.expectedDigest = args.expectedDigest;
     this.actualDigest = args.actualDigest;
     this.operationId = args.operationId;
+    this.assetId = args.assetId;
   }
 }
 
@@ -135,9 +138,13 @@ function conflictMessage(args: {
   expectedRevision?: number;
   actualRevision?: number;
   operationId?: string;
+  assetId?: string;
 }): string {
   if (args.reason === 'operation') {
     return `operationId "${args.operationId ?? ''}" was already committed with a different payload`;
+  }
+  if (args.reason === 'asset-content') {
+    return `asset "${args.assetId ?? ''}" already has a different recorded hash; confirm the replacement explicitly`;
   }
   if (args.reason === 'digest') {
     return `project "${args.projectId}" changed on disk since it was last read`;
@@ -203,5 +210,30 @@ export class CommitVerificationError extends StoreError {
     this.projectId = projectId;
     this.expectedDigest = expectedDigest;
     this.actualDigest = actualDigest;
+  }
+}
+
+export class AssetNotFoundError extends StoreError {
+  readonly projectId: string;
+  readonly assetId: string;
+
+  constructor(projectId: string, assetId: string) {
+    super('asset-not-found', `project "${projectId}" has no asset "${assetId}" in its manifest`);
+    this.projectId = projectId;
+    this.assetId = assetId;
+  }
+}
+
+/**
+ * Raised when ingested bytes cannot be accepted as the declared asset: wrong
+ * container, unreadable header, or a media limit from the schema exceeded.
+ * `reason` is stable so the boundary can map it to a status code.
+ */
+export class AssetRejectedError extends StoreError {
+  readonly reason: string;
+
+  constructor(reason: string, message: string) {
+    super('asset-rejected', message);
+    this.reason = reason;
   }
 }

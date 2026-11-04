@@ -7,12 +7,16 @@ import {
   serializeProject,
   validateProject,
 } from '../../shared/schema/index.ts';
-import type { Project, ProjectMode } from '../../shared/schema/types.ts';
+import type { Asset, AssetMimeType, Project, ProjectMode } from '../../shared/schema/types.ts';
 import { sha256Hex } from '../../shared/digests.ts';
 import { createNodeFsOps, isErrno, type FsOps, type FsStats } from './fs-ops.ts';
 import { isValidOperationId, isValidProjectId, newOperationId, newProjectId } from './ids.ts';
+import { InspectionError } from './media-inspect.ts';
+import { inspectMediaBounded } from './inspection-runner.ts';
 import type { ReceiptVerification, SaveReceipt } from './receipts.ts';
 import {
+  AssetNotFoundError,
+  AssetRejectedError,
   CommitVerificationError,
   ConflictError,
   InvalidArgumentError,
@@ -36,6 +40,13 @@ const STAGE_PREFIX = '.copying-';
 const ASSETS_DIR = 'assets';
 /** Bounded retries when generating free directory names. */
 const NAME_ATTEMPTS = 8;
+
+const MIME_EXTENSION: Record<AssetMimeType, string> = {
+  'audio/wav': 'wav',
+  'audio/mpeg': 'mp3',
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+};
 
 export interface WorkspaceOptions {
   workspaceRoot: string;
@@ -107,6 +118,58 @@ export interface CopyResult {
   revision: number;
   digest: string;
   missingAssets: string[];
+}
+
+export interface ImportArgs {
+  /** Bytes or text of an external `project.json` chosen by the user. */
+  text: string | Uint8Array;
+  /**
+   * `reject` (default) refuses to reuse an existing projectId; `copy` publishes
+   * the import under a fresh identity instead of overwriting anything.
+   */
+  collision?: 'reject' | 'copy';
+}
+
+export interface ImportResult {
+  projectId: string;
+  receipt: SaveReceipt;
+  revision: number;
+  digest: string;
+  mode: ProjectMode;
+  /** Manifest asset IDs whose file is not present in the imported folder. */
+  missingAssets: string[];
+  /** True when a non-null approval was cleared and the revision bumped. */
+  approvalCleared: boolean;
+  /** True when the import landed under a new projectId due to a collision. */
+  importedAsCopy: boolean;
+}
+
+export interface RelinkArgs {
+  expectedRevision?: number;
+  expectedDigest?: string;
+  projectId: string;
+  assetId: string;
+  bytes: Uint8Array;
+  /** Declared MIME type; it must equal the manifest entry and the real container. */
+  mimeType: AssetMimeType;
+  /** Required to replace content whose recorded hash differs. */
+  confirmReplace?: boolean;
+}
+
+export interface RelinkResult {
+  projectId: string;
+  /** Asset ID after the operation: a replacement mints a new one. */
+  assetId: string;
+  /** Asset ID the caller asked to relink. */
+  previousAssetId: string;
+  /** True when different content was accepted explicitly and references moved. */
+  replaced: boolean;
+  revision: number;
+  digest: string;
+  /** Null when the file was restored without changing the document. */
+  receipt: SaveReceipt | null;
+  missingAssets: string[];
+  asset: Asset;
 }
 
 export interface TempReport {
@@ -420,9 +483,11 @@ export class ProjectStore {
         }
         const digest = await sha256Hex(bytes);
         await this.#fs.writeFile(join(stage.dir, PROJECT_FILE), bytes);
+        await this.#fs.syncFile(join(stage.dir, PROJECT_FILE));
 
         const missingAssets = await this.#copyAssetsIntoStage(args.projectId, source.project, stage.dir);
-        await this.#fs.syncDir(stage.dir).catch(() => undefined);
+        if (source.project.assets.length > 0) await this.#fs.syncDir(join(stage.dir, ASSETS_DIR));
+        await this.#fs.syncDir(stage.dir);
 
         const target = this.#projectDir(stage.projectId);
         if ((await this.#lstatOrNull(target)) !== null) {
@@ -430,7 +495,8 @@ export class ProjectStore {
         }
         await this.#fs.rename(stage.dir, target);
         stage.renamed = true;
-        await this.#fs.syncDir(this.#root).catch(() => undefined);
+        let uncertain = false;
+        await this.#fs.syncDir(this.#root).catch(() => { uncertain = true; });
 
         // Verify the published bytes were the stage bytes, never a partial copy.
         const published = await this.#fs.readFile(this.#projectFile(stage.projectId));
@@ -444,7 +510,7 @@ export class ProjectStore {
           digest,
           operationId: newOperationId(),
           committedAt: this.#isoNow(),
-          sync: 'confirmed',
+          sync: uncertain ? 'uncertain' : 'confirmed',
         };
         this.#remember(stage.projectId, 0, digest);
         return {
@@ -465,6 +531,325 @@ export class ProjectStore {
   }
 
   //#endregion saveCopy
+
+  //#region import
+
+  /**
+   * Imports an external schema-1 document into the workspace
+   * (project-format.md, "Importar, reubicar y resolver faltantes").
+   *
+   * - Bytes are validated with the same parser used for disk reads, so hostile
+   *   keys, depth, size and schema violations never reach the workspace.
+   * - The document is published by renaming a staging directory; a failure
+   *   leaves the previous state untouched.
+   * - An existing projectId is never overwritten: the caller chooses `reject`
+   *   or `copy` (fresh identity, revision 0, fresh dates).
+   * - A non-null approval is cleared with a recorded edit (revision + date)
+   *   because a seal from another workspace is not local editorial trust.
+   * - Assets are not embedded in JSON: declared assets without a file are
+   *   reported as missing and can be relinked later.
+   */
+  async importProject(args: ImportArgs): Promise<ImportResult> {
+    this.#assertReady();
+    const collision = args.collision ?? 'reject';
+    if (collision !== 'reject' && collision !== 'copy') {
+      throw new InvalidArgumentError("collision must be 'reject' or 'copy'");
+    }
+    const text = typeof args.text === 'string' ? new TextEncoder().encode(args.text) : args.text;
+    const outcome = parseProjectText(text);
+    if (!outcome.ok) {
+      throw new InvalidProjectError('import', outcome.failure, outcome.issues);
+    }
+    const incoming = outcome.project;
+    const approvalCleared = incoming.approval !== null;
+
+    return this.#withWorkspace(async () => {
+      const exists = (await this.#lstatOrNull(this.#projectDir(incoming.projectId))) !== null;
+      if (exists && collision === 'reject') {
+        throw new ProjectExistsError(incoming.projectId);
+      }
+
+      const projectId = exists ? await this.#freeProjectDirName() : incoming.projectId;
+      const now = this.#isoNow();
+      let project: Project;
+      if (exists) {
+        project = {
+          ...incoming,
+          projectId,
+          revision: 0,
+          createdAt: now,
+          updatedAt: now,
+          approval: null,
+        };
+      } else if (approvalCleared) {
+        project = {
+          ...incoming,
+          approval: null,
+          revision: incoming.revision + 1,
+          updatedAt: now < incoming.updatedAt ? incoming.updatedAt : now,
+        };
+      } else {
+        project = incoming;
+      }
+
+      // Validate the serialized wire shape, not the parser's internal inert
+      // wrapper: otherwise an unknown visual is wrapped twice and a source
+      // at the valid depth limit is incorrectly rejected.
+      const bytes = this.#encode(project);
+      const validated = parseProjectText(bytes);
+      if (!validated.ok) {
+        throw new InvalidProjectError(projectId, validated.failure, validated.issues);
+      }
+
+      if (bytes.length > LIMITS.maxJsonBytes) {
+        throw new InvalidProjectError(projectId, 'too-large', [
+          { path: '$', code: 'too-large', message: `project exceeds ${LIMITS.maxJsonBytes} bytes` },
+        ]);
+      }
+      const digest = await sha256Hex(bytes);
+
+      const stage = await this.#mkdirStage(projectId);
+      try {
+        await this.#fs.mkdir(join(stage.dir, ASSETS_DIR), { recursive: false });
+        const stagedFile = join(stage.dir, PROJECT_FILE);
+        await this.#fs.writeFile(stagedFile, bytes);
+        await this.#fs.syncFile(stagedFile);
+        await this.#fs.syncDir(join(stage.dir, ASSETS_DIR));
+        await this.#fs.syncDir(stage.dir);
+
+        const target = this.#projectDir(projectId);
+        if ((await this.#lstatOrNull(target)) !== null) {
+          throw new ProjectExistsError(projectId);
+        }
+        await this.#fs.rename(stage.dir, target);
+        stage.renamed = true;
+        let uncertain = false;
+        await this.#fs.syncDir(this.#root).catch(() => { uncertain = true; });
+
+        const published = await this.#fs.readFile(this.#projectFile(projectId));
+        if ((await sha256Hex(published)) !== digest) {
+          throw new CommitVerificationError(projectId, digest, await sha256Hex(published));
+        }
+
+        const receipt: SaveReceipt = {
+          projectId,
+          revision: project.revision,
+          digest,
+          operationId: newOperationId(),
+          committedAt: this.#isoNow(),
+          sync: uncertain ? 'uncertain' : 'confirmed',
+        };
+        this.#remember(projectId, project.revision, digest);
+        return {
+          projectId,
+          receipt,
+          revision: project.revision,
+          digest,
+          mode: validated.mode,
+          missingAssets: await this.#missingAssets(projectId, project),
+          approvalCleared,
+          importedAsCopy: exists,
+        };
+      } finally {
+        if (stage.renamed === false) {
+          await this.#fs.rm(stage.dir, { recursive: true, force: false }).catch(() => undefined);
+        }
+      }
+    });
+  }
+
+  //#endregion import
+
+  //#region relink
+
+  /**
+   * Relinks a declared asset with bytes chosen explicitly by the user.
+   *
+   * - Content is inspected (container signature, audio duration, image
+   *   dimensions) before anything is written; metadata is never trusted from
+   *   the manifest or the client.
+   * - Identical content just restores the file: no document edit, no revision.
+   * - Different content requires `confirmReplace`; when confirmed the asset
+   *   gets a new assetId, references move, affected scene revisions bump and
+   *   the old file is removed only after the document commit.
+   * - Media bindings are preserved as historical evidence: relink never
+   *   silently certifies that old digests still apply.
+   */
+  async relinkAsset(args: RelinkArgs): Promise<RelinkResult> {
+    this.#assertReady();
+    assertValidProjectId(args.projectId);
+    if (args.expectedDigest !== undefined && !/^[a-f0-9]{64}$/.test(args.expectedDigest)) {
+      throw new InvalidArgumentError('expectedDigest must be a lowercase SHA-256 digest');
+    }
+    if (!(args.bytes instanceof Uint8Array) || args.bytes.byteLength === 0) {
+      throw new InvalidArgumentError('asset bytes must be a non-empty Uint8Array');
+    }
+    const extension = MIME_EXTENSION[args.mimeType];
+    if (extension === undefined) {
+      throw new InvalidArgumentError(`unsupported asset mimeType ${JSON.stringify(args.mimeType)}`);
+    }
+
+    return this.#withProject(args.projectId, async () => {
+      const current = await this.#readBytes(args.projectId);
+      if (args.expectedRevision !== undefined && args.expectedRevision !== current.project.revision) {
+        throw new ConflictError({ projectId: args.projectId, reason: 'revision', expectedRevision: args.expectedRevision, actualRevision: current.project.revision });
+      }
+      const expectedDigest = args.expectedDigest ??
+        (args.expectedRevision === current.project.revision ? this.#lastSeen.get(args.projectId)?.digest : undefined);
+      if (expectedDigest !== undefined && expectedDigest !== current.digest) {
+        throw new ConflictError({ projectId: args.projectId, reason: 'digest', expectedDigest, actualDigest: current.digest });
+      }
+      if (current.mode === 'read-only') {
+        throw new ReadOnlyProjectError(args.projectId);
+      }
+      const asset = current.project.assets.find((entry) => entry.assetId === args.assetId);
+      if (asset === undefined) {
+        throw new AssetNotFoundError(args.projectId, args.assetId);
+      }
+      if (asset.mimeType !== args.mimeType) {
+        throw new AssetRejectedError(
+          'mime-mismatch',
+          `asset "${asset.assetId}" is declared ${asset.mimeType}, not ${args.mimeType}`,
+        );
+      }
+
+      let inspection;
+      try {
+        inspection = await inspectMediaBounded(args.bytes, args.mimeType);
+      } catch (error) {
+        if (error instanceof InspectionError) {
+          throw new AssetRejectedError(error.reason, error.message);
+        }
+        throw error;
+      }
+
+      const sha256 = await sha256Hex(args.bytes);
+      const existing = await this.#existingAssetPath(args.projectId, asset.path);
+      const previousHash = asset.sha256 ?? (existing === null ? null : await sha256Hex(await this.#fs.readFile(existing)));
+      const contentChanged = previousHash !== null && previousHash !== sha256;
+      if (contentChanged && args.confirmReplace !== true) {
+        throw new ConflictError({
+          projectId: args.projectId,
+          reason: 'asset-content',
+          assetId: asset.assetId,
+        });
+      }
+
+      const nextAssetId = contentChanged ? this.#freeAssetId(current.project) : asset.assetId;
+      const nextPath = `assets/${nextAssetId}.${extension}`;
+      const nextAsset: Asset = {
+        ...asset,
+        assetId: nextAssetId,
+        path: nextPath,
+        byteLength: args.bytes.byteLength,
+        sha256,
+        durationMs: inspection.durationMs,
+      };
+
+      const metadataChanged =
+        asset.sha256 === null ||
+        asset.byteLength !== nextAsset.byteLength ||
+        asset.durationMs !== nextAsset.durationMs;
+      const assertSnapshotUnchanged = async () => {
+        const fresh = await this.#readBytes(args.projectId);
+        if (fresh.digest !== current.digest) {
+          throw new ConflictError({ projectId: args.projectId, reason: 'digest', expectedDigest: current.digest, actualDigest: fresh.digest });
+        }
+      };
+      if (!contentChanged && !metadataChanged) {
+        await assertSnapshotUnchanged();
+        await this.#writeAssetFile(args.projectId, nextPath, args.bytes);
+        return {
+          projectId: args.projectId,
+          assetId: asset.assetId,
+          previousAssetId: args.assetId,
+          replaced: false,
+          revision: current.project.revision,
+          digest: current.digest,
+          receipt: null,
+          missingAssets: await this.#missingAssets(args.projectId, current.project),
+          asset: nextAsset,
+        };
+      }
+
+      const now = this.#isoNow();
+      const project: Project = {
+        ...current.project,
+        revision: current.project.revision + 1,
+        updatedAt: now < current.project.updatedAt ? current.project.updatedAt : now,
+        assets: current.project.assets.map((entry) =>
+          entry.assetId === asset.assetId ? nextAsset : entry,
+        ),
+        scenes: contentChanged
+          ? current.project.scenes.map((scene) =>
+              scene.audio?.assetId === asset.assetId
+                ? { ...scene, revision: scene.revision + 1, audio: { ...scene.audio, assetId: nextAssetId } }
+                : scene,
+            )
+          : current.project.scenes,
+      };
+
+      const validated = validateProject(project);
+      if (!validated.ok) {
+        throw new InvalidProjectError(args.projectId, 'invalid-schema', validated.issues);
+      }
+
+      const bytes = this.#encode(project);
+      if (bytes.byteLength > LIMITS.maxJsonBytes) {
+        throw new InvalidArgumentError('updated project exceeds the JSON byte limit');
+      }
+      const digest = await sha256Hex(bytes);
+      // Validate the complete document before publishing any selected bytes.
+      const targetExisted = (await this.#existingAssetPath(args.projectId, nextPath)) !== null;
+      let receipt: SaveReceipt;
+      try {
+        await assertSnapshotUnchanged();
+        await this.#writeAssetFile(args.projectId, nextPath, args.bytes);
+        await assertSnapshotUnchanged();
+        receipt = await this.#commitOver({
+          projectId: args.projectId,
+          bytes,
+          digest,
+          revision: project.revision,
+          operationId: newOperationId(),
+        });
+      } catch (error) {
+        // Delete only a new file when a reread proves the old document is
+        // still authoritative. A post-rename read failure is ambiguous: keep
+        // both files rather than destroying bytes the published JSON may use.
+        if (!targetExisted) {
+          const after = await this.#readBytes(args.projectId).catch(() => null);
+          if (after?.digest === current.digest) {
+            await this.#checkAssetsDir(args.projectId);
+            await this.#fs.unlink(join(this.#projectDir(args.projectId), nextPath)).catch(() => undefined);
+          }
+        }
+        throw error;
+      }
+      this.#remember(args.projectId, project.revision, receipt.digest);
+
+      if (contentChanged && receipt.sync === 'confirmed') {
+        // The old file is unreferenced only after the new document is durable.
+        await this.#fs
+          .unlink(join(this.#projectDir(args.projectId), asset.path))
+          .catch(() => undefined);
+      }
+
+      return {
+        projectId: args.projectId,
+        assetId: nextAssetId,
+        previousAssetId: args.assetId,
+        replaced: contentChanged,
+        revision: project.revision,
+        digest: receipt.digest,
+        receipt,
+        missingAssets: await this.#missingAssets(args.projectId, project),
+        asset: nextAsset,
+      };
+    });
+  }
+
+  //#endregion relink
 
   //#region Lifecycle
 
@@ -589,10 +974,21 @@ export class ProjectStore {
    * stays under the controlled project directory.
    */
   async #existingAssetPath(projectId: string, assetPath: string): Promise<string | null> {
+    if (!(await this.#checkAssetsDir(projectId))) return null;
     const file = join(this.#projectDir(projectId), assetPath);
     const stats = await this.#lstatOrNull(file);
     if (stats === null || stats.isSymbolicLink() || !stats.isFile()) return null;
     return file;
+  }
+
+  async #checkAssetsDir(projectId: string): Promise<boolean> {
+    const dir = join(this.#projectDir(projectId), ASSETS_DIR);
+    const stats = await this.#lstatOrNull(dir);
+    if (stats === null) return false;
+    if (stats.isSymbolicLink() || !stats.isDirectory() || await this.#fs.realpath(dir) !== dir) {
+      throw new UnsafePathError(dir, 'assets must be a plain directory inside the project');
+    }
+    return true;
   }
 
   async #missingAssets(projectId: string, project: Project): Promise<string[]> {
@@ -601,6 +997,47 @@ export class ProjectStore {
       if ((await this.#existingAssetPath(projectId, asset.path)) === null) missing.push(asset.assetId);
     }
     return missing;
+  }
+
+  /** Fresh asset ID (`a-<12 hex>`) that does not collide inside the project. */
+  #freeAssetId(project: Project): string {
+    const used = new Set(project.assets.map((asset) => asset.assetId));
+    for (let attempt = 0; attempt < NAME_ATTEMPTS; attempt += 1) {
+      const candidate = `a-${newOperationId().slice(3).replaceAll('-', '').slice(0, 12)}`;
+      if (!used.has(candidate)) return candidate;
+    }
+    throw new StoreError('workspace-exhausted', 'could not allocate a unique assetId');
+  }
+
+  /**
+   * Writes asset bytes through a temp file in `assets/` and an atomic rename,
+   * so a crash never leaves a truncated file under a referenced path.
+   */
+  async #writeAssetFile(projectId: string, assetPath: string, bytes: Uint8Array): Promise<void> {
+    const filename = assetFilename(assetPath);
+    const assetsDir = join(this.#projectDir(projectId), ASSETS_DIR);
+    if (!(await this.#checkAssetsDir(projectId))) {
+      await this.#fs.mkdir(assetsDir, { recursive: false });
+    }
+    const target = join(assetsDir, filename);
+    const temp = join(assetsDir, `.tmp-${newOperationId()}`);
+    try {
+      await this.#fs.writeFileExclusive(temp, bytes);
+      await this.#fs.syncFile(temp);
+      await this.#fs.rename(temp, target);
+      // A failure here must not be reported as a successful restoration.
+      await this.#fs.syncDir(assetsDir);
+      // Also flush assets/'s entry in its parent. Always do this, including
+      // retries after a prior mkdir became visible but its parent sync failed.
+      await this.#fs.syncDir(this.#projectDir(projectId));
+    } catch (error) {
+      await this.#fs.unlink(temp).catch(() => undefined);
+      if (error instanceof StoreError) throw error;
+      throw new StoreCommitError('write', error instanceof Error ? error.message : String(error), {
+        cause: error,
+        tempPath: temp,
+      });
+    }
   }
 
   //#endregion paths
@@ -759,6 +1196,7 @@ export class ProjectStore {
       }
       const targetPath = join(stageDir, ASSETS_DIR, assetFilename(asset.path));
       await this.#fs.copyFile(sourcePath, targetPath);
+      await this.#fs.syncFile(targetPath);
       if (asset.sha256 !== null) {
         const copied = await this.#fs.readFile(targetPath);
         const copiedDigest = await sha256Hex(copied);

@@ -6,8 +6,11 @@ import { join, sep } from 'node:path';
 import { LIMITS } from '../../shared/schema/limits.ts';
 import { ProjectStore, type WorkspaceOptions } from '../store/project-store.ts';
 import {
+  AssetNotFoundError,
+  AssetRejectedError,
   ConflictError,
   InvalidProjectError,
+  ProjectExistsError,
   StoreError,
   UnsafePathError,
 } from '../store/errors.ts';
@@ -53,7 +56,12 @@ export interface CompanionServer {
 }
 
 const BODY_LIMIT = LIMITS.maxJsonBytes + 64 * 1024;
+const ASSET_LIMIT = LIMITS.maxAssetBytes;
+// JSON-string escaping can expand an imported source byte up to sixfold.
+const IMPORT_BODY_LIMIT = LIMITS.maxJsonBytes * 6 + 1024;
 const TOKEN_HEADER = 'x-companion-token';
+
+const ASSET_CONTENT_TYPES = new Set(['audio/wav', 'audio/mpeg', 'image/png', 'image/jpeg']);
 
 export async function startCompanionServer(options: CompanionServerOptions): Promise<CompanionServer> {
   const host = options.host ?? '127.0.0.1';
@@ -193,7 +201,7 @@ function tokensMatch(provided: string, expected: string): boolean {
 
 //#region api
 
-const PROJECT_ROUTE = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})(\/copy)?$/;
+const PROJECT_ROUTE = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})(?:\/(copy|assets)(?:\/([a-z][a-z0-9_-]{0,63}))?)?$/;
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string, context: HandlerContext): Promise<void> {
   const { store } = context;
@@ -202,6 +210,22 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   if (pathname === '/api/health') {
     if (method !== 'GET') throw methodNotAllowed('GET');
     sendJson(res, 200, { ok: true, name: 'molecula-companion', workspace: 'authorized' });
+    return;
+  }
+
+  if (pathname === '/api/imports') {
+    if (method !== 'POST') throw methodNotAllowed('POST');
+    const body = requireObject(await readJsonBody(req, IMPORT_BODY_LIMIT));
+    const text = body.text;
+    if (typeof text !== 'string') {
+      throw new HttpError(400, 'invalid-argument', 'text must be a string containing the project JSON');
+    }
+    const collision = body.collision;
+    if (collision !== undefined && collision !== 'reject' && collision !== 'copy') {
+      throw new HttpError(400, 'invalid-argument', "collision must be 'reject' or 'copy'");
+    }
+    const imported = await store.importProject({ text, collision: collision ?? 'reject' });
+    sendJson(res, 201, imported);
     return;
   }
 
@@ -230,9 +254,11 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     throw new HttpError(404, 'not-found', 'unknown endpoint');
   }
   const projectId = match[1] as string;
-  const isCopy = match[2] !== undefined;
+  const suffix = match[2];
+  const assetId = match[3];
 
-  if (isCopy) {
+  if (suffix === 'copy') {
+    if (assetId !== undefined) throw new HttpError(404, 'not-found', 'unknown endpoint');
     if (method !== 'POST') throw methodNotAllowed('POST');
     const body = await readJsonBody(req);
     const record = body === undefined ? {} : requireObject(body);
@@ -242,6 +268,30 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     }
     const copied = await store.saveCopy(newProjectId === undefined ? { projectId } : { projectId, newProjectId });
     sendJson(res, 201, copied);
+    return;
+  }
+
+  if (suffix === 'assets') {
+    if (assetId === undefined) throw new HttpError(404, 'not-found', 'unknown endpoint');
+    if (method !== 'PUT') throw methodNotAllowed('PUT');
+    const contentType = req.headers['content-type'];
+    if (typeof contentType !== 'string' || !ASSET_CONTENT_TYPES.has(contentType.toLowerCase())) {
+      throw new HttpError(415, 'unsupported-media-type', 'Content-Type must be audio/wav, audio/mpeg, image/png or image/jpeg');
+    }
+    const mimeType = contentType.toLowerCase() as 'audio/wav' | 'audio/mpeg' | 'image/png' | 'image/jpeg';
+    const bytes = await readRawBody(req, ASSET_LIMIT);
+    const confirmReplace = req.headers['x-confirm-replace'] === '1';
+    const revisionHeader = req.headers['x-expected-revision'];
+    if (revisionHeader !== undefined && (typeof revisionHeader !== 'string' || !/^\d+$/.test(revisionHeader) || !Number.isSafeInteger(Number(revisionHeader)))) {
+      throw new HttpError(400, 'invalid-argument', 'x-expected-revision must be a non-negative safe integer');
+    }
+    const expectedRevision = revisionHeader === undefined ? undefined : Number(revisionHeader);
+    const expectedDigest = req.headers['x-expected-digest'];
+    if (expectedDigest !== undefined && (typeof expectedDigest !== 'string' || !/^[a-f0-9]{64}$/.test(expectedDigest))) {
+      throw new HttpError(400, 'invalid-argument', 'x-expected-digest must be a lowercase SHA-256 digest');
+    }
+    const relinked = await store.relinkAsset({ projectId, assetId, bytes, mimeType, confirmReplace, expectedRevision, expectedDigest });
+    sendJson(res, 200, relinked);
     return;
   }
 
@@ -278,7 +328,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   throw methodNotAllowed('GET, PUT');
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+async function readJsonBody(req: IncomingMessage, limit = BODY_LIMIT): Promise<unknown> {
   const contentType = req.headers['content-type'];
   if (typeof contentType !== 'string' || !contentType.toLowerCase().startsWith('application/json')) {
     throw new HttpError(415, 'unsupported-media-type', 'Content-Type must be application/json');
@@ -288,7 +338,7 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   for await (const chunk of req) {
     const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer);
     total += buffer.length;
-    if (total > BODY_LIMIT) {
+    if (total > limit) {
       throw new HttpError(413, 'body-too-large', `request body exceeds ${LIMITS.maxJsonBytes} bytes of JSON`);
     }
     chunks.push(buffer);
@@ -301,6 +351,23 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   } catch {
     throw new HttpError(400, 'invalid-json', 'request body is not valid JSON');
   }
+}
+
+async function readRawBody(req: IncomingMessage, limit: number): Promise<Uint8Array> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer);
+    total += buffer.length;
+    if (total > limit) {
+      throw new HttpError(413, 'body-too-large', `request body exceeds ${limit} bytes`);
+    }
+    chunks.push(buffer);
+  }
+  if (total === 0) {
+    throw new HttpError(400, 'empty-body', 'request body is required');
+  }
+  return new Uint8Array(Buffer.concat(chunks));
 }
 
 function requireObject(value: unknown): Record<string, unknown> {
@@ -446,15 +513,38 @@ function mapError(error: unknown): { status: number; body: ErrorBody } {
     return { status: error.status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof ConflictError) {
+    const message =
+      error.reason === 'asset-content'
+        ? 'asset content differs from its recorded hash; confirm the replacement explicitly'
+        : 'the on-disk snapshot changed; reload or save as a copy';
     return {
       status: 409,
       body: {
         error: {
           code: error.code,
           reason: error.reason,
-          message: 'the on-disk snapshot changed; reload or save as a copy',
+          assetId: error.assetId,
+          message,
         },
       },
+    };
+  }
+  if (error instanceof AssetNotFoundError) {
+    return {
+      status: 404,
+      body: { error: { code: error.code, assetId: error.assetId, message: error.message } },
+    };
+  }
+  if (error instanceof AssetRejectedError) {
+    return {
+      status: error.reason === 'too-large' ? 413 : error.reason === 'mime-mismatch' ? 415 : 422,
+      body: { error: { code: error.code, reason: error.reason, message: error.message } },
+    };
+  }
+  if (error instanceof ProjectExistsError) {
+    return {
+      status: 409,
+      body: { error: { code: error.code, projectId: error.projectId, message: error.message } },
     };
   }
   if (error instanceof InvalidProjectError) {

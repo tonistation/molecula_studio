@@ -7,13 +7,27 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { parseProjectText } from '../../../src/shared/schema/parse.ts';
+import { serializeProject } from '../../../src/shared/schema/serialize.ts';
+import { emptyProject } from '../../../src/shared/schema/empty.ts';
+import { LIMITS } from '../../../src/shared/schema/limits.ts';
 import type { Project } from '../../../src/shared/schema/types.ts';
+import { pngBytes, wavBytes } from '../../helpers/media.ts';
 import { startCompanionServer, type CompanionServer } from '../../../src/companion/server/http.ts';
 
 //#region helpers
 
 const TOKEN = 'test-session-token';
 const roots: string[] = [];
+
+test('unknown project suffix never aliases a project read or write', async () => {
+  await withServer(async ({ handle }) => {
+    const created = await handle.store.createProject();
+    for (const suffix of ['arbitrary', 'copy/extra', 'assets']) {
+      const response = await request(handle, 'GET', `/api/projects/${created.projectId}/${suffix}`);
+      assert.equal(response.status, 404, suffix);
+    }
+  });
+});
 
 async function tempRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'molecula-server-'));
@@ -48,6 +62,7 @@ interface RequestOptions {
   host?: string;
   body?: unknown;
   rawBody?: string;
+  bodyBytes?: Uint8Array;
   contentType?: string;
   headers?: Record<string, string>;
 }
@@ -72,15 +87,20 @@ function request(
   if (token !== null) headers.authorization = `Bearer ${token}`;
   if (options.origin !== null) headers.origin = options.origin ?? handle.origin;
 
-  let payload: string | undefined;
-  if (options.rawBody !== undefined) {
+  let payload: string | Uint8Array | undefined;
+  if (options.bodyBytes !== undefined) {
+    payload = options.bodyBytes;
+    headers['content-type'] = options.contentType ?? 'application/octet-stream';
+  } else if (options.rawBody !== undefined) {
     payload = options.rawBody;
     headers['content-type'] = options.contentType ?? 'application/json';
   } else if (options.body !== undefined) {
     payload = JSON.stringify(options.body);
     headers['content-type'] = options.contentType ?? 'application/json';
   }
-  if (payload !== undefined) headers['content-length'] = String(Buffer.byteLength(payload));
+  if (payload !== undefined) {
+    headers['content-length'] = String(typeof payload === 'string' ? Buffer.byteLength(payload) : payload.byteLength);
+  }
 
   return new Promise((resolve, reject) => {
     const req = httpRequest(
@@ -327,3 +347,244 @@ test('unknown endpoints and methods are refused', async () => {
     assert.match(String(badMethod.headers.allow ?? ''), /GET/);
   });
 });
+
+//#region import and relink
+
+/** Document with one audio asset declared but no file, used by relink tests. */
+function importableText(projectId: string): string {
+  const base = emptyProject({ projectId, now: '2026-11-03T10:00:00.000Z', title: 'Importado' });
+  const project: Project = {
+    ...base,
+    revision: 1,
+    updatedAt: '2026-11-03T10:00:01.000Z',
+    idea: 'Llegó por HTTP',
+    output: { ...base.output, durationMs: 4000 },
+    scenes: [
+      {
+        sceneId: 's-voz',
+        revision: 1,
+        title: 'Escena',
+        startMs: 0,
+        durationMs: 4000,
+        text: 'Texto',
+        visualIntent: '',
+        visual: null,
+        audio: { assetId: 'voz', offsetMs: 0, gainDb: 0 },
+        words: [],
+        mediaBindings: { audio: null, words: null },
+      },
+    ],
+    assets: [
+      {
+        assetId: 'voz',
+        kind: 'audio',
+        path: 'assets/voz.wav',
+        mimeType: 'audio/wav',
+        byteLength: 1,
+        sha256: null,
+        durationMs: 2000,
+        source: { origin: 'user', license: 'CC0 1.0', attribution: '' },
+      },
+    ],
+  };
+  return serializeProject(project);
+}
+
+test('import endpoint validates, publishes and reports collisions without overwriting', async () => {
+  await withServer(async ({ handle, workspace }) => {
+    const text = importableText('p-http-import');
+    const imported = await request(handle, 'POST', '/api/imports', { body: { text } });
+    assert.equal(imported.status, 201);
+    const importedBody = jsonOf<{
+      projectId: string;
+      revision: number;
+      missingAssets: string[];
+      approvalCleared: boolean;
+      mode: string;
+    }>(imported);
+    assert.equal(importedBody.projectId, 'p-http-import');
+    assert.equal(importedBody.revision, 1);
+    assert.deepEqual(importedBody.missingAssets, ['voz']);
+    assert.equal(importedBody.approvalCleared, false);
+    assert.equal(importedBody.mode, 'editable');
+
+    const onDisk = parseProjectText(await readFile(join(workspace, 'p-http-import', 'project.json')));
+    assert.ok(onDisk.ok && onDisk.project.idea === 'Llegó por HTTP');
+
+    // Same projectId: refused, existing bytes intact.
+    const before = await readFile(join(workspace, 'p-http-import', 'project.json'));
+    const collision = await request(handle, 'POST', '/api/imports', { body: { text } });
+    assert.equal(collision.status, 409);
+    const collisionBody = jsonOf<{ error: { code: string; projectId: string } }>(collision);
+    assert.equal(collisionBody.error.code, 'project-exists');
+    assert.equal(collisionBody.error.projectId, 'p-http-import');
+    assert.deepEqual(await readFile(join(workspace, 'p-http-import', 'project.json')), before);
+
+    // Explicit copy publishes a fresh identity.
+    const copied = await request(handle, 'POST', '/api/imports', { body: { text, collision: 'copy' } });
+    assert.equal(copied.status, 201);
+    const copiedBody = jsonOf<{ projectId: string; importedAsCopy: boolean; revision: number }>(copied);
+    assert.equal(copiedBody.importedAsCopy, true);
+    assert.notEqual(copiedBody.projectId, 'p-http-import');
+    assert.equal(copiedBody.revision, 0);
+
+    // Invalid and hostile documents are refused with the parser failure.
+    const unsupported = await request(handle, 'POST', '/api/imports', {
+      body: { text: text.replace('"schemaVersion": 1', '"schemaVersion": 2') },
+    });
+    assert.equal(unsupported.status, 422);
+    const unsupportedBody = jsonOf<{ error: { code: string; failure: string } }>(unsupported);
+    assert.equal(unsupportedBody.error.code, 'invalid-project');
+    assert.equal(unsupportedBody.error.failure, 'unsupported-version');
+
+    const notString = await request(handle, 'POST', '/api/imports', { body: { text: 42 } });
+    assert.equal(notString.status, 400);
+
+    const missingOrigin = await request(handle, 'POST', '/api/imports', { origin: null, body: { text } });
+    assert.equal(missingOrigin.status, 403);
+  });
+});
+
+test('import JSON escaping overhead does not reduce the exact source byte limit', async () => {
+  await withServer(async ({ handle }) => {
+    const source = serializeProject(emptyProject({ projectId: 'p-limit', now: '2026-11-01T00:00:00.000Z' }));
+    const text = source + '\n'.repeat(LIMITS.maxJsonBytes - Buffer.byteLength(source));
+    assert.equal((await request(handle, 'POST', '/api/imports', { body: { text } })).status, 201);
+    const oversized = await request(handle, 'POST', '/api/imports', { body: { text: text + '\n' } });
+    assert.equal(oversized.status, 422);
+    assert.equal(jsonOf<{ error: { failure: string } }>(oversized).error.failure, 'too-large');
+  });
+});
+
+test('relink uploads raw asset bytes with inspection and explicit replacement', async () => {
+  await withServer(async ({ handle, workspace }) => {
+    const text = importableText('p-relink');
+    assert.equal((await request(handle, 'POST', '/api/imports', { body: { text } })).status, 201);
+
+    // Wrong content type for the asset route.
+    const wrongType = await request(handle, 'PUT', '/api/projects/p-relink/assets/voz', {
+      bodyBytes: wavBytes(),
+      contentType: 'application/json',
+    });
+    assert.equal(wrongType.status, 415);
+
+    // Content that does not match the declared container.
+    const wrongContainer = await request(handle, 'PUT', '/api/projects/p-relink/assets/voz', {
+      bodyBytes: pngBytes(10, 10),
+      contentType: 'audio/wav',
+    });
+    assert.equal(wrongContainer.status, 415);
+    const wrongContainerBody = jsonOf<{ error: { code: string; reason: string } }>(wrongContainer);
+    assert.equal(wrongContainerBody.error.code, 'asset-rejected');
+    assert.equal(wrongContainerBody.error.reason, 'mime-mismatch');
+
+    // Real wav bytes: duration comes from headers, not from the manifest.
+    const bytes = wavBytes({ durationMs: 1200 });
+    const stale = await request(handle, 'PUT', '/api/projects/p-relink/assets/voz', {
+      bodyBytes: bytes, contentType: 'audio/wav', headers: { 'x-expected-revision': '0' },
+    });
+    assert.equal(stale.status, 409);
+    const relinked = await request(handle, 'PUT', '/api/projects/p-relink/assets/voz', {
+      bodyBytes: bytes,
+      contentType: 'audio/wav',
+    });
+    assert.equal(relinked.status, 200);
+    const relinkedBody = jsonOf<{
+      assetId: string;
+      replaced: boolean;
+      revision: number;
+      missingAssets: string[];
+      asset: { sha256: string; durationMs: number };
+    }>(relinked);
+    assert.equal(relinkedBody.assetId, 'voz');
+    assert.equal(relinkedBody.replaced, false);
+    assert.equal(relinkedBody.revision, 2);
+    assert.deepEqual(relinkedBody.missingAssets, []);
+    assert.equal(relinkedBody.asset.durationMs, 1200);
+    assert.deepEqual(await readFile(join(workspace, 'p-relink', 'assets', 'voz.wav')), Buffer.from(bytes));
+
+    // Different content needs an explicit confirmation header.
+    const replacement = wavBytes({ durationMs: 3000 });
+    const refused = await request(handle, 'PUT', '/api/projects/p-relink/assets/voz', {
+      bodyBytes: replacement,
+      contentType: 'audio/wav',
+    });
+    assert.equal(refused.status, 409);
+    const refusedBody = jsonOf<{ error: { reason: string; assetId: string } }>(refused);
+    assert.equal(refusedBody.error.reason, 'asset-content');
+    assert.equal(refusedBody.error.assetId, 'voz');
+
+    const confirmed = await request(handle, 'PUT', '/api/projects/p-relink/assets/voz', {
+      bodyBytes: replacement,
+      contentType: 'audio/wav',
+      headers: { 'x-confirm-replace': '1' },
+    });
+    assert.equal(confirmed.status, 200);
+    const confirmedBody = jsonOf<{ assetId: string; replaced: boolean; revision: number }>(confirmed);
+    assert.equal(confirmedBody.replaced, true);
+    assert.notEqual(confirmedBody.assetId, 'voz');
+    assert.equal(confirmedBody.revision, 3);
+
+    const read = await request(handle, 'GET', '/api/projects/p-relink');
+    const readBody = jsonOf<{ project: Project }>(read);
+    assert.equal(readBody.project.scenes[0]?.audio?.assetId, confirmedBody.assetId);
+    assert.equal(readBody.project.assets[0]?.assetId, confirmedBody.assetId);
+
+    const unknown = await request(handle, 'PUT', '/api/projects/p-relink/assets/nope', {
+      bodyBytes: wavBytes(),
+      contentType: 'audio/wav',
+    });
+    assert.equal(unknown.status, 404);
+    assert.equal(jsonOf<{ error: { code: string } }>(unknown).error.code, 'asset-not-found');
+
+    const noAssetId = await request(handle, 'PUT', '/api/projects/p-relink/assets', {
+      bodyBytes: wavBytes(),
+      contentType: 'audio/wav',
+    });
+    assert.equal(noAssetId.status, 404);
+  });
+});
+
+test('relink digest guard rejects same-revision external edits over HTTP before writing assets', async () => {
+  await withServer(async ({ handle, workspace }) => {
+    await handle.store.importProject({ text: importableText('p-digest') });
+    const snapshot = await handle.store.readProject('p-digest');
+    const external = serializeProject({ ...snapshot.project, idea: 'External edit at the same revision' });
+    await writeFile(join(workspace, 'p-digest', 'project.json'), external);
+    const args = { bodyBytes: wavBytes(), contentType: 'audio/wav',
+      headers: { 'x-expected-revision': String(snapshot.revision), 'x-expected-digest': snapshot.digest } };
+    const conflict = await request(handle, 'PUT', '/api/projects/p-digest/assets/voz', args);
+    assert.equal(conflict.status, 409);
+    assert.equal(jsonOf<{ error: { reason: string } }>(conflict).error.reason, 'digest');
+    assert.equal(await readFile(join(workspace, 'p-digest', 'project.json'), 'utf8'), external);
+    const fresh = await handle.store.readProject('p-digest');
+    assert.deepEqual(fresh.missingAssets, ['voz']);
+    const invalid = await request(handle, 'PUT', '/api/projects/p-digest/assets/voz', {
+      ...args, headers: { ...args.headers, 'x-expected-digest': 'invalid' },
+    });
+    assert.equal(invalid.status, 400);
+    const accepted = await request(handle, 'PUT', '/api/projects/p-digest/assets/voz', {
+      ...args, headers: { ...args.headers, 'x-expected-digest': fresh.digest },
+    });
+    assert.equal(accepted.status, 200);
+  });
+});
+
+test('relink rejects an image whose decoded header bound exceeds 100 MiB without changing disk', async () => {
+  await withServer(async ({ handle, workspace }) => {
+    const project = emptyProject({ projectId: 'p-rgba16', now: '2026-11-01T00:00:00.000Z' });
+    project.assets = [{ assetId: 'image', kind: 'image', mimeType: 'image/png', path: 'assets/image.png',
+      byteLength: 1, sha256: null, durationMs: null, source: { origin: 'user', license: 'CC0', attribution: '' } }];
+    await handle.store.importProject({ text: serializeProject(project) });
+    const before = await readFile(join(workspace, project.projectId, 'project.json'));
+    const png = pngBytes(4000, 4000);
+    png[24] = 16;
+    const response = await request(handle, 'PUT', '/api/projects/p-rgba16/assets/image', { bodyBytes: png, contentType: 'image/png' });
+    assert.equal(response.status, 422);
+    assert.equal(jsonOf<{ error: { reason: string } }>(response).error.reason, 'decoded-too-large');
+    assert.deepEqual(await readFile(join(workspace, project.projectId, 'project.json')), before);
+    assert.deepEqual((await handle.store.readProject(project.projectId)).missingAssets, ['image']);
+  });
+});
+
+//#endregion import and relink
