@@ -1,13 +1,13 @@
 # UX de Molecula Studio: guardar primero, producir después
 
-**Estado: propuesta para revisión, sin producto implementado.** Este plan delimita un estudio local para preparar videos verticales, guardar proyectos incompletos y retomarlos. La primera entrega debe resolver creación, edición, guardado y apertura en JSON; no depende de proveedores, motores gráficos ni base de datos.
+**Estado: M1/G1 técnico local cerrado y V01 revisado; UX audiovisual diseñada, no implementada.** Existen lista/editor textual/manifest y persistencia. Las seis láminas no son seis pantallas funcionales ni una aprobación estética. El [mapa de componentes](components.md) separa ambos alcances; [delivery](../plan/delivery.md) conserva evidencia.
 
 ## Recorrido de revisión
 
 1. Revisar las seis [pantallas y bosquejos](screens.md).
 2. Abrir [wireframes.html](wireframes.html): seis láminas HTML/CSS autónomas, sin APIs ni persistencia. Solo los enlaces de navegación son operativos.
 3. Verificar [flujos, recuperación y criterios de aceptación](flows.md).
-4. Alinear los contratos con arquitectura antes de desarrollar; los nombres exactos de campos JSON quedan pendientes de ese contrato.
+4. Revisar [componentes/layout](components.md), [formato ejecutable](../plan/project-format.md) y [API actual/futura](../plan/api-contracts.md); no inventar campos alternativos de UX.
 
 ## Decisiones de alcance
 
@@ -40,6 +40,8 @@ Los hitos siguen el plan de entrega canónico. Los bosquejos de editor completo 
 
 En M1 los espacios de vista previa y exportación explican «Disponible en una fase posterior»; no aparentan un motor funcionando. Una configuración de estilo puede persistirse antes de que su renderizador exista.
 
+«Aprobación mínima de fixture» en M2 describe una UI acotada, no un sello parcial ni menos estricto: siempre una sola approval de contentDigest completo. Los checks por panel son revisión, no aprobaciones independientes. Fuente/audio/dirección artística y ejecución nativa mantienen [gates explícitos](../plan/implementation-tasks.md#registro-de-decisiones-y-autorizaciones).
+
 ## Gramática común de la interfaz
 
 - Cabecera de proyecto: nombre editable, **Guardar**, **Abrir proyecto**, estado de cambios, última escritura confirmada y revisión guardada. **Guardar copia portable** (carpeta con JSON y activos) y **Descargar copia JSON** son acciones secundarias y nunca sustituyen Guardar; la descarga no incluye binarios ni confirma escritura.
@@ -54,15 +56,15 @@ La invalidación depende de las entradas: texto o inputs de voz cambiados invali
 
 El navegador no escribe rutas arbitrarias. El companion recibe un identificador de proyecto autorizado dentro de su espacio de trabajo. Un archivo abierto mediante selector es entrada no confiable: validar primero, no ejecutar instrucciones ni confiar en rutas de su JSON. Los recursos referenciados se importan o revinculan mediante selección explícita y validación del companion.
 
-En schema 1 las entidades visuales proceden del catálogo procedural; no se importan GLB, modelos o fuentes arbitrarios. Los archivos de medios permitidos son audio, separado del JSON y con ruta plana `assets/<assetId>.<ext>` dentro de la carpeta `assets/`. El JSON no contiene recursos embebidos, credenciales ni secretos. La carpeta `assets/` acompaña al JSON al trasladar un proyecto mediante **Guardar copia portable**, que confirma solo al completarse y avisa de activos faltantes; **Descargar copia JSON** entrega solo configuración y advierte que no es un paquete portátil completo. No existe sincronización automática ni copia de seguridad en nube.
+En schema 1 las entidades visuales proceden del catálogo procedural; no se importan GLB, modelos o fuentes arbitrarios. El manifest y relink admiten audio WAV/MP3 e imágenes PNG/JPEG, separados del JSON en `assets/<assetId>.<ext>`; admitir imagen no promete componerla en el catálogo inicial. El JSON no contiene binarios, credenciales ni secretos. Copia portable transporta activos disponibles y avisa faltantes; descarga JSON no los incluye. Sin sincronización ni backup en nube.
 
-Reabrir un proyecto del workspace conserva referencias y la aprobación válida; abrir o guardar no renueva la aprobación, y si el contenido cambió se muestra obsoleta por digest, no se borra. Importar un JSON externo o **Guardar copia portable** sí limpia `approval` con aviso explícito, conserva medios, referencias y `mediaBindings`, registra esa edición —revisión y fecha nuevas— antes del commit y la UI muestra «Sin aprobación», no «Pendiente de validación». Los vínculos de audio/alineación siguen sujetos a revalidación: el companion debe resolver vínculo y procedencia antes de usarlos como actuales, y hasta entonces la UI los marca «Pendiente de validación» u «Obsoleto» y bloquea los usos dependientes, sin regenerar ni pagar automáticamente. No se agregan campos UX alternativos al contrato.
+Reabrir conserva referencias/approval; abrir o guardar no renueva vigencia. Import externo sin colisión limpia approval existente incrementando revisión/fecha; copia portable o import con colisión-copy crea ID nuevo/revisión 0/fechas nuevas. Se conservan medios/bindings y se avisa «Sin aprobación». Vigencia se deriva, no se reacepta al abrir. Una sola aprobación editorial cubre todo contentDigest; revisión por panel no crea sellos parciales. Ver [reglas de negocio](../plan/requirements.md#reglas-de-negocio-transversales).
 
 ## Identidad visual entre escenas
 
 Un automóvil o personaje conserva geometría, proporciones, materiales, paleta y rig. El panel **Elementos del proyecto** permite seleccionar una entidad de catálogo, reutilizarla y consultar dónde aparece. Por instancia se ajustan pose, posición, rotación y escala uniforme; la cámara pertenece a la escena. No se permite deformación no uniforme. Otra pose, cámara o iluminación produce píxeles diferentes sin necesariamente cambiar la identidad.
 
-El contrato coordinado con arquitectura usa registro `entities`, identidad estable `entityId` y versión `definitionVersion`; las instancias de escena referencian esa identidad/versionado. Guardar/abrir conserva registro y referencias desde M1; M2 prueba continuidad con una fixture y M3 ofrece el panel editable completo. Los campos restantes se concretan con arquitectura.
+El contrato usa registro `entities`, identidad estable `entityId` y versión `definitionVersion`; instancias referencian esa identidad/versionado. Guardar/abrir conserva datos desde M1; M2 debe probar continuidad geométrica/visual y M3 ofrecer el panel completo. Todos los campos portables están definidos en formato/schema, no quedan nombres alternativos por inventar en UX.
 
 **Fuera del MVP:** edición geométrica, rigging, edición global de identidad y creación arbitraria de variantes. El formato distingue una variante intencional mediante identidad/versionado explícito, pero no se ofrece su creación libre en el editor inicial. Una futura modificación global debe listar escenas afectadas y pedir confirmación; no sustituir originales silenciosamente.
 
@@ -82,8 +84,8 @@ Escritorio es el contexto principal. En ancho reducido: cabecera envuelve accion
 - [x] Capturar el HTML en Chromium a 1440, 390 y 320 px y comprobar las seis anclas/retornos: sin desbordamiento horizontal ni errores de consola/runtime. Se inspeccionaron además capturas de los cambios en P4 y P6; no equivale a una auditoría completa de accesibilidad o producto.
 - [ ] Convertir criterios de [flows.md](flows.md) en pruebas de implementación; los bosquejos no prueban comportamiento.
 
-## Coordinación técnica, no implementación
+## Coordinación técnica y procedencia de evidencia
 
 Evidencia temporal de la comprobación posterior a correcciones G0: `/private/var/folders/ky/xtx1sc_j6yv2js44vhx5fb6h0000gn/T/opencode/molecula-ux-g0-n9XubE` (capturas y `report.json`). No es un recurso requerido por los bosquejos y puede no existir en otro equipo. Quedan pendientes teclado, zoom, contraste y comportamiento real de persistencia. El ancla inicial es `upper`, con `center`/`lower` disponibles; la importación externa o la copia portable limpia la aprobación y exige nueva revisión editorial, mientras reabrir conserva la válida. Aquí no se agregan campos JSON.
 
-La recomendación base del coordinador es React/TypeScript/Vite para UI, companion Node local, Three.js para el primer estilo, subtítulos SVG/DOM y captura Chromium/FFmpeg. Este documento define experiencia y estados, no instala dependencias ni valida esas APIs. La arquitectura deberá concretar contratos y motores; el HTML es independiente de cualquier framework.
+React/TypeScript/Vite y companion Node ya existen; Three.js y pipeline Chromium/FFmpeg siguen propuestos. Este documento define experiencia/estados, no instala ni ejecuta. Contratos concretos: [API](../plan/api-contracts.md); tareas/gates: [implementación](../plan/implementation-tasks.md). El HTML sigue independiente del framework.

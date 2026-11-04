@@ -1,6 +1,6 @@
 # Seis pantallas para revisar antes de implementar
 
-**Bosquejos de baja fidelidad, no interfaz funcional.** La navegación entre láminas está en [wireframes.html](wireframes.html). El contenido de ejemplo es manual: no sugiere que haya generación, guardado o render disponibles.
+**Bosquejos de baja fidelidad, no seis pantallas funcionales.** La navegación entre láminas está en [wireframes.html](wireframes.html). Guardado/editor mínimo M1 sí existen; generación/render no. El contenido de ejemplo es manual. [Componentes/layout](components.md) mapea código existente, props, estados y propiedad futura.
 
 ## Mapa de pantallas
 
@@ -80,7 +80,7 @@
 
 **Edición:** texto por escena, intención visual, duración manual, añadir/eliminar con confirmación si hay contenido y reordenar mediante botones. No línea de tiempo arrastrable obligatoria. El storyboard inicial es lista de tarjetas con descripciones y miniaturas de prueba cuando existan, no arte generado prometido.
 
-**Aprobación:** estado vinculado a entradas/procedencia definidas por arquitectura. Aprobar requiere texto/orden válidos y resumen de pendientes; no dispara voz ni render. En M3 «Ir al estudio» permite inspección incompleta, pero exportar exige validación. M1 permite guardar texto parcial sin aprobar; M2 usa una fixture acotada con aprobación mínima, no exige esta UI editorial completa. Reabrir un proyecto del workspace conserva la aprobación válida —se muestra obsoleta por digest si el contenido cambió, no se borra—. Importar un JSON externo o guardar copia portable sí limpia `approval` con aviso explícito, conserva medios, referencias y `mediaBindings`, registra la edición —revisión y fecha— antes del commit y la UI muestra «Sin aprobación», no «Pendiente de validación». Los medios no se restauran como actuales por mera lectura del JSON: quedan «Pendiente de validación» hasta comprobar vínculos y vigencia.
+**Aprobación:** hay un solo sello `project.approval` para contentDigest completo, no aprobaciones parciales de guion/visual. Revisar este panel o aceptar bindings no lo sustituye ni dispara voz/render. «Ir al estudio» permite inspeccionar incompleto; aprobar para exportar exige resolver pendientes de salida. M2 usa igual regla con fixture/UI mínima, no bypass. Reabrir conserva sello válido o histórico stale. Import sin colisión limpia approval existente con incremento de revisión/fecha; copia portable o colisión-copy crea ID nuevo/revisión 0/fechas nuevas. Medios/bindings se conservan y siguen sujetos a comprobación, nunca se vuelven actuales por abrir. Mostrar «Sin aprobación» tras limpieza.
 
 **Cambios después de aprobar:** texto o entradas de voz cambiados invalidan voz y alineación dependientes; reordenar narraciones idénticas conserva clips y alineación local validada, pero invalida montaje/línea temporal; ajustar duración exige comprobar encaje sin regenerar voz automáticamente. Mostrar el efecto específico, no «regenerar todo». Editar no borra medios anteriores. Antes de regenerar se detalla alcance y posible coste. Si falla el proveedor, permanece accesible la versión aprobada anterior, identificada como no correspondiente al borrador actual.
 

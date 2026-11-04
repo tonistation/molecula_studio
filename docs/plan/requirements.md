@@ -1,6 +1,6 @@
 # Requisitos de Molecula Studio v0.1
 
-Molecula Studio será un estudio web **local-first** para convertir una idea en un video vertical animado, editable y reproducible. La primera entrega funcional debe guardar y reabrir proyectos incompletos sin conexión ni proveedores. Este documento es un plan, no evidencia de implementación ni aprobación de nuevas decisiones técnicas.
+Molecula Studio es un estudio web **local-first** para convertir una idea en un video vertical animado, editable y reproducible. Este es el **PRD canónico** de v0.1: funciones, reglas R01–R20 y aceptación. M1/G1 técnico local y V01 están implementados/revisados en `cbfc125`; composición, MP4 y editor audiovisual siguen pendientes. La evidencia está en [delivery](delivery.md), no se infiere de este PRD ni se repitió durante esta revisión documental.
 
 ## Ruta de lectura
 
@@ -9,7 +9,7 @@ Molecula Studio será un estudio web **local-first** para convertir una idea en 
 3. Consultar [arquitectura](architecture.md) para responsabilidades y seguridad.
 4. Revisar [continuidad visual](visual-continuity.md) y ejecutar posteriormente [entregas](delivery.md), con pruebas antes de implementación.
 
-Los bosquejos y la interacción visual se documentan por separado por el responsable UX. Este contrato define comportamiento, no sustituye sus pantallas.
+Layout/componentes: [UX](../ux/components.md). Transporte y DTO: [API](api-contracts.md). Trabajo delegable: [tarjetas](implementation-tasks.md). Estos documentos detallan el PRD sin duplicar su autoridad sobre alcance.
 
 ## Estado de las decisiones
 
@@ -18,10 +18,16 @@ Los bosquejos y la interacción visual se documentan por separado por el respons
 | Plan antes del desarrollo | Solicitado por el usuario |
 | Guardar/reabrir desde primera fase | Requisito explícito; JSON simple, sin base de datos |
 | Capacidad de múltiples estilos | Dirección solicitada; no significa varios estilos implementados en v0.1 |
-| Stack, límites y detalles del formato | Baseline técnico propuesto y revisable por los agentes |
+| Stack, límites y detalles del formato | Base M1/schema 1 implementada; límites AV/engine futuros documentados como diseño, no mediciones |
 | Implementación, instalaciones, servicios o gastos | Fuera de esta intervención documental |
 
-Una vez verificado el plan, no hace falta una aprobación técnica rutinaria adicional para considerar M1 listo para comenzar. Esto no convierte esta solicitud de planificación en autorización para escribir producto o activar proveedores.
+M1 ya cerró su alcance técnico local. La intervención actual solo prepara documentación antes de más código: no inicia V02, elige modelo ni autoriza instalaciones, media nativa, proveedores o gastos. Las decisiones técnicas acotadas se documentan; los permisos y decisiones de producto genuinos están en el [registro](implementation-tasks.md#registro-de-decisiones-y-autorizaciones).
+
+## Usuario, necesidad y criterio de valor
+
+Usuario inicial: creador individual trabajando en su propio equipo, sin cuenta, equipo colaborativo ni operador de infraestructura. Necesita conservar una idea incompleta, entender qué falta y producir un video vertical verificable sin perder ediciones ni depender de un servicio pago. Éxito de v0.1: otra persona reproduce el recorrido offline de creación→edición→reapertura→revisión→exportación, comprende obsolescencia/errores y conserva datos ante fallos previstos. No se mide éxito por cantidad de botones ni por una demo que solo funciona en memoria.
+
+Prioridad obligatoria: persistencia y control de versiones, luego prueba audiovisual determinista, editor utilizable y hardening. Generación real es opcional (E05), no condición para G3 ni v0.1 offline. Rendimiento y calidad visual requieren medidas/revisión humana, no objetivos comerciales inventados ni garantía de fidelidad automática a referencias.
 
 ## Producto y recorrido principal
 
@@ -114,6 +120,49 @@ Los identificadores son estables para vincular pruebas y entregas. «Aceptar» d
 | R19 | Identidad visual persistente | Mismo auto entre escenas conserva geometría, proporciones y materiales; guardar/reabrir mantiene registro, versiones y referencias |
 | R20 | Instancias y variantes seguras | Pose/cámara no deforman proporciones; materiales/rig no contaminan otras instancias; variante explícita con lineage, sin overrides de identidad |
 
+## Reglas de negocio transversales
+
+1. **Borrador válido no equivale a salida lista.** Guardar no exige voz/visual/approval; preview/export consumen solo capacidades y medios verificados. Un manifest PNG/JPEG/audio admitido no promete que imágenes se compongan en el catálogo procedural inicial.
+2. **Una aprobación editorial completa.** Solo `project.approval` sobre contentDigest completo; revisar guion/visual o aceptar bindings no crea sellos parciales. La «aprobación mínima» M2 es la misma regla con fixture/UI acotada, no un bypass. Cambiar opciones de salida invalida la aprobación si cambia digest.
+3. **Tres acciones distintas:** guardar canónico confirma disco; copia portable crea ID nuevo/revisión 0/fechas nuevas; descarga solicita bytes, no limpia dirty ni acredita escritura. Importar sin colisión limpia approval existente con incremento de revisión/fecha; import con colisión-copy se clona a revisión 0. Conservar bindings/medios no los vuelve actuales.
+4. **Edición no borra evidencia.** Conservar medios y approval históricos; derivar vigencia por dependencias/digests/archivos. Resultados tardíos pertenecen a su snapshot y no reemplazan borrador nuevo. Retención local es acotada con protección/rechazo previo, no historial ilimitado ni jobs dentro del JSON.
+5. **Exportar es explícito.** Elegir con/sin voz y captions, revisar bindings consumidos, aprobar y guardar; preflight revalida, snapshot inmutable, publicación solo tras verificar. Silent no consume audio viejo, pero puede exigir revisar timings antes ligados a voz. Cancel/fallo conserva última salida válida.
+6. **Autoridad separada.** Approval editorial, confirmación de envío, autorización externa de proveedor/presupuesto y permisos del harness son cosas diferentes. Abrir/guardar/aceptar propuesta no autoriza operación facturable futura. Incertidumbre remota nunca permite retry automático.
+7. **Sin simulación de disponibilidad.** Estilo futuro, motor faltante y proveedor fake están etiquetados; no rediseño/GLB/script/HTML arbitrario. Un error recuperable no destruye proyecto activo ni impone regenerar todo.
+
+Detalles normativos y algoritmos se mantienen en [formato](project-format.md), [API](api-contracts.md) y [arquitectura](architecture.md); no crear proyecciones de digest alternativas en UI.
+
+## Trazabilidad función → regla → recorrido → contrato → trabajo
+
+P1–P6 son pantallas de [UX](../ux/screens.md), F1–F7 flujos de [UX](../ux/flows.md), no tareas F01–F08. Las tarjetas futuras identifican tests/oráculos exactos; evidencia histórica F08/V01 está en delivery.
+
+| Función | Regla | Pantalla / flujo | Datos / API canónicos | Tarea y evidencia |
+|---|---|---|---|---|
+| Crear y retomar offline | R01 | P1/P2, F1 | Project; create/read/save | F04/F08 verificados; H05a mantiene proceso nuevo |
+| Conservar incompleto | R02 | P2/P3/P6, F1/F5 | nulls/manifest, schema 1 | F02/F08 verificados; V06a no bloquea guardar |
+| Guardar de forma veraz | R03 | P2, F1/F2 | SaveReceipt/CAS/uncertain | F03/F06/F08 evidencia; C01 guard de revisión y H05a |
+| Abrir/importar seguro | R04 | P1, F2 | parse/read/import/mode/raw | F02/F05/F08 evidencia; H01a corpus |
+| Transportar/revincular | R05 | P1/P6, F2/F5 | CopyResult/ImportResult/RelinkResult; ingesta nueva futura | F05/F08 evidencia; V04a/E01c/H05a disco/hash |
+| Mostrar estilos reales | R06 | P2/P4, F3 | styleId/version, registry | F02 envoltorio; V02b/V03a no fallback |
+| Editar storyboard | R07 | P3/P4, F3/F4 | Scene/SceneEdit/revisiones | F04 texto mínimo; E01a/b/E02a save/reopen |
+| Seek determinista | R08 | P4, F6 | FrameSample/EvaluatedFrame | V01 metadatos verificados; V02a/V07a/H03a |
+| Exportar composición | R09 | P5, F6 | runtime/Job/ExportReceipt | V05a–d/V08a/H03a MP4 real |
+| Sincronizar voz/palabras | R10 | P3/P4/P5, F4/F6 | audio/words/bindings/reloj | V04a/b/V03c/E03b/H03a PTS+escucha |
+| Recuperar/cancelar jobs | R11 | P5, F6/F7 | journal/Job/attemptId | V06b/c/E06a/b/H01b PIDs/disco |
+| Generación controlada | R12 | P3/P6, F7 | RequestPreview/authorization/Proposal | E03/E04 fake; E05 opcional real con D04 |
+| Entrada hostil | R13 | P1/P6, F2/F5 | parser/asset validators/DTO cerrados | F02/F07 existentes; H01a real boundary |
+| Contención local | R14 | Todas, F1–F7 | token/Origin/Host/resources por ID | F07/F08 existentes; V05a/H01a sin escapes |
+| Salir sin perder datos | R15 | Cabecera/diálogo, F1/F2 | dirty/receipt/RecoveryDialog | F06/F08 existentes; E01a/H02a |
+| Accesibilidad/claridad | R16 | Todas, F1–F7 | componentes/estados/labels | V03b/E01/H02a Chromium+teclado |
+| Derechos/diagnóstico | R17 | P6, F5/F7 | Asset.source/diagnóstico sanitizado | V04a/D01/H04a/b licencia/canarios |
+| Revisión y vigencia | R18 | P3/P5, F3/F4/F6 | bindings/approval/receipt/snapshot | F08 persistencia; V04b/V06a/d/E02/E06 |
+| Identidad entre escenas | R19 | P4, F4/F5 | entities/ref/version/seed | F02/F08 datos; V02/V07/E02 geometría+visual |
+| Aislamiento/variantes | R20 | P4, F4/F5 | identity/instance/variantOf | F02 estructura; V02b/c/V07a/E02a |
+
+## Aceptación de producto y estado técnico
+
+**Implementado** significa código y pruebas de su unidad; **aceptación técnica** exige oráculo real y revisión independiente; **aceptación visual/auditiva humana** registra juicio del producto sobre artefacto/versiones concretos. Ninguna implica las otras. M1/G1 y V01 tienen aceptación técnica acotada, no estética aprobada ni sincronía AV medida. La matriz anterior no convierte todos los R en PASS: partes audiovisuales, editor completo y H01–H05 esperan sus tarjetas/gates.
+
 ## Estados que deben ser visibles
 
 | Objeto | Estados mínimos |
@@ -151,6 +200,6 @@ Límites numéricos adicionales del renderer y del schema se centralizan en [arq
 - Guardar/reabrir y faltantes están contemplados en bosquejos UX.
 - Ambos JSON ilustrativos concuerdan con el contrato escrito.
 - No hay contradicción entre tiempo, revisión, recursos, persistencia y exportación.
-- Riesgos pendientes están visibles; ningún documento afirma que la implementación fue validada.
+- Riesgos pendientes están visibles; solo las unidades con evidencia atribuida se describen como verificadas.
 
-El siguiente paso documental es verificar este conjunto junto con UX. El siguiente paso de producto, en una intervención de desarrollo, es M1; no conectar proveedores primero.
+El siguiente paso es una revisión documental independiente fresca de PRD/contratos/UX/tarjetas. Después, con autorización de desarrollo, C01 precede a los nuevos consumidores de V02–V08; no iniciar V02 ni conectar proveedores durante esta intervención.

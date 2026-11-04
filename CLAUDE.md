@@ -1,6 +1,6 @@
 # Orientación para contribuir a Molecula Studio
 
-**Repositorio en planificación: no iniciar desarrollo del producto sin autorización.** No hay aplicación, servidor de producto, dependencias ni versiones instaladas documentadas. No inventar comandos de paquetes, variables de entorno o despliegues.
+**M1/G1 técnico local cerrado; V01 implementado/revisado.** Hay aplicación React, companion Node, schema/ProjectStore y dependencias documentadas en [setup](docs/dev/setup.md). No hay runtime 3D, voz sintética ni MP4. Leer [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) primero. Esta intervención prepara documentación antes de más código; no iniciar V02 ni elegir modelo sin el alcance de ejecución correspondiente.
 
 ## Leer primero
 
@@ -9,16 +9,16 @@
 3. [Requisitos](docs/plan/requirements.md), [arquitectura](docs/plan/architecture.md), [entrega](docs/plan/delivery.md) y [formato de proyecto](docs/plan/project-format.md).
 4. [Experiencia de usuario](docs/ux/README.md), [pantallas](docs/ux/screens.md) y [flujos](docs/ux/flows.md).
 
-Estos documentos son la fuente de los contratos propuestos. Están pendientes de integración y revisión conjunta: resolver contradicciones explícitamente, sin convertir recomendaciones en aprobaciones del usuario. Los bosquejos HTML no implementan esos contratos.
+El [PRD](docs/plan/requirements.md) es canónico; [API](docs/plan/api-contracts.md) distingue ocho operaciones reales de diseño futuro; [tarjetas](docs/plan/implementation-tasks.md) define ejecución posterior. Resolver contradicciones sin convertir diseño en aprobación del usuario. Bosquejos HTML no son seis pantallas funcionales.
 
-## Base técnica recomendada, no instalada
+## Base técnica existente y propuesta
 
 - Aplicación local: React, TypeScript y Vite; proceso Node.js accesible solo por interfaz de bucle local (`loopback`).
-- Primer estilo visual: Three.js; capas SVG/DOM para gráficos y subtítulos.
+- Primer estilo visual propuesto, aún no instalado: Three.js; capas SVG/DOM para gráficos y subtítulos.
 - Exportación propuesta: Chromium con tiempo controlado por cuadro y composición con FFmpeg.
 - Persistencia inicial: archivo JSON versionado para guardar y reabrir proyectos incompletos desde M1; los recursos asociados requieren un contrato explícito, no se presumen incluidos en el JSON.
 
-Consultar la arquitectura para alternativas, restricciones y pruebas pendientes. Esta selección es una propuesta propia, no evidencia de la tecnología interna de productos de referencia. No fijar versiones ni añadir herramientas sin la evaluación correspondiente.
+React/TS/Vite, Node y playwright-core ya están declarados y fijados por package/lock/entorno. Consultar arquitectura/contexto para allowlist y alternativas excluidas. No añadir framework UI ni actualizar dependencias como efecto lateral; herramientas propuestas no prueban tecnología interna de referencias ni autorizan ejecución nativa.
 
 ## Reglas de trabajo
 
@@ -32,6 +32,6 @@ Consultar la arquitectura para alternativas, restricciones y pruebas pendientes.
 
 ## Antes de ampliar el alcance
 
-**Contrato propuesto de continuidad:** registrar entidades reutilizables en el JSON; las apariciones referencian `entityId` y versión y contienen estado por escena. Preservar identidad y bloquear proporciones; permitir únicamente variantes intencionales, sin editor avanzado en el MVP. El renderizado mediante código no evita inconsistencias si cada escena regenera entidades. Consultar [continuidad visual](docs/plan/visual-continuity.md), pendiente de integración; comprobar la continuidad con revisión visual independiente, no solo con referencias válidas.
+**Continuidad:** registro/ref/version ya persistidos; geometría, aislamiento de instancias y revisión visual siguen en V02/V07. Preservar identidad/proporciones; variantes solo intencionales, sin editor avanzado en MVP. Consultar [continuidad visual](docs/plan/visual-continuity.md); IDs válidos por sí solos no prueban render consistente.
 
 Revisar criterios y riesgos en [delivery.md](docs/plan/delivery.md). Cambiar primero el contrato propuesto y dejar trazabilidad de la decisión; no añadir silenciosamente base de datos, infraestructura remota, proveedores o estilos adicionales.

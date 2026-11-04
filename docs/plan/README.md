@@ -1,6 +1,6 @@
 # Plan de Molecula Studio
 
-**M0: definir y revisar el producto antes de implementarlo.** Este índice orienta la lectura; los contratos detallados pertenecen a los documentos enlazados. Su integración cruzada está pendiente y ningún hito de producto se declara cumplido.
+**M1/G1 técnico local cerrado y V01 implementado/revisado** en `cbfc125`; no hay composición ni MP4 todavía. Este índice orienta; [delivery](delivery.md) conserva evidencia por criterio. El plan actualizado requiere revisión documental independiente antes de más código, sin confundir cierre técnico con aprobación estética.
 
 ## Alcance y decisiones
 
@@ -19,21 +19,22 @@ El guardado no depende de terminar el guion, generar voz ni exportar un video. E
 
 ## Ruta de revisión
 
-1. [Requisitos](requirements.md): necesidades, exclusiones y aceptación.
+1. [Contexto de una página](../../PROJECT_CONTEXT.md) y [PRD canónico](requirements.md): necesidades, exclusiones, R01–R20 y trazabilidad.
 2. [Experiencia de usuario](../ux/README.md): [pantallas](../ux/screens.md), [flujos](../ux/flows.md) y [bosquejos HTML](../ux/wireframes.html).
 3. [Formato de proyecto](project-format.md): guardar, validar y reabrir trabajo parcial.
-4. [Arquitectura](architecture.md): componentes y límites de confianza.
-5. [Entrega](delivery.md): dependencias, pruebas y condiciones de avance.
+4. [API actual y diseñada](api-contracts.md), [arquitectura](architecture.md): transporte, DTO, límites y retención.
+5. [Componentes UI](../ux/components.md): layout, props, propiedad y estados.
+6. [Entrega](delivery.md) y [tarjetas detalladas](implementation-tasks.md): evidencia, DAG, pruebas rojas y ejecución futura.
 
-Los archivos enlazados están siendo redactados en paralelo; revisar su coherencia al integrarlos. Para abrir los bosquejos estáticos, consultar el [README principal](../../README.md).
+No iniciar consumidores de contratos nuevos antes de C01/revisión; permisos de fuente/audio/nativo/proveedor se identifican por tarea. Para abrir bosquejos estáticos, consultar el [README principal](../../README.md).
 
 ## Secuencia propuesta
 
-| Hito | Resultado esperado, todavía no implementado |
+| Hito | Estado y resultado |
 | --- | --- |
-| M0 — Plan actual | Requisitos, contratos, riesgos y bosquejos revisados antes de desarrollar |
-| M1 — Persistencia primero | Crear trabajo parcial, guardarlo en JSON y reabrirlo sin exigir contenido completo; probar errores y conservación de datos |
-| M2 — Prueba vertical | Video de 10–15 segundos, formato 9:16, primer estilo 3D, audio y subtítulos; evidencia de renderizado con tiempo determinista y límites declarados |
+| M0 — Plan | Documentos y bosquejos existentes; actualización de handoff pendiente de revisión fresca |
+| M1 — Persistencia primero | G1 técnico local cerrado; borrador, copia/importación/relink y recuperación con evidencia real |
+| M2 — Prueba vertical | Solo V01 completo (reloj/selección); V02–V08 pendientes para video de 10–15 s, 9:16, 3D/audio/subtítulos |
 | M3 — Editor e integraciones | Edición de proyecto e integración controlada con proveedores; cualquier activación o gasto requiere autorización específica |
 | M4 — Validación | Verificación integral de recuperación, exportación, experiencia de usuario y límites en un entorno documentado |
 
@@ -42,9 +43,9 @@ Los criterios completos y el orden de dependencias se mantienen en [delivery.md]
 ## Evidencia y pendientes
 
 - La [especificación original](../reference/original-specification.md) se conserva como antecedente inmutable. Sus ejemplos y afirmaciones estéticas no sustituyen requisitos actuales ni prueban la implementación de terceros.
-- Los bosquejos expresan intención; no prueban que exista editor, persistencia, voz o exportación. El motor de ejecución no está construido y no hay medidas de rendimiento ni demostración de determinismo.
-- Antes de implementar: integrar documentos, resolver discrepancias, revisar riesgos de recursos y licencias, y acordar las evidencias de aceptación. El JSON no debe contener secretos ni código ejecutable.
+- Los bosquejos expresan intención; la evidencia de persistencia proviene de tests M1, no del HTML. V01 demuestra determinismo de metadatos, no de píxeles/audio. No hay medidas de rendimiento AV.
+- Antes de más código: revisar este conjunto y gates explícitos; C01 materializa contratos compartidos. El JSON no contiene secretos, jobs ni código ejecutable.
 
 ### Referencias técnicas oficiales
 
-Para contrastar las propuestas: [React](https://react.dev/), [TypeScript](https://www.typescriptlang.org/docs/), [Vite](https://vite.dev/guide/), [Node.js](https://nodejs.org/en/learn), [Three.js](https://threejs.org/docs/), [Playwright](https://playwright.dev/docs/intro) y [FFmpeg](https://ffmpeg.org/documentation.html). Son referencias de investigación, no dependencias instaladas ni evidencia de la arquitectura de Atom o Caniscopio.
+Para contrastar las propuestas: [React](https://react.dev/), [TypeScript](https://www.typescriptlang.org/docs/), [Vite](https://vite.dev/guide/), [Node.js](https://nodejs.org/en/learn), [Three.js](https://threejs.org/docs/), [Playwright](https://playwright.dev/docs/intro) y [FFmpeg](https://ffmpeg.org/documentation.html). Los enlaces no prueban instalación ni versión: consultar package/lock y [setup](../dev/setup.md). Tampoco acreditan la arquitectura interna de productos de referencia.

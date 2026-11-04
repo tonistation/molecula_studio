@@ -1,6 +1,6 @@
 # Flujos recuperables por fase
 
-**Regla principal:** guardar y reabrir trabajo incompleto forma parte de M1, antes de cualquier proveedor o render. Los siguientes flujos son contratos de experiencia pendientes de implementación, no pruebas ya ejecutadas.
+**Regla principal:** guardar y reabrir trabajo incompleto forma parte de M1, antes de cualquier proveedor o render. F1/F2 y edición textual mínima tienen evidencia M1/G1; los tramos audiovisuales/generación siguen diseñados, no probados. [Delivery](../plan/delivery.md) registra procedencia; [componentes](components.md) distingue UI existente/futura.
 
 ## F1 · Crear, guardar y retomar un borrador — M1
 
@@ -20,7 +20,7 @@ Cerrar → P1 Abrir proyecto → leer/validar JSON → mostrar mismo borrador
 
 **Medios y aprobación al reabrir:** reabrir un proyecto del workspace conserva la aprobación válida; si el contenido cambió, se muestra obsoleta por digest y no se borra. Conservar referencias no certifica la vigencia de medios: mostrar «Pendiente de validación» u «Obsoleto» y bloquear reproducción/exportación dependiente hasta resolver vínculo y revalidar procedencia y entradas. Si faltan vínculos o evidencia, conservar contenido sin tratarlo como actual ni regenerarlo automáticamente. La UX no introduce campos nuevos de procedencia.
 
-**Importar desde fuera o clonar:** importar un JSON externo o **Guardar copia portable** limpia `approval` con aviso explícito, conserva medios, referencias y `mediaBindings`, y registra la edición —revisión y fecha nuevas— antes del commit; la UI muestra «Sin aprobación», nunca «Pendiente de validación». Exportar exige una nueva aprobación editorial: un sello importado no se reutiliza como confianza local ni reanuda jobs.
+**Importar desde fuera o clonar:** conserva medios/referencias/bindings y limpia approval con aviso «Sin aprobación». Import sin colisión incrementa revisión/fecha si había approval; copia portable o import con colisión-copy crea identidad nueva/revisión 0/fechas nuevas. Exportar exige aprobación editorial nueva, nunca reanuda jobs ni gastos. No confundir revisión de un panel con sello parcial: solo hay una aprobación de contentDigest completo.
 
 **Fallo de guardado:** mantener borrador y estado dirty; conservar última revisión/hora confirmada; explicar permiso/espacio/conexión cuando se conozca; reintentar sin generar duplicados involuntarios. Si el proceso muere antes de la primera escritura exitosa, la edición en memoria puede perderse: no prometer autosave o recuperación inexistentes.
 
@@ -75,14 +75,14 @@ La invalidación avanza **solo hacia dependencias descendentes**. No reiniciar t
 
 | Cambio de entrada | Pasa a pendiente/obsoleto | Se conserva |
 | --- | --- | --- |
-| Texto de narración | Aprobación editorial pertinente, voz de los clips con texto cambiado, alineación y montaje/subtítulos/render dependientes. | Clips de texto e inputs de voz idénticos con vínculo vigente; versión aprobada anterior identificada. |
-| Inputs de voz (voz elegida, parámetros o velocidad de síntesis) | Voz y alineación dependientes, montaje, encaje temporal, subtítulos y render. | Texto y aprobación editorial si no cambiaron; entidades visuales. |
+| Texto de narración | Aprobación editorial única por contentDigest, voz de los clips con texto cambiado, alineación y montaje/subtítulos/render dependientes. | Clips de texto e inputs de voz idénticos con vínculo vigente; versión aprobada anterior identificada. |
+| Inputs de futura solicitud de voz (fuera del schema 1) | Propuesta de esa solicitud y alineación dependiente; al aceptar/cambiar medios del proyecto, también aprobación completa y render. | Texto y entidades visuales. La aprobación existente sigue coincidente solo mientras el contenido completo no cambie. |
 | Sustitución de audio | Vínculo/procedencia, alineación, encaje, montaje/subtítulos y render dependientes: requieren validación. | Texto y referencias previas; no solicitar síntesis por el mero reemplazo. |
 | Reordenar escenas con narraciones idénticas | Aprobación del orden, montaje/línea temporal global, subtítulos globales y render. | Clip de voz y alineación local de cada narración si inputs y vínculos siguen vigentes; no regenerar voz. |
 | Ajustar duración de escena | Revalidar encaje audio/escena, montaje y temporización dependiente; render. | Voz y alineación local si sus inputs no cambiaron. Si no encaja, bloquear salida y ofrecer ajuste manual; no síntesis automática ni gasto implícito. |
 | Estilo o preset visual | Compatibilidad/aprobación visual, previsualización y render; recursos incompatibles se señalan. | Guion y voz si el estilo no altera sus entradas. Si sí las altera, mostrar dependencias específicas. |
-| Recurso, cámara o luz de una escena | Previsualización y render afectados; aprobación visual pertinente. | Texto, audio y tiempos si no dependen de ese cambio. |
-| Apariencia/posición del subtítulo | Previsualización y render. | Voz y alineación. |
+| Recurso, cámara o luz de una escena | Previsualización/render afectados y aprobación editorial única obsoleta por digest, no sello visual separado. | Texto, audio y tiempos si no dependen de ese cambio. |
+| Apariencia/posición del subtítulo | Previsualización/render y aprobación completa si cambia contentDigest. | Voz y alineación. |
 
 Antes de regenerar, resumir alcance, entradas, reemplazos propuestos y eventual coste. Una solicitud usa una instantánea concreta. Si el borrador cambia mientras llega el resultado, guardarlo como resultado de la revisión anterior, no aplicarlo al borrador actual sin revisión.
 
@@ -198,8 +198,8 @@ Si no hay estimación fiable: «Coste no disponible; puede generar cargos en su 
 - [ ] Navegar y editar con teclado sin arrastre; foco vuelve al disparador al cerrar diálogo; errores tienen etiquetas y anuncio accesible en producto.
 - [ ] Verificar contraste, zoom 200 %, texto largo, 320–390 px, foco visible y movimiento reducido en Chromium. Estas comprobaciones no se han ejecutado sobre un producto.
 
-## Contratos pendientes de arquitectura
+## Contratos de arquitectura y ejecución
 
-Schema versionado y nombres exactos de campos; identificación/revisión de documento; escritura atómica y conflictos; límites de importación; resolución segura de recursos; retención de versiones aprobadas; estados de trabajos y reconciliación; almacenamiento separado de secretos. UX exige estos comportamientos, pero no inventa aquí un segundo schema incompatible con el plan técnico.
+Schema/identificación/revisiones/atomicidad/límites/importación y recursos ya tienen implementación M1. [API](../plan/api-contracts.md) especifica transporte actual y diseño de runtime, retención protegida, jobs/reconciliación y adaptadores todavía no disponibles. No inventar aquí un segundo schema ni historial portable; [tarjetas](../plan/implementation-tasks.md) define consumidores y oráculos.
 
-Nombres ya coordinados para continuidad: `entities`, `entityId`, `definitionVersion`; las instancias referencian entidades/versiones, no duplican diseños. Los campos restantes se alinean con arquitectura.
+Continuidad persistida: `entities`, `entityId`, `definitionVersion`; instancias referencian entidades/versiones. Continuidad de geometría/imagen se verificará en V02/V07, no se infiere de referencias válidas.

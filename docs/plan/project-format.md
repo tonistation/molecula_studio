@@ -1,6 +1,6 @@
 # Proyecto portable: JSON versionado y activos relativos
 
-**Desde M1**, el proyecto es un archivo `project.json` UTF-8 con `schemaVersion: 1`; puede estar incompleto y guardar sin render, voz ni proveedores. No usa base de datos ni incluye secretos. Este es el contrato propuesto para implementar un schema ejecutable en M1, no un validador ya existente.
+**Desde M1**, el proyecto es un archivo `project.json` UTF-8 con `schemaVersion: 1`; puede estar incompleto y guardar sin render, voz ni proveedores. No usa base de datos ni incluye secretos. El validador ejecutable ya existe en `src/shared/schema/` y la persistencia M1 tiene evidencia en [delivery](delivery.md). Las reglas audiovisuales/editoriales todavía requieren V02–H05; contrato de datos no equivale a renderer implementado. Transporte actual y DTO futuros: [API](api-contracts.md).
 
 ## Ruta normal y copia portable
 
@@ -40,7 +40,7 @@ Importar conserva `projectId` si no existe en destino; si colisiona, ofrecer abr
 |---|---|---|
 | `schemaVersion` | Entero, exactamente `1` | Selección de lector |
 | `projectId` | ID | Identidad estable del documento |
-| `revision` | Entero ≥0 | Incrementa por cada edición persistente |
+| `revision` | Entero ≥0 | Incrementa por transacción persistida; varias acciones UI pueden agruparse en un commit |
 | `title` | String 1–120 caracteres | Nombre visible, sin efecto de ruta |
 | `createdAt`, `updatedAt` | Fecha UTC | Auditoría de documento, no reloj de animación |
 | `idea` | String 0–4 000 caracteres | Brief incluso sin escenas |
@@ -125,7 +125,7 @@ Solo crear binding al aceptar explícitamente audio/alineación manual revisados
 
 Editar texto/locale invalida audio ligado al texto y palabras; mover cámara, cambiar orden, escala uniforme o colores no invalida voz ni alineación local. Cambiar duración solo revalida ajuste de audio/words, no obliga a regenerar voz si cabe. Seleccionar otro audio/offset invalida alineación; cambiar gain no invalida tiempos. Editar palabras requiere aceptar su nueva revisión. Tras revisión humana puede reaceptarse audio existente si realmente corresponde, o regenerarse mediante solicitud aparte: nunca se dispara proveedor automáticamente.
 
-`approval.approvedRevision` entero entre 0 y revisión raíz, `approvedAt` fecha UTC no posterior a `updatedAt`. Aprobar incrementa revisión raíz, fija esa revisión/fecha y digest actual, solo si no hay pendientes para la salida elegida. Modificar contenido conserva aprobación histórica pero la muestra obsoleta si el digest difiere. Abrir/guardar no la renueva. Importación externa/copia exige nueva revisión editorial con aviso; no reutiliza un sello importado como confianza local. Estos hashes son integridad/comparación, no firma de autoría ni garantía de que la voz diga el texto correcto.
+`approval.approvedRevision` entero entre 0 y revisión raíz, `approvedAt` fecha UTC no posterior a `updatedAt`. Aprobar prepara la transacción persistida con revisión raíz siguiente, esa fecha y digest actual, solo si no hay pendientes para la salida elegida; si se agrupa con guardar no consume dos incrementos artificiales. Existe un solo sello sobre contenido completo, no sellos por panel. Modificar contenido conserva aprobación histórica pero la muestra obsoleta si el digest difiere. Abrir/guardar no la renueva. Importación externa/copia exige nueva revisión editorial con aviso; no reutiliza un sello importado como confianza local. Estos hashes son integridad/comparación, no firma de autoría ni garantía de que la voz diga el texto correcto.
 
 Para exportar: verificar bindings/activos usados, elegir explícitamente `output.voiceMode` y `captionStyle.enabled`, aprobar contenido resultante y guardar. Estas opciones forman parte del digest de aprobación y del recibo de exportación. `silent` conserva audio/refs, pero excluye su consumo; `withVoice` exige audio actual disponible en cada escena. Si se usan palabras, su binding debe corresponder al audio consumido o a alineación manual sin audio. Cambiar de voz a silencio cambia el input de palabras a `audioTimingDigest: null`: exige revisar/aceptar tiempos para esa salida si antes dependían de audio, no los elimina ni declara actuales automáticamente. Una decisión de salida no cambia silenciosamente `audio` ni elimina palabras.
 
@@ -252,4 +252,4 @@ Ambos son completos como documentos schema 1, no fragmentos. No requieren binari
 
 Roundtrip requerido: parse → validate → guardar → cerrar todo → abrir → validate → comparar todos los campos de contenido, IDs, seed, revisiones, nulls y arrays. El serializer no cambia revisiones ni timestamps por abrir/guardar sin edición. Comparar semántica JSON, no orden de claves o whitespace.
 
-Añadir fixture de borrador con una escena `visual: null`, palabras vacías y audio faltante en manifest durante M1; conservarlo y relinkear en prueba real. Los dos ejemplos entregados no sustituyen ese test ni un schema ejecutable.
+El criterio de M1 de conservar/revincular borrador con `visual: null`, palabras vacías y audio faltante tiene evidencia F05/F08 en [delivery](delivery.md). Los dos ejemplos no sustituyen esas pruebas ni validan composición. Revisión de medios/aprobación audiovisual y conservación histórica protegida siguen en V04–V06/E06.

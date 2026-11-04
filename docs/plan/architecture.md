@@ -1,6 +1,6 @@
 # Arquitectura local con persistencia primero
 
-Baseline propuesto: **React + TypeScript + Vite**, companion Node.js local, composición Three.js + DOM/SVG y exportación por Chromium/Playwright + FFmpeg. No requiere base de datos ni servicios remotos. Es una selección técnica revisable, no una aprobación adicional del usuario ni una implementación existente.
+Baseline: **React + TypeScript + Vite** y companion Node.js local ya implementados en M1; composición Three.js + DOM/SVG y exportación Chromium/Playwright + FFmpeg todavía propuestas. No requiere DB ni servicios remotos. Estado/evidencia: [delivery](delivery.md). Contratos actuales y diseño futuro: [API](api-contracts.md); una decisión técnica no autoriza ejecución nativa, proveedores o gasto.
 
 ## Decisiones y alternativas descartadas por ahora
 
@@ -14,7 +14,7 @@ Baseline propuesto: **React + TypeScript + Vite**, companion Node.js local, comp
 | Sin Remotion, Motion Canvas ni Theatre en baseline | Evita solapar relojes y añadir una licencia comercial obligatoria de Remotion | Si un prototipo exige reemplazo, comparar un solo motor alternativo con evidencia |
 | JSON + activos relativos | Portable, inspeccionable y suficiente para v0.1 | Manejo explícito de activos faltantes y conflicto de archivo |
 
-Usar una línea **Node.js LTS soportada al iniciar M1**, verificar estado en la fuente oficial y fijar versión exacta después en entorno y CI. Este plan no inventa una versión vigente ni obliga a instalarla hoy. Elegir versiones compatibles y lockfile durante desarrollo, sin actualizaciones implícitas al abrir un proyecto.
+La selección histórica para M1 quedó fijada en `.nvmrc`, package/lock y [setup](../dev/setup.md#versiones-instaladas). No se verifica vigencia LTS ni se actualizan versiones en esta intervención documental; cualquier actualización futura exige evaluación explícita, nunca al abrir proyecto.
 
 ## Topología y límites de confianza
 
@@ -37,7 +37,7 @@ El render usa una página interna mínima, no la UI del editor. Carga únicament
 
 ## Módulos propuestos y responsabilidad
 
-Estos son nombres de responsabilidad para implementación futura, no archivos creados por el plan.
+Son responsabilidades lógicas: schema/store/estado editor ya existen; registry/composición/jobs/adaptadores siguen futuros. [Contexto](../../PROJECT_CONTEXT.md) distingue carpetas actuales/propuestas y [tarjetas](implementation-tasks.md) asigna archivos/dueños.
 
 | Módulo | Recibe | Entrega / no hace |
 |---|---|---|
@@ -58,8 +58,8 @@ Usar un único paquete compartido de schema/timeline entre estudio y companion. 
 ## Flujo de persistencia desde M1
 
 1. El usuario elige un workspace mediante el arranque local; no se entrega al navegador acceso al home completo.
-2. Nuevo proyecto crea modelo en memoria con `schemaVersion: 1`. Aún no existe un archivo.
-3. Guardar envía snapshot y revisión esperada al companion autenticado.
+2. Nuevo proyecto llama POST `/api/projects`: el companion crea modelo vacío `schemaVersion: 1`, carpetas y `project.json`, hace commit de revisión 0 y devuelve CreateResult con digest/recibo. No es creación solo en memoria; «Guardado» requiere recibo confirmado o verificación de uncertain. Si se pierde respuesta, reconciliar listado/lectura antes de repetir una creación no idempotente.
+3. Las ediciones posteriores viven en el draft dirty del navegador, sin autosave ni modificación del archivo ya creado. Guardar envía ese snapshot y revisión/digest esperados al companion autenticado para la siguiente transacción; hasta confirmarla se conserva el último canónico, inicialmente revisión 0. Los pasos siguientes describen el protocolo de commit, también usado por la creación.
 4. Companion valida otra vez, incorpora activos ya importados y escribe `project.json.tmp-<operationId>` en la misma carpeta.
 5. Fuerza vaciado del archivo, cierra y reemplaza `project.json` mediante rename atómico del mismo volumen; sincroniza directorio donde sea soportado.
 6. Solo después de éxito devuelve revisión y digest confirmados. La UI muestra «Guardado» únicamente para ese snapshot.
@@ -137,9 +137,11 @@ Los jobs no forman parte del JSON de proyecto. El companion conserva un journal 
 | `status`, `progress`, `errorCode` | Progreso real por frames/etapas; mensaje sanitizado |
 | `resultState` | `current` o `stale`, calculado al finalizar y al editar |
 
-Cada edición persistente incrementa `revision` del proyecto; cualquier cambio de contenido de una escena incrementa su `revision`. El planificador usa además digests de texto, voz, subtítulos y visuales para no invalidar trabajo independiente por una revisión de escena más amplia.
+Cada transacción persistida incrementa `revision` raíz; puede agrupar varias ediciones UI, cuya secuencia dirty es solo memoria. Cambiar contenido de escena incrementa su revisión. El planificador usa además digests de dependencias para no invalidar trabajo independiente por una revisión amplia. El riesgo estático de discrepancia payload/recibo en save actual se documenta en [API](api-contracts.md#revisiones-digests-y-recibos-existentes) y se prueba/corrige antes de nuevos consumidores en C01; no se oculta como garantía ya implementada.
 
 Un job aplica resultados solo si siguen coincidiendo sus dependencias. Si no, archiva propuesta como obsoleta y ofrece revisar; jamás sobrescribe. Una exportación puede terminar de su snapshot anterior, pero queda identificada como versión anterior.
+
+La política concreta de snapshots, journal/cache, protección de medios históricos/aprobaciones anteriores/propuestas tardías y rechazo antes de exceder cuota está en [retención local](api-contracts.md#retención-local-acotada--diseño-v06e06). Es diseño V04b/V06/E06, fuera del JSON portable; no hay historial ilimitado ni evicción silenciosa de evidencia protegida.
 
 El recibo local de exportación incluye digest de contenido, revisión, versión de renderer, modo explícito `withVoice`/`silent`, subtítulos habilitados, hash de MP4 y selección de activos verificados. El MP4 no se llama «actual» solo porque exista: comparar recibo con contenido, opciones y activos vigentes. Fuera del workspace, sin recibo verificable, es archivo externo sin vigencia acreditada. La aprobación editorial nunca sustituye autorización nueva de proveedor ni reanuda trabajos. El preflight de exportación exige aprobación coincidente y bindings actuales de los medios consumidos, sin impedir guardar borradores obsoletos.
 
@@ -161,6 +163,7 @@ Defaults propuestos para implementar y medir, **no mediciones realizadas**:
 | Buffers | Hasta 2 frames crudos/PNG pendientes; pausar productor por backpressure |
 | Memoria | Objetivo de worker combinado ≤2 GiB RSS; watchdog a 2 GiB con aborto; límite duro OS si disponible |
 | Encoder | Máximo 2 threads configurados; validar salida antes de publicar |
+| Salida y retención local | Diseño acotado de MP4/snapshots/propuestas/cache en [API](api-contracts.md#retención-local-acotada--diseño-v06e06); reserva previa y rechazo, no evicción de evidencia protegida |
 | Red de renderer | Denegar todo salvo origen interno y rutas de activos del snapshot |
 
 El watchdog RSS es un mecanismo de aborto, no una garantía de sandbox de memoria; documentar capacidad real del sistema operativo. Si no se puede medir árbol completo y detener hijos, gate de render no se considera cumplido. El disco se mide durante trabajo y al recibir chunks, no solo al comenzar.

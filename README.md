@@ -2,7 +2,7 @@
 
 Plan de una aplicación local para crear videos animados verticales a partir de guiones, escenas, voz y subtítulos. La visión contempla varios estilos; la primera entrega propone un único estilo 3D.
 
-**Estado: implementación de M1 en curso.** Ya existen el schema ejecutable, el `ProjectStore` con commits atómicos, la frontera HTTP local del companion y un estudio mínimo en React para crear/editar/guardar/reabrir borradores. Todavía **no** hay render, voz, proveedores ni exportación MP4; nada de eso se declara disponible.
+**Estado: M1/G1 técnico local cerrado y V01 implementado/revisado** (base `cbfc125`). Existen schema ejecutable, `ProjectStore`, companion HTTP y estudio React para crear/editar/guardar/reabrir borradores; V01 añade reloj/selección de escena, no composición. Todavía **no** hay render, voz sintética, proveedores ni exportación MP4. Véanse [contexto de una página](PROJECT_CONTEXT.md), [evidencia](docs/plan/delivery.md) y [18 unidades pendientes](docs/plan/implementation-tasks.md).
 
 ## Ejecutar localmente
 
@@ -33,7 +33,7 @@ Para abrir los bosquejos en macOS desde la raíz del repositorio:
 open docs/ux/wireframes.html
 ```
 
-Es una propuesta visual estática, no la aplicación ni una prueba de persistencia o renderizado. No requiere iniciar un servidor de producto. Los documentos enlazados se están integrando; los enlaces pendientes no representan funciones implementadas.
+El HTML es una propuesta visual estática, no la aplicación ni una prueba de persistencia o renderizado. Para leer esas láminas no hace falta iniciar el companion. [Componentes/layout](docs/ux/components.md) distingue UI existente de diseño futuro; no hay aprobación estética humana implícita.
 
 ## Mapa de documentación
 
@@ -43,14 +43,16 @@ Es una propuesta visual estática, no la aplicación ni una prueba de persistenc
 | [Arquitectura](docs/plan/architecture.md) | Componentes propuestos, límites y riesgos técnicos |
 | [Entrega](docs/plan/delivery.md) | Hitos M0–M4 y evidencias necesarias para avanzar |
 | [Formato de proyecto](docs/plan/project-format.md) | Persistencia JSON y recuperación de trabajo parcial |
+| [API y datos de ejecución](docs/plan/api-contracts.md) | Ocho operaciones actuales y contratos futuros explícitamente no disponibles |
+| [Tarjetas de implementación](docs/plan/implementation-tasks.md) | Dependencias, propiedad, pruebas rojas, gates y delegación posterior |
 | [Experiencia de usuario](docs/ux/README.md) | [Pantallas](docs/ux/screens.md), [flujos](docs/ux/flows.md) y bosquejos |
 | [Especificación original](docs/reference/original-specification.md) | Referencia histórica inmutable, no contrato actualizado |
 | [Orientación de desarrollo](CLAUDE.md) | Reglas para futuras contribuciones |
 
 ## Límites actuales
 
-**Continuidad visual requerida:** personajes y objetos deben conservar identidad y proporciones entre escenas. Se propone un registro de entidades reutilizables en el JSON; cada aparición referencia `entityId` y versión, con estado por escena y proporciones bloqueadas. Las variantes deben ser intencionales, sin editor avanzado en el MVP. Renderizar mediante código no garantiza continuidad si cada escena regenera sus entidades. Véase [continuidad visual](docs/plan/visual-continuity.md), pendiente de integración.
+**Continuidad visual requerida:** el JSON ya conserva entidades reutilizables; cada aparición referencia `entityId` y versión. La continuidad de datos está probada, no la geometría/render aún inexistentes. Las variantes deben ser intencionales, sin editor avanzado en el MVP. Véase [continuidad visual](docs/plan/visual-continuity.md) y V02/V07 para sus oráculos.
 
-La primera fase implementada cubre persistencia y recuperación, no generación: guardar solo confirma tras verificar los bytes en disco, y un fallo de escritura conserva la revisión anterior. El render, la voz sintética y la exportación pertenecen a M2/M3 y requieren trabajo y autorización propios. No se afirma rendimiento, calidad de exportación ni reproducibilidad comprobada.
+La primera fase implementada cubre persistencia y recuperación, no generación: guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. El render, voz sintética y exportación pertenecen a M2/M3 y requieren trabajo/permisos propios. No se afirma rendimiento, calidad de exportación ni reproducibilidad audiovisual comprobada. Riesgos estáticos adicionales de revisión de save/retención están documentados en [API](docs/plan/api-contracts.md), sin fixes funcionales en esta intervención.
 
 Repositorio de referencia: [tonistation/molecula_studio](https://github.com/tonistation/molecula_studio).

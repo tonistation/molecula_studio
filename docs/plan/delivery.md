@@ -2,6 +2,8 @@
 
 El desarrollo se organiza en incrementos completos: **M0 plan → M1 guardar/reabrir → M2 prueba audiovisual determinista → M3 editor/adaptadores → M4 validación v0.1**. El plan original se conserva como contrato; la evidencia local de M1 se registra por criterio a continuación, sin declarar aprobado el producto completo.
 
+**Estado base `cbfc125`: 9/27 unidades completas (F01–F08 y V01); 18 pendientes.** Este archivo es índice de hitos/evidencia, no contiene todas las instrucciones de programación. Ver [tarjetas detalladas](implementation-tasks.md), [API](api-contracts.md), [componentes UI](../ux/components.md) y [PRD/trazabilidad](requirements.md). La intervención actual solo actualiza documentación: no se repitieron 305 pruebas/25 E2E históricos ni se inicia V02. Revisión documental fresca siguiente; C01 antes de nuevos consumidores, con gates externos explícitos.
+
 ## Reglas de ejecución futura
 
 1. Tomar una unidad de comportamiento, escribir primero su prueba fallida y registrar la causa esperada.
@@ -26,7 +28,7 @@ No instalar dependencias, activar servicios, leer secretos, ejecutar proveedores
 | P04 | Integrar bosquejos UX | P01–P03 | Crear/guardar/abrir/incompleto/error/faltantes/cancelación representados |
 | P05 | Revisión cruzada del plan | P01–P04 | Sin contradicciones de IDs, unidades, estados, fases o estilos |
 
-**Gate G0:** revisión documental completa y pendientes explícitos. No equivale a PASS del producto. Esta solicitud termina en M0; M1 queda preparado, sin una aprobación rutinaria nueva de cada decisión técnica propuesta.
+**Gate G0 histórico:** revisión documental y pendientes explícitos, no PASS del producto. M1 se ejecutó después con su propia autorización/evidencia; esta actualización documental no reinicia M0 ni habilita el siguiente código automáticamente.
 
 ## M1 — Estudio offline que no pierde el borrador
 
@@ -137,7 +139,7 @@ No basta una pantalla negra con un archivo MP4 válido. Deben verse personaje y 
 
 **Gate de proveedor independiente:** verificar términos, límites, unidad de timestamps, mecanismo de idempotencia y estimación de costo del servicio elegido. Solicitar autorización explícita de uso facturable con presupuesto antes de E05. No requerir ni leer claves para E01–E04. No inferir aprobación a partir de un botón genérico de «continuar» o de abrir un proyecto.
 
-**Gate G3:** edición completa con save/reopen e invalidación probadas; generadores fake claramente identificados. Si E05 se realizó, documentar alcance exacto; si no, la aplicación no promete generación real.
+**Gate G3:** E01–E04 y E06 completos con save/reopen, invalidación/recuperación probadas; generadores fake claramente identificados. E05 es opcional y no bloquea G3 ni v0.1 offline. Si se realizó, documentar alcance exacto; si no, la aplicación no promete generación real.
 
 ## M4 — Portabilidad, calidad y cierre v0.1
 
@@ -203,6 +205,10 @@ Capturar console/runtime errors explícitamente; una navegación exitosa no demu
 | Proveedores | No activados | Gate independiente, E05 opcional autorizado |
 | Seguridad y licencias | Riesgos identificados | H01/H04, revisión independiente |
 
+La revisión documental posterior detectó por fuente un riesgo de discrepancia entre revisión enviada y recibo de save; **no se reprodujo ni corrigió** aquí. C01 contiene test rojo/guard estrecho antes de nuevos consumidores; [API](api-contracts.md#revisiones-digests-y-recibos-existentes) distingue comportamiento actual de garantía pendiente. La evidencia histórica de G1/V01 conserva su alcance, no prueba ese caso adicional.
+
+También se constató que relink actual intenta borrar el archivo reemplazado tras confirmed; la preservación de medios de snapshots aprobados **todavía no existe**. V04b debe probar/cambiar esa política antes de aprobación audiovisual; V06/E06 completan retención acotada. No atribuir esa garantía futura a F05/F08.
+
 No se asignan fechas ni duración estimada sin implementación/mediciones. Si un gate falla, se corrige la unidad relacionada antes de agregar nuevas capacidades; no se oculta el fallo tras una fase adicional.
 
 ## Riesgos y respuesta acotada
@@ -228,5 +234,5 @@ No se asignan fechas ni duración estimada sin implementación/mediciones. Si un
 - Elementos reutilizables tienen identidad estable; primeros diseños bloqueados. Transformar/mover no rediseña; variante/global son operaciones distintas, sin editor 3D completo.
 - Progreso/cancelación/exportación de versión anterior son estados diferenciados.
 - Voz ausente requiere elección explícita para salida silenciosa.
-- `upper` es anchor válido y default inicial; `center`/`lower` siguen disponibles. Audio/words «sin verificar» u «obsoletos» se conservan; revisar/aceptar, regenerar autorizado o excluir su uso, nunca marcar actuales al abrir. Importar/copia pide nueva aprobación editorial, no gasto ni reanudación de jobs.
+- `upper` es anchor válido y default inicial; `center`/`lower` siguen disponibles. Audio/words «sin verificar» u «obsoletos» se conservan; revisar/aceptar, regenerar autorizado o excluir su uso, nunca marcar actuales al abrir. Importar/copia pide nueva aprobación editorial única de contentDigest completo, no sellos parciales, gasto ni reanudación de jobs.
 - Ninguna pantalla debe sugerir que la planificación ya pasó pruebas de producto.
