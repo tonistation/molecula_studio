@@ -260,13 +260,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   if (suffix === 'copy') {
     if (assetId !== undefined) throw new HttpError(404, 'not-found', 'unknown endpoint');
     if (method !== 'POST') throw methodNotAllowed('POST');
-    const body = await readJsonBody(req);
+    const body = await readJsonBody(req, IMPORT_BODY_LIMIT);
     const record = body === undefined ? {} : requireObject(body);
     const newProjectId = record.newProjectId;
     if (newProjectId !== undefined && typeof newProjectId !== 'string') {
       throw new HttpError(400, 'invalid-argument', 'newProjectId must be a string');
     }
-    const copied = await store.saveCopy(newProjectId === undefined ? { projectId } : { projectId, newProjectId });
+    const text = record.text;
+    if (text !== undefined && typeof text !== 'string') throw new HttpError(400, 'invalid-argument', 'text must be a project JSON string');
+    const operationId = record.operationId;
+    if (operationId !== undefined && typeof operationId !== 'string') throw new HttpError(400, 'invalid-argument', 'operationId must be a string');
+    const copied = await store.saveCopy({ projectId, newProjectId, text, operationId });
     sendJson(res, 201, copied);
     return;
   }
@@ -305,6 +309,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     const body = requireObject(await readJsonBody(req));
     const expectedRevision = body.expectedRevision;
     const operationId = body.operationId;
+    const expectedDigest = body.expectedDigest;
+    if (expectedDigest !== undefined && (typeof expectedDigest !== 'string' || !/^[a-f0-9]{64}$/.test(expectedDigest))) {
+      throw new HttpError(400, 'invalid-argument', 'expectedDigest must be a lowercase SHA-256 digest');
+    }
     if (typeof expectedRevision !== 'number' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
       throw new HttpError(400, 'invalid-argument', 'expectedRevision must be a non-negative safe integer');
     }
@@ -319,6 +327,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       projectId,
       project: project as never,
       expectedRevision,
+      expectedDigest,
       operationId,
     });
     sendJson(res, 200, saved);

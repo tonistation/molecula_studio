@@ -98,6 +98,7 @@ export interface SaveArgs {
   projectId: string;
   project: Project;
   expectedRevision: number;
+  expectedDigest?: string;
   operationId: string;
 }
 
@@ -110,6 +111,9 @@ export interface SaveResult {
 export interface CopyArgs {
   projectId: string;
   newProjectId?: string;
+  /** Validated serialized editor snapshot; omitted only for disk-only callers. */
+  text?: string;
+  operationId?: string;
 }
 
 export interface CopyResult {
@@ -194,6 +198,7 @@ export interface TempReport {
  * - Crash leftovers surface as orphan temps; they are never auto-promoted.
  */
 export class ProjectStore {
+  readonly #copyOperations = new Map<string, { fingerprint: string; result: CopyResult }>();
   readonly #fs: FsOps;
   readonly #now: () => Date;
   readonly #workspaceRoot: string;
@@ -387,6 +392,9 @@ export class ProjectStore {
     if (args.expectedRevision < 0 || !Number.isSafeInteger(args.expectedRevision)) {
       throw new InvalidArgumentError('expectedRevision must be a non-negative safe integer');
     }
+    if (args.expectedDigest !== undefined && !/^[a-f0-9]{64}$/.test(args.expectedDigest)) {
+      throw new InvalidArgumentError('expectedDigest must be a lowercase SHA-256 digest');
+    }
     this.#assertEditablePayload(args.project, args.projectId);
 
     const bytes = this.#encode(args.project);
@@ -426,11 +434,12 @@ export class ProjectStore {
         });
       }
       const lastSeen = this.#lastSeen.get(args.projectId);
-      if (lastSeen !== undefined && lastSeen.revision === args.expectedRevision && lastSeen.digest !== current.digest) {
+      const expectedDigest = args.expectedDigest ?? (lastSeen?.revision === args.expectedRevision ? lastSeen.digest : undefined);
+      if (expectedDigest !== undefined && expectedDigest !== current.digest) {
         throw new ConflictError({
           projectId: args.projectId,
           reason: 'digest',
-          expectedDigest: lastSeen.digest,
+          expectedDigest,
           actualDigest: current.digest,
         });
       }
@@ -460,15 +469,42 @@ export class ProjectStore {
   async saveCopy(args: CopyArgs): Promise<CopyResult> {
     this.#assertReady();
     assertValidProjectId(args.projectId);
-    const source = await this.readProject(args.projectId);
+    if (args.operationId !== undefined && !isValidOperationId(args.operationId)) throw new InvalidOperationIdError(args.operationId);
+    // A supplied recovery snapshot is independent of damaged canonical JSON.
+    // The authorized source directory and every asset remain path-checked.
+    let snapshot: Project;
+    if (args.text !== undefined) {
+      const parsed = parseProjectText(args.text);
+      if (!parsed.ok) throw new InvalidProjectError(args.projectId, parsed.failure, parsed.issues);
+      if (parsed.project.projectId !== args.projectId) throw new InvalidArgumentError('copy snapshot projectId must match source');
+      snapshot = parsed.project;
+      await this.#checkProjectDirectory(args.projectId);
+      const file = this.#projectFile(args.projectId);
+      const stats = await this.#lstatOrNull(file);
+      if (stats !== null && (stats.isSymbolicLink() || !stats.isFile())) {
+        throw new UnsafePathError(file, 'project.json must be a plain regular file');
+      }
+    } else {
+      // Disk-only copies still require valid JSON and never refresh lastSeen.
+      snapshot = (await this.#readBytes(args.projectId)).project;
+    }
 
+    const fingerprint = await sha256Hex(new TextEncoder().encode(JSON.stringify({
+      newProjectId: args.newProjectId, text: serializeProject(snapshot),
+    })));
+    const operationKey = args.operationId === undefined ? undefined : receiptKeyOf(args.projectId, args.operationId);
     return this.#withWorkspace(async () => {
+      const previous = operationKey === undefined ? undefined : this.#copyOperations.get(operationKey);
+      if (previous !== undefined) {
+        if (previous.fingerprint !== fingerprint) throw new ConflictError({ projectId: args.projectId, reason: 'operation', operationId: args.operationId });
+        return previous.result;
+      }
       const stage = await this.#createStageDir(args.newProjectId);
       try {
         // A copy gets a fresh identity: new projectId, revision 0, new dates
         // and a cleared approval (project-format.md: portable copy rules).
         const copyProject: Project = {
-          ...source.project,
+          ...snapshot,
           projectId: stage.projectId,
           revision: 0,
           createdAt: this.#isoNow(),
@@ -485,8 +521,8 @@ export class ProjectStore {
         await this.#fs.writeFile(join(stage.dir, PROJECT_FILE), bytes);
         await this.#fs.syncFile(join(stage.dir, PROJECT_FILE));
 
-        const missingAssets = await this.#copyAssetsIntoStage(args.projectId, source.project, stage.dir);
-        if (source.project.assets.length > 0) await this.#fs.syncDir(join(stage.dir, ASSETS_DIR));
+        const missingAssets = await this.#copyAssetsIntoStage(args.projectId, snapshot, stage.dir);
+        if (snapshot.assets.length > 0) await this.#fs.syncDir(join(stage.dir, ASSETS_DIR));
         await this.#fs.syncDir(stage.dir);
 
         const target = this.#projectDir(stage.projectId);
@@ -508,18 +544,20 @@ export class ProjectStore {
           projectId: stage.projectId,
           revision: 0,
           digest,
-          operationId: newOperationId(),
+          operationId: args.operationId ?? newOperationId(),
           committedAt: this.#isoNow(),
           sync: uncertain ? 'uncertain' : 'confirmed',
         };
         this.#remember(stage.projectId, 0, digest);
-        return {
+        const result: CopyResult = {
           projectId: stage.projectId,
           receipt,
           revision: 0,
           digest,
           missingAssets,
         };
+        if (operationKey !== undefined) this.#copyOperations.set(operationKey, { fingerprint, result });
+        return result;
       } finally {
         // After a rename the stage no longer exists; force:false keeps rm
         // harmless in that case and never touches other paths.
@@ -948,6 +986,18 @@ export class ProjectStore {
     return join(this.#projectDir(projectId), PROJECT_FILE);
   }
 
+  async #checkProjectDirectory(projectId: string): Promise<void> {
+    const dir = this.#projectDir(projectId);
+    const stats = await this.#lstatOrNull(dir);
+    if (stats === null) throw new ProjectNotFoundError(projectId);
+    if (stats.isSymbolicLink() || !stats.isDirectory()) {
+      throw new UnsafePathError(dir, 'project entry must be a plain directory');
+    }
+    if (await this.#fs.realpath(dir) !== join(this.#root, projectId)) {
+      throw new UnsafePathError(dir, 'project directory resolves outside the workspace');
+    }
+  }
+
   async #listProjectDirs(): Promise<string[]> {
     const entries = await this.#fs.readdir(this.#root);
     const dirs: string[] = [];
@@ -1051,16 +1101,7 @@ export class ProjectStore {
     raw: string;
     mode: ProjectMode;
   }> {
-    const dir = this.#projectDir(projectId);
-    const dirStats = await this.#lstatOrNull(dir);
-    if (dirStats === null) throw new ProjectNotFoundError(projectId);
-    if (dirStats.isSymbolicLink() || !dirStats.isDirectory()) {
-      throw new UnsafePathError(dir, 'project entry must be a plain directory');
-    }
-    const expectedDir = join(this.#root, projectId);
-    if ((await this.#fs.realpath(dir)) !== expectedDir) {
-      throw new UnsafePathError(dir, 'project directory resolves outside the workspace');
-    }
+    await this.#checkProjectDirectory(projectId);
 
     let fileStats: FsStats;
     try {
@@ -1082,7 +1123,7 @@ export class ProjectStore {
       project: outcome.project,
       revision: outcome.project.revision,
       digest: await sha256Hex(bytes),
-      raw: new TextDecoder().decode(bytes),
+      raw: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes),
       mode: outcome.mode,
     };
   }

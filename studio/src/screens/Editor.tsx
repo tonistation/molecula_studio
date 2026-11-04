@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { Asset, Project, ProjectMode, Scene } from '../../../src/shared/schema/types.ts';
+import { serializeProject } from '../../../src/shared/schema/serialize.ts';
 import { AssetManifest } from './AssetManifest.tsx';
-import { ApiError, api, describeError, type ReadResult } from '../api.ts';
+import { ApiError, api, describeError, type ReadResult, type SaveResult } from '../api.ts';
 import {
   createScene,
   downloadJson,
+  downloadSnapshot,
   parseSceneSeconds,
   sceneHasContent,
   sceneSeconds,
+  snapshotTimestamp,
   titleOrFallback,
   withScenes,
 } from '../model.ts';
@@ -17,7 +20,7 @@ interface EditorProps {
   opened: ReadResult;
   importNotice?: string | undefined;
   onBack: () => void;
-  onOpenProject: (projectId: string) => Promise<void>;
+  onOpenProject: (projectId: string, importNotice?: string) => Promise<void>;
 }
 
 /**
@@ -28,6 +31,8 @@ interface EditorProps {
  */
 export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorProps) {
   const [draft, setDraft] = useState<Project>(opened.project);
+  const [mode, setMode] = useState<ProjectMode>(opened.mode);
+  const [readOnlyRaw, setReadOnlyRaw] = useState(opened.raw);
   const [confirmedRevision, setConfirmedRevision] = useState(opened.revision);
   const [digest, setDigest] = useState(opened.digest);
   const [dirty, setDirty] = useState(false);
@@ -36,86 +41,144 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
   const [notice, setNotice] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const [transition, setTransition] = useState<'back' | 'reload' | 'copy' | null>(null);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const operationLock = useRef(false);
+  const pendingSave = useRef<{
+    project: Project; expectedRevision: number; expectedDigest: string; operationId: string; sequence: number;
+    ambiguous?: boolean; result?: SaveResult;
+  } | null>(null);
+  const pendingCopy = useRef<{ id: string; text: string; operationId: string } | null>(null);
   const [missingAssets, setMissingAssets] = useState(opened.missingAssets);
   const [relinking, setRelinking] = useState(false);
   const relinkLock = useRef(false);
   const live = useRef({ draft, dirty, saving, confirmedRevision, digest });
-  live.current = { draft, dirty, saving, confirmedRevision, digest };
+  useEffect(() => { live.current = { draft, dirty, saving, confirmedRevision, digest }; });
   const editSequence = useRef(0);
-  const mode: ProjectMode = opened.mode;
   const readOnly = mode === 'read-only';
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
-      if (!dirty && !saving && !relinking) return;
+      if (!live.current.dirty && !operationLock.current && !relinkLock.current) return;
       event.preventDefault();
       event.returnValue = '';
     };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty, saving, relinking]);
+  }, []);
 
   const edit = (mutate: (project: Project) => Project) => {
     if (readOnly || relinkLock.current) return;
-    setDraft((previous) => mutate(structuredClone(previous)));
+    const next = mutate(structuredClone(live.current.draft));
+    live.current.draft = next;
+    setDraft(next);
     editSequence.current += 1;
     live.current.dirty = true;
     setDirty(true);
     setNotice(null);
-    setConflict(false);
   };
 
-  const save = async () => {
-    if (readOnly || saving || relinkLock.current) return;
+  const acceptSave = (result: SaveResult, sent: NonNullable<typeof pendingSave.current>) => {
+    setConfirmedRevision(result.revision);
+    setDigest(result.digest);
+    live.current.confirmedRevision = result.revision;
+    live.current.digest = result.digest;
+    const clean = editSequence.current === sent.sequence;
+    const next = clean ? sent.project : { ...live.current.draft, revision: result.revision, updatedAt: sent.project.updatedAt };
+    setDraft(next);
+    live.current.draft = next;
+    setDirty(!clean);
+    live.current.dirty = !clean;
+    pendingSave.current = null;
+    setNeedsVerification(false);
+    setNotice(`Guardado · rev. ${result.revision}${clean ? '' : '. La instantánea enviada se guardó; hay cambios posteriores sin guardar.'}`);
+    return clean;
+  };
+
+  const verifyCanonicalSave = async (projectId: string, result: SaveResult) => {
+    const fresh = await api.read(projectId);
+    if (fresh.digest !== result.digest || fresh.revision !== result.revision) {
+      throw new ApiError(409, 'conflict', 'El disco no coincide con la instantánea enviada.');
+    }
+  };
+
+  const save = async (): Promise<boolean> => {
+    if (readOnly || operationLock.current || relinkLock.current || pendingSave.current?.result !== undefined) return false;
+    operationLock.current = true;
     setSaving(true);
     live.current.saving = true;
     setError(null);
     setNotice(null);
     setConflict(false);
-    const sentSequence = editSequence.current;
-    const payload: Project = {
-      ...draft,
-      title: titleOrFallback(draft.title),
-      revision: confirmedRevision + 1,
-      updatedAt: new Date().toISOString(),
+    const current = live.current;
+    const sent: NonNullable<typeof pendingSave.current> = pendingSave.current ?? {
+      project: { ...current.draft, title: titleOrFallback(current.draft.title),
+        revision: current.confirmedRevision + 1, updatedAt: snapshotTimestamp(current.draft) },
+      expectedRevision: current.confirmedRevision, expectedDigest: current.digest, operationId: crypto.randomUUID(), sequence: editSequence.current,
     };
+    pendingSave.current = sent;
     try {
-      const result = await api.save(draft.projectId, {
-        project: payload,
-        expectedRevision: confirmedRevision,
-        operationId: crypto.randomUUID(),
+      const result = await api.save(sent.project.projectId, {
+        project: sent.project,
+        expectedRevision: sent.expectedRevision,
+        expectedDigest: sent.expectedDigest,
+        operationId: sent.operationId,
       });
-      setConfirmedRevision(result.revision);
-      setDigest(result.digest);
-      if (editSequence.current === sentSequence) {
-        setDraft(payload);
-        setDirty(false);
+      if (result.receipt.sync === 'uncertain') {
+        sent.result = result;
+        setNeedsVerification(true);
+        return false;
       }
-      setNotice(
-        result.receipt.sync === 'uncertain'
-          ? `Guardado · rev. ${result.revision} (verificación de disco pendiente)`
-          : `Guardado · rev. ${result.revision}`,
-      );
+      // A replay proves a historical commit, not the current canonical file.
+      if (sent.ambiguous) await verifyCanonicalSave(sent.project.projectId, result);
+      return acceptSave(result, sent);
     } catch (caught) {
-      setError(describeError(caught));
-      setConflict(caught instanceof ApiError && caught.code === 'conflict');
+      const isConflict = caught instanceof ApiError && caught.code === 'conflict';
+      const rejected = caught instanceof ApiError && caught.status >= 400 && caught.status < 500;
+      if (rejected) pendingSave.current = null;
+      else sent.ambiguous = true;
+      setError(`${describeError(caught)} Sus cambios siguen abiertos.${rejected ? '' : ' Reintentar enviará la misma instantánea, sin duplicar la operación.'}`);
+      setConflict(isConflict);
+      return false;
     } finally {
+      operationLock.current = false;
+      live.current.saving = false;
       setSaving(false);
     }
   };
 
+  const verifySave = async () => {
+    const sent = pendingSave.current;
+    if (!sent?.result || operationLock.current || relinkLock.current) return;
+    operationLock.current = true;
+    setSaving(true);
+    setError(null);
+    try {
+      await verifyCanonicalSave(sent.project.projectId, sent.result);
+      acceptSave(sent.result, sent);
+    } catch (caught) {
+      setError(describeError(caught));
+      setConflict(caught instanceof ApiError && caught.code === 'conflict');
+    } finally { operationLock.current = false; setSaving(false); }
+  };
+
   const reload = async () => {
-    if (saving || relinkLock.current) return;
-    if (dirty && !window.confirm('Se perderán los cambios sin guardar. ¿Recargar desde disco?')) return;
+    if (operationLock.current || relinkLock.current) return;
     setRelinking(true);
     relinkLock.current = true;
     try {
-      const fresh = await api.read(draft.projectId);
+      const fresh = await api.read(live.current.draft.projectId);
       setDraft(fresh.project);
+      setMode(fresh.mode);
+      setReadOnlyRaw(fresh.raw);
       setConfirmedRevision(fresh.revision);
       setDigest(fresh.digest);
       setMissingAssets(fresh.missingAssets);
       setDirty(false);
+      live.current = { draft: fresh.project, dirty: false, saving: false, confirmedRevision: fresh.revision, digest: fresh.digest };
+      pendingSave.current = null;
+      setNeedsVerification(false);
       setError(null);
       setConflict(false);
       setNotice(`Recargado desde disco · rev. ${fresh.revision}`);
@@ -126,7 +189,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
 
   const relink = async (asset: Asset, bytes: Uint8Array, replace: boolean) => {
     const current = live.current;
-    if (current.dirty || current.saving || readOnly || relinkLock.current) throw new Error('Guarde los cambios antes de revincular.');
+    if (current.dirty || operationLock.current || current.saving || readOnly || relinkLock.current) throw new Error('Guarde los cambios antes de revincular.');
     relinkLock.current = true;
     setRelinking(true);
     setError(null);
@@ -143,34 +206,67 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
   };
 
   const copyPortable = async () => {
+    if (operationLock.current || relinkLock.current) return;
+    operationLock.current = true;
     setSaving(true);
     setError(null);
     setNotice(null);
+    const request = pendingCopy.current ?? {
+      id: `p-${crypto.randomUUID().replaceAll('-', '')}`,
+      operationId: crypto.randomUUID(),
+      text: serializeProject({ ...live.current.draft, title: titleOrFallback(live.current.draft.title) }),
+    };
+    pendingCopy.current = request;
     try {
-      const result = await api.copy(draft.projectId);
+      const result = await api.copy(live.current.draft.projectId, request.id, request.text, request.operationId);
       setCopiedId(result.projectId);
       const missing = result.missingAssets.length > 0
         ? ` Faltan activos: ${result.missingAssets.join(', ')}; la copia queda como borrador, no «completa».`
         : '';
-      setNotice(`Copia portable creada: ${result.projectId}.${missing}${result.receipt.sync === 'uncertain' ? ' Persistencia incierta: verificación de disco pendiente.' : ''}`);
+      setCopyNotice(`${result.receipt.sync === 'uncertain' ? 'Persistencia de copia incierta; revise el destino' : 'Copia portable creada'}: ${result.projectId}. Sin aprobación: se requiere nueva revisión editorial.${missing} Corresponde a la instantánea enviada; el estado del proyecto de origen no cambia.`);
+      pendingCopy.current = null;
     } catch (caught) {
+      const rejected = caught instanceof ApiError && caught.status >= 400 && caught.status < 500 && caught.code !== 'project-exists' && caught.code !== 'conflict';
+      if (rejected) {
+        pendingCopy.current = null;
+        setCopiedId(null);
+        setCopyNotice(null);
+      } else {
+        setCopiedId(request.id);
+        setCopyNotice(`Destino reservado: ${request.id}. No se confirma la copia. Puede abrirlo para revisar si fue publicado. El reintento conserva el mismo destino y la misma instantánea.`);
+      }
       setError(describeError(caught));
     } finally {
+      operationLock.current = false;
       setSaving(false);
     }
   };
 
   const download = () => {
-    downloadJson(draft);
-    setNotice('Descarga solicitada: no incluye activos, no confirma guardado y no limpia «sin guardar».');
+    try {
+      const current = live.current;
+      downloadJson(readOnly ? current.draft : downloadSnapshot(current.draft, current.dirty), readOnly ? readOnlyRaw : undefined);
+      setNotice(`Descarga solicitada${current.dirty ? ' con cambios no guardados' : ''}: solo configuración; recursos no incluidos. No confirma escritura del navegador ni guardado canónico y no limpia «sin guardar». ${readOnly ? 'Original de solo lectura sin modificar; la importación exige nueva aprobación.' : 'Sin aprobación en la descarga: requiere nueva revisión editorial.'}`);
+    } catch (caught) { setError(describeError(caught)); }
   };
 
-  const back = () => {
-    if (saving || relinkLock.current) return;
-    if (dirty && !window.confirm('Hay cambios sin guardar. ¿Salir igual? Se perderán los cambios no guardados.')) {
-      return;
-    }
-    onBack();
+  const continueTransition = async (target: NonNullable<typeof transition>) => {
+    if (operationLock.current || relinkLock.current) return;
+    if (target === 'back') { onBack(); return; }
+    if (target === 'reload') { await reload(); setTransition(null); return; }
+    if (copiedId === null) return;
+    relinkLock.current = true;
+    setRelinking(true);
+    try {
+      await onOpenProject(copiedId, 'Sin aprobación: la copia requiere una nueva revisión editorial. Los medios y vínculos históricos no se renuevan.');
+    } catch (caught) { setError(describeError(caught)); }
+    finally { relinkLock.current = false; setRelinking(false); setTransition(null); }
+  };
+
+  const requestTransition = (target: NonNullable<typeof transition>) => {
+    if (operationLock.current || relinkLock.current) return;
+    if (live.current.dirty) setTransition(target);
+    else void continueTransition(target);
   };
 
   const updateScene = (index: number, mutate: (scene: Scene) => void) => {
@@ -232,7 +328,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
           </p>
         </div>
         <div className="editor-actions">
-          <button type="button" className="ghost" onClick={back} disabled={saving}>
+          <button type="button" className="ghost" onClick={() => requestTransition('back')} disabled={saving}>
             Proyectos
           </button>
           <button type="button" className="ghost" onClick={download}>
@@ -241,11 +337,33 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
           <button type="button" className="ghost" onClick={() => void copyPortable()} disabled={saving}>
             Copia portable
           </button>
-          <button type="button" className="primary" onClick={() => void save()} disabled={readOnly || saving || !dirty}>
+          <button type="button" className="primary" onClick={() => void save()} disabled={readOnly || saving || !dirty || needsVerification}>
             {saving ? 'Guardando…' : 'Guardar'}
           </button>
         </div>
       </header>
+
+      {transition !== null && (
+        <section className="banner banner-warn" aria-label="Salida con cambios sin guardar">
+          <p>Hay cambios sin guardar. Guardar y continuar solo avanza si se confirma el borrador actual. Descartar abandona cambios solo cuando se abre el destino válido.</p>
+          <button type="button" disabled={saving || needsVerification} onClick={() => {
+            const target = transition;
+            void save().then((clean) => { if (clean) void continueTransition(target); });
+          }}>Guardar y continuar</button>
+          <button type="button" disabled={saving} onClick={() => void continueTransition(transition)}>Descartar cambios y continuar</button>
+          <button type="button" disabled={saving} onClick={() => setTransition(null)}>Seguir editando</button>
+        </section>
+      )}
+
+      {needsVerification && <div className="banner banner-warn" role="status">
+        <span>Persistencia incierta: los bytes pueden estar publicados. Verifique el guardado antes de continuar; el borrador sigue sin confirmar.</span>
+        <button type="button" disabled={saving} onClick={() => void verifySave()}>Verificar guardado</button>
+      </div>}
+      {copyNotice !== null && <div className="banner banner-info" role="status">
+        <span>{copyNotice}</span>
+        {copiedId !== null && <button type="button" className="ghost" disabled={saving}
+          onClick={() => requestTransition('copy')}>Abrir copia</button>}
+      </div>}
 
       {importNotice !== undefined && <div className="banner banner-warn" role="status">{importNotice}</div>}
       {relinking && <p role="status">Operación en curso…</p>}
@@ -260,7 +378,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
         <div className="banner banner-error" role="alert">
           <span>{error}</span>
           {conflict && (
-            <button type="button" className="ghost" onClick={() => void reload()}>
+            <button type="button" className="ghost" onClick={() => requestTransition('reload')}>
               Recargar desde disco
             </button>
           )}
@@ -269,23 +387,6 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
       {notice !== null && (
         <div className="banner banner-info" role="status">
           <span>{notice}</span>
-          {copiedId !== null && (
-            <button
-              type="button"
-              className="ghost"
-              disabled={saving}
-              onClick={() => {
-                if (dirty && !window.confirm('Hay cambios sin guardar. ¿Descartarlos y abrir la copia?')) return;
-                relinkLock.current = true;
-                setRelinking(true);
-                void onOpenProject(copiedId)
-                  .catch((caught: unknown) => setError(describeError(caught)))
-                  .finally(() => { relinkLock.current = false; setRelinking(false); });
-              }}
-            >
-              Abrir copia
-            </button>
-          )}
         </div>
       )}
       {missingAssets.length > 0 && (

@@ -174,13 +174,13 @@ export const api = {
   read: (projectId: string) => call<ReadResult>('GET', `/api/projects/${projectId}`),
   save: (
     projectId: string,
-    args: { project: Project; expectedRevision: number; operationId: string },
+    args: { project: Project; expectedRevision: number; expectedDigest?: string; operationId: string },
   ) => call<SaveResult>('PUT', `/api/projects/${projectId}`, args),
-  copy: (projectId: string, newProjectId?: string) =>
+  copy: (projectId: string, newProjectId?: string, text?: string, operationId?: string) =>
     call<CopyResult>(
       'POST',
       `/api/projects/${projectId}/copy`,
-      newProjectId === undefined ? {} : { newProjectId },
+      { newProjectId, text, operationId },
     ),
   importProject: (text: string, collision: 'reject' | 'copy' = 'reject') =>
     call<ImportResult>('POST', '/api/imports', { text, collision }),

@@ -78,8 +78,20 @@ export function slugFilename(title: string): string {
   return slug.length === 0 ? 'proyecto' : slug.slice(0, 60);
 }
 
-export function downloadJson(project: Project): void {
-  const text = serializeProject(project);
+/** Download metadata describes this snapshot, never the canonical write state. */
+export function snapshotTimestamp(project: Project, now = new Date().toISOString()): string {
+  return new Date(Math.max(Date.parse(now), Date.parse(project.updatedAt))).toISOString();
+}
+
+export function downloadSnapshot(project: Project, dirty: boolean, now = new Date().toISOString()): Project {
+  const changed = dirty || project.approval !== null;
+  return { ...project, title: titleOrFallback(project.title), approval: null,
+    revision: changed ? project.revision + 1 : project.revision,
+    updatedAt: changed ? snapshotTimestamp(project, now) : project.updatedAt };
+}
+
+export function downloadJson(project: Project, raw?: string): void {
+  const text = raw ?? serializeProject(project);
   const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');

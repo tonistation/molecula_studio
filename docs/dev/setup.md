@@ -2,7 +2,8 @@
 
 Este documento describe lo que existe hoy en M1: schema, `ProjectStore`,
 frontera HTTP loopback y el estudio React que guarda, reabre e importa borradores
-con manifest y revinculación explícita de recursos (F05). No
+con manifest, revinculación explícita de recursos (F05), copias del borrador
+y protección de salida (F06). No
 promete render, proveedores ni exportación: esa evidencia pertenece a M2 en
 adelante.
 
@@ -41,8 +42,13 @@ Node y type stripping nativo (Node 26 ejecuta `.ts` directamente). No hay
 `ts-node`, `tsx`, Jest ni Vitest.
 
 El E2E no descarga navegadores: usa `playwright-core` contra Lightpanda por CDP
-(`lightpanda serve`). Si el binario o `dist/studio` faltan, el test se marca
-`skipped`, que **no** es un pase.
+(`lightpanda serve`) para lógica DOM. La prueba de cancelación nativa de recarga
+y cierre, y la descarga nativa de JSON, usan el Chrome ya instalado en
+`/Applications/Google Chrome.app`: Lightpanda no ofrece esas interfaces
+nativas. Si falta Lightpanda, las pruebas
+correspondientes se marcan `skipped`, que **no** es un pase. El comando E2E
+compila previamente el estudio; si falta Chrome, su prueba falla explícitamente.
+No se acredita revisión visual.
 
 ## Comandos
 
@@ -166,8 +172,8 @@ en una URL ni se escribe en logs.
 | `GET /api/projects` | Lista resúmenes (handle, revisión, modo, recursos faltantes) |
 | `POST /api/projects` | Crea un borrador vacío validado (rev. 0) |
 | `GET /api/projects/:id` | Lee y revalida el documento desde disco |
-| `PUT /api/projects/:id` | Guarda con `expectedRevision` + `operationId` (idempotente) |
-| `POST /api/projects/:id/copy` | Copia portable con identidad nueva y `approval: null` |
+| `PUT /api/projects/:id` | Guarda con `expectedRevision`, `operationId` y `expectedDigest` opcional; la UI envía los tres |
+| `POST /api/projects/:id/copy` | `{text?, newProjectId?, operationId?}`; copia del snapshot validado (o disco si falta `text`), con identidad nueva y `approval: null` |
 | `POST /api/imports` | `{text, collision?: 'reject' \| 'copy'}`; valida y publica JSON externo sin sobrescribir |
 | `PUT /api/projects/:id/assets/:assetId` | Bytes crudos; MIME del manifest; `x-confirm-replace: 1` para contenido distinto; snapshot mediante `x-expected-revision` y `x-expected-digest` (SHA-256); la UI envía ambos |
 
@@ -196,7 +202,59 @@ Códigos de error estables: 401 `unauthorized`, 403 `origin-*`/`host-not-allowed
 - La copia portable sí crea un proyecto nuevo en el workspace, con identidad
   fresca, aprobación limpia y aviso de recursos faltantes.
 - Un estilo desconocido abre en solo lectura: se puede leer y descargar, no
-  reescribir.
+   reescribir.
+
+## Copias y salida consciente (F06)
+
+| Acción / resultado | Comportamiento implementado |
+|---|---|
+| Guardado confirmado | Actualiza revisión/digest; solo limpia dirty si no hubo ediciones posteriores a la instantánea enviada. |
+| Recibo `uncertain` | No muestra «Guardado», no limpia dirty ni avanza la última revisión confirmada. **Verificar guardado** relee disco y compara revisión/digest; solo esa coincidencia confirma la instantánea, sin prometer persistencia física adicional. |
+| Respuesta perdida o fallo ambiguo | Reintentar reutiliza payload, fecha y `operationId`. Antes de aceptar un recibo confirmado de ese reintento, relee revisión/digest canónicos: un recibo histórico no limpia dirty ni permite navegar si el archivo ya cambió. Los cambios posteriores permanecen pendientes y requieren otro guardado. Un rechazo 4xx permite corregir el borrador; no obliga a repetir bytes inválidos. No hay reintento automático. |
+| Copia portable | Envía el borrador actual, incluso ante conflicto o JSON canónico corrupto. Valida el snapshot independientemente y mantiene controles de directorio fuente, entradas symlink, contención de recursos y hashes. Crea otra carpeta, revisión 0, fechas nuevas y aprobación nula; conserva entidades, escenas y bindings. No limpia dirty del origen ni lo sobrescribe. Advierte activos faltantes y persistencia incierta sin llamar completa a la copia. |
+| Descarga JSON | Entrega los bytes del borrador al mecanismo de descarga; normaliza título vacío y metadatos de la instantánea, limpia aprobación con aviso y conserva el proyecto activo. No incluye recursos, no confirma escritura del navegador y nunca cambia dirty ni la revisión canónica. Solo lectura entrega los bytes originales sin normalización, incluido el BOM UTF-8 aceptado. |
+| Salir, recargar o abrir copia con cambios | Ofrece **Guardar y continuar**, **Descartar cambios y continuar** y **Seguir editando** en un bloque de decisión, no un modal. Guardar solo navega si se confirma el borrador actual; fallo, incertidumbre o edición durante el guardado detienen la navegación. |
+| Lectura de reemplazo fallida | Incluso tras elegir descartar, el documento activo permanece intacto hasta tener un reemplazo válido. Recargar actualiza también el modo de solo lectura y los bytes originales del nuevo documento. |
+| Cerrar o refrescar pestaña | `beforeunload` solicita la advertencia nativa cuando hay dirty u operación en curso. Depende del navegador y de interacción previa: no promete texto propio ni bloqueo del sistema operativo. |
+
+La UI reserva `newProjectId` y `operationId` antes de copiar. Ante respuesta
+perdida, el reintento conserva destino e instantánea y el companion activo
+reproduce el recibo sin publicar otra carpeta. La memoria de idempotencia no
+sobrevive al reinicio del companion: el destino ya existente se rechaza, nunca
+se sobrescribe ni se asigna otro silenciosamente; se ofrece abrirlo para revisar.
+Una copia incierta o un error posterior a publicar conserva el aviso, no promete
+rollback. Abrir una copia mantiene el aviso «Sin aprobación».
+
+Los guardados de la UI comparan su digest explícito, no solo el último archivo
+visto por el proceso: otro lector no puede refrescar su línea base de conflicto.
+Las fechas de guardado/descarga no retroceden respecto de `updatedAt`, incluso
+si un documento válido tiene fechas posteriores al reloj local.
+
+### Evidencia F06 y límites
+
+- `tests/integration/store/draft-copy.test.ts`: disco y HTTP reales; borrador
+  frente a conflicto, reintento idempotente, activos copiados/faltantes,
+  identidades/bindings, límites JSON escapado y digest de guardado entre lectores.
+- `tests/e2e/protection.e2e.ts`: respuestas HTTP reales retenidas o perdidas
+  después del commit, fallos reales de escritura/sync inyectados, decisiones de
+  salida, apertura fallida, descarga con bytes parseados y solo lectura. La
+  observación del Blob prueba contenido entregado a la API, **no** una descarga
+  completada por el sistema operativo. Una prueba adicional usa el mecanismo
+  real de descarga de Chrome y lee sus bytes temporales; esto no convierte la
+  petición de descarga de la UI en confirmación general de guardado.
+- `tests/integration/store/review-recovery.test.ts` y
+  `tests/e2e/review-recovery.e2e.ts`: regresiones de la revisión independiente:
+  replay histórico frente a reemplazo externo, copia desde JSON corrupto con
+  recursos reales y defensas de rutas/hash intactas, y BOM conservado hasta una
+  descarga nativa de Chrome. Cubren además lectura de recarga fallida, edición
+  durante verificación incierta y reintentos con instancias nuevas de
+  companion/ProjectStore, sin transferir mapas de recibos. El reinicio HTTP
+  conserva un token configurado de prueba para aislar idempotencia de rotación
+  de credenciales; no acredita reinicio abrupto de proceso ni corte eléctrico.
+- La cancelación de recarga/cierre nativos y la descarga nativa se prueban en
+  Chrome existente; los otros recorridos usan Lightpanda. Se capturan errores JS y de consola y se
+  admiten únicamente los errores HTTP exactos provocados por casos negativos.
+  No hay evidencia nueva de layout, accesibilidad visual, codecs ni render.
 
 ## Modo solo lectura
 
