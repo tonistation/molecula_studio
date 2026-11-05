@@ -130,7 +130,7 @@ Ejecutar este paso es la autorización explícita de instalación.
 ### 0.3 Fuente
 
 - Colocar el archivo OFL elegido en `src/video/assets/fonts/` con su `OFL.txt`. Registrar SHA-256 y licencia en `docs/dev/licenses.md`.
-- **Aceptación:** [ ] archivo, licencia y hash presentes.
+- **Aceptación:** [x] archivo, licencia y hash presentes.
 
 ### 0.4 Referencias visuales
 
@@ -437,7 +437,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 
 - [x] 0.1 Registrar decisiones
 - [x] 0.2 Instalar dependencias
-- [ ] 0.3 Fuente
+- [x] 0.3 Fuente
 - [x] 0.4 Referencias visuales (ADR-09 decidido)
 - [ ] 1.1 `projectToVideoProps`
 - [ ] 1.2 Composición base y Remotion Studio
