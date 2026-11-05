@@ -5,6 +5,8 @@ import { join, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createRenderJobs, RenderRequestError } from '../render/render-jobs.ts';
 import type { renderProject } from '../render/render-service.ts';
+import { capabilities } from '../providers/capabilities.ts';
+import { generateScript, generateDrawing, GenerationError, type CodexOptions } from '../providers/codex-cli.ts';
 
 import { LIMITS } from '../../shared/schema/limits.ts';
 import { ProjectStore, type WorkspaceOptions } from '../store/project-store.ts';
@@ -49,6 +51,8 @@ export interface CompanionServerOptions {
   now?: () => Date;
   /** Test-only renderer injection; production shares the cached singleton. */
   renderer?: typeof renderProject;
+  /** Test-only fake executable environment/deadlines. */
+  codexOptions?: CodexOptions;
 }
 
 export interface CompanionServer {
@@ -88,9 +92,10 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
   const token = options.token ?? randomBytes(32).toString('hex');
   const state = { port: 0, origin: '' };
   const renders = createRenderJobs(store, await realpath(options.workspaceRoot), options.renderer);
+  const generation = { options: options.codexOptions ?? {}, active: new Set<AbortController>(), closing: false };
 
   const server = createServer((req, res) => {
-    void handleRequest(req, res, { store, token, state, renders, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
+    void handleRequest(req, res, { store, token, state, renders, generation, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -113,6 +118,8 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
     origin: state.origin,
     port: state.port,
     async close() {
+      generation.closing = true;
+      for (const controller of generation.active) controller.abort();
       await renders.settle();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await store.close();
@@ -129,6 +136,7 @@ interface HandlerContext {
   studioDir: string | undefined;
   extraOrigins: string[] | undefined;
   renders: ReturnType<typeof createRenderJobs>;
+  generation: { options: CodexOptions; active: Set<AbortController>; closing: boolean };
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, context: HandlerContext): Promise<void> {
@@ -230,6 +238,32 @@ const PROJECT_ROUTE = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})(?:\/(copy|asset
 async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string, context: HandlerContext): Promise<void> {
   const { store } = context;
   const method = req.method ?? 'GET';
+
+  if (['/api/capabilities', '/api/script/generate', '/api/drawing/generate'].includes(pathname)) {
+    const capability = pathname === '/api/capabilities';
+    if (method !== (capability ? 'GET' : 'POST')) throw methodNotAllowed(capability ? 'GET' : 'POST');
+    const body = capability ? undefined : await readJsonBody(req);
+    if (context.generation.closing) throw new HttpError(503, 'companion-closing', 'El companion se está cerrando.');
+    const controller = new AbortController();
+    context.generation.active.add(controller);
+    const cancel = () => controller.abort();
+    res.once('close', cancel);
+    try {
+      const result = capability ? await capabilities(context.generation.options, controller.signal)
+        : await (pathname === '/api/script/generate' ? generateScript : generateDrawing)(body, context.generation.options, controller.signal);
+      sendJson(res, 200, result);
+    } catch (error) {
+      if (error instanceof GenerationError) {
+        // The bearer token is never part of a returned diagnostic, even in fake output.
+        sendJson(res, error.status, { error: { code: error.code, message: error.message,
+          ...(error.responseText === undefined ? {} : { responseText: error.responseText.split(context.token).join('[oculto]') }) } });
+      } else throw error;
+    } finally {
+      res.removeListener('close', cancel);
+      context.generation.active.delete(controller);
+    }
+    return;
+  }
 
   const renderRoute = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})\/renders(?:\/(r-[a-f0-9-]{36})(\/file)?)?$/.exec(pathname);
   if (renderRoute) {
