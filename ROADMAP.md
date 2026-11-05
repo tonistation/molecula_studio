@@ -25,7 +25,7 @@ Base: commit `ad26d62`. Uso local, una persona. Servidor: [más adelante](#camin
 | Composición visual 3D + subtítulos | ✅ | Fase 1 |
 | Exportar MP4 | ✅ CLI y UI, silencioso | Fase 1 (CLI) y Fase 2 (UI) |
 | Vista previa en el estudio | ✅ Borrador silencioso | Fase 2 |
-| Guion automático / manual | ❌ | Fase 3 |
+| Guion automático / manual | Manual ✅ · automático ❌ | Fase 3 |
 | Voz automática / manual | ❌ | Fase 4 |
 
 Del plan anterior están completas 9 de 27 unidades (≈33 %), pero son la **base de persistencia**. Ninguna de las cuatro piezas que producen un video existe todavía. Esta ruta las pone primero.
@@ -319,6 +319,10 @@ La generación va en **dos etapas** con modo dual cada una: **Guion** (texto y d
 - **Archivos:** `studio/src/components/ScriptStep.tsx`.
 - **Hacer:** duración objetivo (15/30/45/60 s) → «Copiar prompt» → área «Pegar respuesta» → «Revisar» (lista de escenas o errores) → «Aplicar al borrador». Si ya hay escenas, confirmar «Reemplazar N escenas». Aplicar no guarda.
 - **Aceptación:** [ ] pegar en ChatGPT web el prompt de guion y luego los de dibujo produce escenas 3D con subtítulos estimados en la vista previa.
+- **Implementación 3.4:** `ScriptStep` ofrece duración objetivo 15/30/45/60 s, copia del prompt, pegado, revisión de escenas/metadatos/fuentes y aplicación explícita. Si hay escenas, pide «Reemplazar N escenas» e informa que se reemplazan dibujos y vínculos de voz. Cada tarjeta ofrece «Dibujar esta escena» / «Redibujar esta escena», prompt con los objetos de escenas anteriores, pegado de un kit, revisión y aplicación aislada. Ambas etapas reutilizan los parsers y funciones `apply` de 3.2–3.3; IDs nuevos mediante `newSceneId()`. Solo actualizan el borrador y la vista previa; Guardar sigue siendo explícito. No se adelantan Auto, Codex, voz ni servicios.
+- **Verificación 3.4:** `npm test`: 419/419, sin omitidas, incluido el render CLI real de 2 s; typecheck, build y E2E completas: 31/31, sin omitidas. Tres E2E nuevas recorren la aplicación real: copiar prompt con frontera de portapapeles controlada, revisión sin cambios, JSON inválido sin mutación, cancelación/aceptación de reemplazo, IDs nuevos, dos dibujos, continuidad completa de objetos en el segundo prompt, invalidación de una revisión al editar la respuesta, redibujo aislado y guardar/reabrir. Cubren también error de aplicación por redondeo, copia alternativa cuando se deniega el portapapeles y controles deshabilitados en proyectos de solo lectura. Los bytes del documento permanecen intactos hasta Guardar. Chromium/ANGLE real y capturas inspeccionadas de escritorio/móvil: paisaje 3D, rótulos y subtítulos estimados visibles; controles accionables sin desborde horizontal, sin errores de consola/CSP/recursos. Lightpanda conserva el caso nuevo de solo lectura y las pruebas DOM anteriores.
+- **Alcance de la aceptación:** [x] recorrido manual completo con respuestas externas **emuladas mediante fixtures locales**, sustituto autorizado para comprobar la UI sin autenticación ni gasto. **No se pegó en ChatGPT web ni se verificó una respuesta real de un proveedor**; la casilla de aceptación literal de arriba queda pendiente de esa comprobación humana. Esto no bloquea la entrega de la UI del paso. Sin dependencias ni cambios de schema. Context7 sin cuota; se reutilizan patrones React existentes. Avisos conocidos no bloqueantes: tamaño del bundle y deprecación `THREE.Clock`.
+- **Demo 3.4:** `npm start` → crear/abrir proyecto → escribir Idea → «Guion manual» → duración → «Copiar prompt» → herramienta externa → «Pegar respuesta» → «Revisar» → «Aplicar al borrador» → confirmar reemplazo si corresponde. En cada tarjeta, abrir «Dibujar esta escena», copiar su prompt, pegar el JSON `KitScene`, revisar y aplicar; hacerlo en orden para ofrecer continuidad al siguiente prompt. La vista previa muestra el borrador con 3D y karaoke, sin voz; «Guardar» persiste. Demo automatizada sin proveedor: `node --test tests/e2e/manual-script.e2e.ts` después de `npm run build:studio`.
 
 ### 3.5 Modo automático con Codex CLI
 
@@ -490,7 +494,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 3.1 Contrato y prompt
 - [x] 3.2 Parseo y validación
 - [x] 3.3 Aplicar guion y dibujo de escenas
-- [ ] 3.4 Guion manual
+- [x] 3.4 Guion manual (UI verificada con respuestas externas emuladas; ChatGPT web pendiente)
 - [ ] 3.5 Guion automático con Codex
 - [ ] 4.1 Ingesta de audio
 - [ ] 4.2 Voz manual

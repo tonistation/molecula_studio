@@ -5,6 +5,8 @@ import { serializeProject } from '../../../src/shared/schema/serialize.ts';
 import { AssetManifest } from './AssetManifest.tsx';
 import { PreviewPlayer } from '../components/PreviewPlayer.tsx';
 import { ExportPanel } from '../components/ExportPanel.tsx';
+import { ScriptStep } from '../components/ScriptStep.tsx';
+import { DrawingStep } from '../components/DrawingStep.tsx';
 import { ApiError, api, describeError, type ReadResult, type SaveResult } from '../api.ts';
 import {
   createScene,
@@ -496,6 +498,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
             </label>
           </fieldset>
         </section>
+        <ScriptStep draft={draft} disabled={readOnly || relinking} onEdit={edit} />
         </div>
 
         <section className="panel">
@@ -583,6 +586,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
                       Eliminar
                     </button>
                   </div>
+                  <DrawingStep draft={draft} sceneId={scene.sceneId} disabled={readOnly || relinking} onEdit={edit} />
                 </li>
               ))}
             </ol>

@@ -116,6 +116,35 @@ code {
   margin: 0;
 }
 
+.manual-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.manual-response > button,
+.manual-review {
+  margin-bottom: 12px;
+}
+
+.manual-review,
+.manual-response [role="alert"] {
+  overflow-wrap: anywhere;
+}
+
+.drawing-step {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.drawing-step summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
