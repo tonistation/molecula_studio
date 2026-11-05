@@ -310,6 +310,9 @@ test('the studio build is served with CSP and an injected token; escapes are ref
     const index = await request(handle, 'GET', '/');
     assert.equal(index.status, 200);
     assert.match(String(index.headers['content-security-policy'] ?? ''), /default-src 'self'/);
+    assert.match(String(index.headers['content-security-policy']), /media-src 'self' blob:/);
+    assert.match(String(index.headers['content-security-policy']), /script-src 'self';/);
+    assert.doesNotMatch(String(index.headers['content-security-policy']), /unsafe-inline|unsafe-eval|https:|\*/);
     assert.match(index.text, new RegExp(`<meta name="companion-token" content="${TOKEN}">`));
     assert.equal(index.headers['access-control-allow-origin'], undefined);
 

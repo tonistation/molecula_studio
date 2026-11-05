@@ -66,7 +66,7 @@ export async function withStudio(t: TestContext, run: (args: {
   try {
     if (engine === 'chromium') {
       browser = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        headless: true, args: ['--disable-background-networking', '--disable-component-update', '--disable-sync'] });
+        headless: true, args: ['--disable-background-networking', '--disable-component-update', '--disable-sync', '--use-gl=angle'] });
     } else {
       assert.ok(child);
       let ready = false;

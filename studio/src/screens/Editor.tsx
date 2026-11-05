@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Asset, Project, ProjectMode, Scene } from '../../../src/shared/schema/types.ts';
 import { serializeProject } from '../../../src/shared/schema/serialize.ts';
 import { AssetManifest } from './AssetManifest.tsx';
+import { PreviewPlayer } from '../components/PreviewPlayer.tsx';
 import { ApiError, api, describeError, type ReadResult, type SaveResult } from '../api.ts';
 import {
   createScene,
@@ -31,6 +32,7 @@ interface EditorProps {
  */
 export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorProps) {
   const [draft, setDraft] = useState<Project>(opened.project);
+  const [previewSeek, setPreviewSeek] = useState<{ sceneId: string; sequence: number } | null>(null);
   const [mode, setMode] = useState<ProjectMode>(opened.mode);
   const [readOnlyRaw, setReadOnlyRaw] = useState(opened.raw);
   const [confirmedRevision, setConfirmedRevision] = useState(opened.revision);
@@ -400,6 +402,8 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
 
       <AssetManifest assets={draft.assets} missingAssets={missingAssets} disabled={readOnly || dirty || saving || relinking} onRelink={relink} />
       <div className="editor-grid">
+        <div>
+        <PreviewPlayer draft={draft} seek={previewSeek} missingAssets={missingAssets} />
         <section className="panel">
           <h2>Idea y estilo</h2>
           <label className="field">
@@ -489,6 +493,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
             </label>
           </fieldset>
         </section>
+        </div>
 
         <section className="panel">
           <div className="panel-heading">
@@ -505,7 +510,10 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
               {draft.scenes.map((scene, index) => (
                 <li key={scene.sceneId} className="scene-card">
                   <div className="scene-heading">
-                    <span className="scene-index">{index + 1}</span>
+                    <button type="button" className="scene-index" aria-label={`Ver escena ${index + 1}`}
+                      onClick={() => setPreviewSeek(previous => ({ sceneId: scene.sceneId, sequence: (previous?.sequence ?? 0) + 1 }))}>
+                      {index + 1}
+                    </button>
                     <label className="field grow">
                       <span className="sr-only">Título de la escena</span>
                       <input

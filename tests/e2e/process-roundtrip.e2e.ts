@@ -85,7 +85,8 @@ test('F08 offline processes: empty and partial UI saves survive browser and prod
 test('F08 offline processes: imported approval notice, identity and stale media survive restart and workspace transport', async () => {
   await withProcessWorkspace(async ({ root, start }) => {
     const companion = await start({ studioDir });
-    let browser = await processBrowser(companion.origin);
+    // This imported storyboard now mounts a real WebGL preview; Lightpanda cannot run it.
+    let browser = await processBrowser(companion.origin, 'chromium');
     try {
       const parsed = parseProjectText(JSON.stringify(fixtureJson('storyboard')));
       assert.ok(parsed.ok);
@@ -126,7 +127,7 @@ test('F08 offline processes: imported approval notice, identity and stale media 
       await browser.close();
       await companion.stop();
       const fresh = await start({ studioDir });
-      browser = await processBrowser(fresh.origin);
+      browser = await processBrowser(fresh.origin, 'chromium');
       await browser.page.getByRole('button', { name: 'Abrir', exact: true }).click();
       await browser.page.getByText('Sin aprobación: se requiere revisión editorial antes de exportar.', { exact: true }).waitFor();
       assert.deepEqual((await readProject(fresh.request(`/api/projects/${external.projectId}`))).project, saved);
@@ -136,7 +137,7 @@ test('F08 offline processes: imported approval notice, identity and stale media 
       await withProcessWorkspace(async ({ root: target, start: startTarget }) => {
         await cp(join(root, external.projectId), join(target, external.projectId), { recursive: true });
         const targetCompanion = await startTarget({ studioDir });
-        const targetBrowser = await processBrowser(targetCompanion.origin);
+        const targetBrowser = await processBrowser(targetCompanion.origin, 'chromium');
         try {
           await targetBrowser.page.getByRole('button', { name: 'Abrir', exact: true }).click();
           const read = await readProject(targetCompanion.request(`/api/projects/${external.projectId}`));

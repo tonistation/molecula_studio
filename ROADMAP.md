@@ -24,7 +24,7 @@ Base: commit `ad26d62`. Uso local, una persona. Servidor: [más adelante](#camin
 | Reloj por frame (`src/shared/timeline.ts`) | ✅ | Se reutiliza para calcular frames |
 | Composición visual 3D + subtítulos | ✅ | Fase 1 |
 | Exportar MP4 | ✅ CLI; UI pendiente | Fase 1 (CLI) y Fase 2 (UI) |
-| Vista previa en el estudio | ❌ | Fase 2 |
+| Vista previa en el estudio | ✅ Borrador silencioso | Fase 2 |
 | Guion automático / manual | ❌ | Fase 3 |
 | Voz automática / manual | ❌ | Fase 4 |
 
@@ -246,8 +246,12 @@ Cambio de contrato autorizado por ADR-09. Leer antes [referencias visuales](docs
 
 - **Hacer:** `<Player component={VerticalVideo} inputProps={projectToVideoProps(draft, blobUrls)} … controls />` en un panel 9:16 junto a la lista de escenas. Muestra el **borrador**, incluidos los cambios sin guardar. Clic en una escena → `seekTo` a su inicio.
 - **Aceptación:**
-  - [ ] Editar el texto de una escena actualiza la vista previa sin guardar.
-  - [ ] Play, pausa y seek funcionan.
+   - [x] Editar el texto de una escena actualiza la vista previa sin guardar.
+   - [x] Play, pausa y seek funcionan.
+- **Verificación 2.2:** `npm run typecheck`, `npm test` (377/377, sin omitidas, incluido el render real de 2 s), `npm run build:studio` y suite E2E completa (27/27, sin omitidas) en verde. Chromium/ANGLE real: 3D no negro y karaoke editado visibles en capturas inspeccionadas de escritorio y móvil; relación 9:16, controles accionables, play/pausa, scrub por puntero y clic repetido en escena. Cambiar duración sin guardar mueve el inicio de la segunda escena de 6 s a 3 s; los bytes del documento permanecen intactos. Un texto intermedio fuera del límite de palabra muestra estado recuperable; corregirlo restaura la vista previa. Sin errores de consola, CSP ni recursos en las pruebas nuevas.
+- **Decisiones 2.2:** panel junto al storyboard con `VerticalVideo` y props del borrador. Solo la vista previa estima palabras cuando el texto normalizado ya no coincide con la alineación guardada; no cambia palabras persistidas ni bindings. Cambios de texto no vuelven a descargar activos; cambio de revisión/manifest y desmontaje cancelan peticiones y revocan URLs. Pruebas unitarias y React/navegador cubren blobs resueltos, pendientes, tardíos y errores parciales. Solo medios referenciados y declarados; los faltantes no se solicitan. CSP conserva scripts/conexiones locales, añade `media-src 'self' blob:` y permite únicamente el hash exacto del CSS scoped de la versión fijada del Player, sin `unsafe-inline` ni `unsafe-eval`; se sirve TTF local con MIME explícito. Sin tags de audio compartido ni voz en la composición: audio corresponde a Fase 4. Context7 sin cuota; API contrastada con documentación oficial y tipos instalados.
+- **Navegador 2.2:** la prueba histórica que importa el storyboard ahora monta WebGL y se ejecuta explícitamente en Chromium; Lightpanda fallaba al crear el contexto. Las pruebas DOM restantes conservan Lightpanda. Procesos/perfiles/puertos propios, interceptación de red externa conservada y sin tocar el Remotion Studio del usuario. Avisos no bloqueantes: tamaño del bundle del editor y deprecación `THREE.Clock`.
+- **Demo:** `npm start` → importar `docs/plan/examples/storyboard-project.json` → editar «Texto» sin guardar y mirar el karaoke. Los botones numerados de escena buscan su inicio usando las duraciones actuales, incluso al pulsar otra vez la misma escena. Probar play, pausa y barra inferior; en móvil el panel se apila sin desborde horizontal. Vista previa silenciosa; todavía no hay botón Exportar ni UI de guion/voz.
 
 ### 2.3 Exportar desde la UI
 
@@ -464,7 +468,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 1.4 Subtítulos palabra por palabra
 - [x] 1.5 Render por línea de comandos 🎬
 - [x] 2.1 Activos para la vista previa
-- [ ] 2.2 `PreviewPlayer`
+- [x] 2.2 `PreviewPlayer`
 - [ ] 2.3 Exportar desde la UI
 - [ ] 3.1 Contrato y prompt
 - [ ] 3.2 Parseo y validación

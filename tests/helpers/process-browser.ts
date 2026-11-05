@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { OwnedChild, freeLoopbackPort, waitReady } from './companion-process.ts';
 
@@ -7,14 +10,21 @@ export async function closeOwnedBrowser(browser: Pick<Browser, 'close'>, child: 
   finally { await child.stop(); }
 }
 
-/** Fresh Lightpanda OS process, no cookies/storage restored. DOM-only evidence. */
-export async function processBrowser(origin: string): Promise<{
+/** Fresh OS process, no cookies/storage restored. Chromium for projects mounting WebGL. */
+export async function processBrowser(origin: string, engine: 'lightpanda' | 'chromium' = 'lightpanda'): Promise<{
   page: Page; pid: number; consoleErrors: string[]; runtimeErrors: string[];
   assertClean: (expectedConsole?: string[]) => void; close: () => Promise<void>;
 }> {
   const port = await freeLoopbackPort();
-  const child = new OwnedChild('lightpanda', ['serve', '--host', '127.0.0.1', '--port', String(port)],
-    { ...process.env, LIGHTPANDA_DISABLE_TELEMETRY: 'true' });
+  const profile = engine === 'chromium' ? await mkdtemp(join(tmpdir(), 'molecula-chrome-')) : null;
+  const child = engine === 'chromium'
+    ? new OwnedChild('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
+      '--headless', '--use-gl=angle', '--disable-background-networking', '--disable-component-update',
+      '--disable-sync', '--no-first-run', `--user-data-dir=${profile}`,
+      '--remote-debugging-address=127.0.0.1', `--remote-debugging-port=${port}`, 'about:blank',
+    ], process.env)
+    : new OwnedChild('lightpanda', ['serve', '--host', '127.0.0.1', '--port', String(port)],
+      { ...process.env, LIGHTPANDA_DISABLE_TELEMETRY: 'true' });
   let browser: Browser | undefined;
   try {
     await waitReady(child, async () => (await fetch(`http://127.0.0.1:${port}/json/version`, {
@@ -49,11 +59,15 @@ export async function processBrowser(origin: string): Promise<{
         assert.deepEqual(consoleErrors, expectedConsole, 'only explicitly induced HTTP errors');
         assert.deepEqual(blocked, [], 'application requested no external network');
       },
-      close: () => closeOwnedBrowser(browser!, child),
+      close: async () => {
+        try { await closeOwnedBrowser(browser!, child); }
+        finally { if (profile) await rm(profile, { recursive: true, force: true }); }
+      },
     };
   } catch (error) {
     await browser?.close().catch(() => undefined);
     await child.stop();
+    if (profile) await rm(profile, { recursive: true, force: true });
     throw error;
   }
 }

@@ -414,15 +414,18 @@ const CONTENT_TYPES: Record<string, string> = {
   '.png': 'image/png',
   '.webp': 'image/webp',
   '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
 };
 
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
-  "style-src 'self'",
+  // Pinned @remotion/player scoped preview CSS, not arbitrary inline styles.
+  "style-src 'self' 'sha256-gv/jBVmnD9LQSRVG0n8AQ31cGwpFmZCCHvcOF0Z+Em8='",
   "img-src 'self' data:",
   "font-src 'self'",
   "connect-src 'self'",
+  "media-src 'self' blob:",
   "base-uri 'none'",
   "form-action 'self'",
   "frame-ancestors 'none'",

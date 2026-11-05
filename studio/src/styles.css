@@ -442,3 +442,6 @@ button.ghost.danger {
   border: 0;
 }
 .editor-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+.preview-panel { max-width: 396px; margin-inline: auto; }
+.scene-index { padding: 0; }
