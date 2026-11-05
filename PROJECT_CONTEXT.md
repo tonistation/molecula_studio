@@ -12,7 +12,7 @@ Estudio local-first para crear videos verticales animados mediante guion, voz, v
 
 Instalado/declarado en `package.json` y lockfile: React/React DOM 19, TypeScript 7.0.2, Vite 8, plugin React, tipos Node/React y `playwright-core` para pruebas. Node fijado por `.nvmrc`; engines `>=26.3.0 <27`. Usar módulos ESM y APIs nativas Node para companion, archivos, HTTP, crypto y tests. No actualizar versiones como efecto lateral.
 
-Objetivo, **todavía no instalado**: Remotion para composición, preview y render MP4, y Three.js vía `@remotion/three`. El paso 0.2 autoriza las dependencias allí enumeradas cuando se ejecute; consultar [licencias](docs/dev/licenses.md). Guion y voz tendrán modos automático y manual; Vibi es el proveedor previsto para voz. Sin DB: JSON schema 1 y activos relativos ya están implementados. ADR-09 prevé schema 2 y migración en el paso 1.3a, no en esta intervención.
+Instalados: Remotion para composición, preview y render MP4, y Three.js vía `@remotion/three`; consultar [licencias](docs/dev/licenses.md). Guion y voz tendrán modos automático y manual; Vibi es el proveedor previsto para voz. Sin DB: JSON schema 1 y activos relativos ya están implementados. ADR-09 prevé schema 2 y migración en el paso 1.3a, no en esta intervención.
 
 ## Estilo de código y producto
 

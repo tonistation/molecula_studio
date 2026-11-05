@@ -124,8 +124,8 @@ Ejecutar este paso es la autorización explícita de instalación.
 - **Skills para el agente:** `npx skills add remotion-dev/skills`. Confirmar que OpenCode las detecta; si no, enlazar la carpeta generada a la ruta de skills de OpenCode.
 - **TypeScript:** incluir `src/video/` en `npm run typecheck` (tsconfig propio con `jsx: react-jsx`, o ajustar la raíz). `src/shared/` y `src/companion/` siguen siendo TS «strip-only» (sin JSX, sin `enum`), porque Node los ejecuta directo.
 - **Aceptación:**
-  - [ ] `npm run typecheck` y `npm test` siguen en verde.
-  - [ ] Una sola versión de Remotion instalada.
+  - [x] `npm run typecheck` y `npm test` siguen en verde.
+  - [x] Una sola versión de Remotion instalada.
 
 ### 0.3 Fuente
 
@@ -436,7 +436,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 ## Progreso
 
 - [x] 0.1 Registrar decisiones
-- [ ] 0.2 Instalar dependencias
+- [x] 0.2 Instalar dependencias
 - [ ] 0.3 Fuente
 - [x] 0.4 Referencias visuales (ADR-09 decidido)
 - [ ] 1.1 `projectToVideoProps`
