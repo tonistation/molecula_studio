@@ -282,7 +282,11 @@ La generación va en **dos etapas** con modo dual cada una: **Guion** (texto y d
   - JSON Schema **estricto** (todas las propiedades `required`, `additionalProperties: false`): lo exige `--output-schema`.
   - `sources`, `cover` y `postText` se guardan como metadatos del proyecto en schema 2 (sin consumir en el render todavía).
 - **Prompt:** `buildScriptPrompt({ idea, styleId, locale, targetSeconds })` aplica la fórmula de las [referencias](docs/ux/references/README.md): pregunta reconocible en 3 s como gancho, explicación simple con fuentes, cierre para compartir; escenas de 2–5 s; ritmo aproximado de 2,5 palabras/s en español; `visualIntent` concreto y dibujable; «responder solo JSON válido según este schema» con el schema literal.
-- **Aceptación:** [ ] prompt determinista, con fórmula y schema incluidos.
+- **Aceptación:** [x] prompt determinista, con fórmula y schema incluidos.
+- **Extensión aprobada 3.1:** autorización explícita del usuario para `sources`, `cover` y `postText`. Son campos raíz opcionales en schema 2: los documentos existentes no reciben valores por defecto ni cambian de versión o digest. Si están presentes se validan estrictamente: hasta 12 fuentes `{ title, url }`, título y portada de 1–120 caracteres, URL de hasta 2048 caracteres y post de hasta 4000. Solo URLs HTTP(S) absolutas sin espacios ni credenciales; nunca se descargan. La excepción es de referencias editoriales, no del kit: sus visuales siguen sin URLs. Schema 1 no admite estos campos nuevos.
+- **Decisiones 3.1:** serialización explícita y estable de metadatos, preservados por guardar/reabrir/importar/copiar y por snapshots del editor. El digest de contenido ya incluye los campos raíz editoriales: editar cualquiera invalida la aprobación histórica sin cambiar los digests de medios. El contrato de salida exige todos los campos, aunque el proyecto los haga opcionales por compatibilidad. El JSON Schema describe la suma ≤ 60 s y el máximo de texto total; JSON Schema no expresa sumas entre elementos. La comprobación ejecutable de esas sumas queda en el parser de 3.2, no se afirma validación de propuestas todavía.
+- **Verificación 3.1:** TDD rojo inicial por módulo ausente, rechazo de metadatos y pérdida al serializar; 9 pruebas nuevas cubren contrato cerrado, prompt determinista, límites, compatibilidad, Unicode, rechazo de URLs inseguras, digests y persistencia con disco real. `npm test`: 392/392, sin omitidas, incluido el render real de 2 s; `npm run typecheck`, `npm run build:studio` y E2E completas: 28/28, sin omitidas. La suite existente conserva Lightpanda para DOM y Chromium/ANGLE para vista previa/exportación; no hay UI nueva en este paso. Demo del prompt ejecutada localmente. Sin dependencias, procesos de proveedores ni consultas de fuentes. Se conservan los avisos conocidos de tamaño del bundle y `THREE.Clock`.
+- **Demo 3.1:** `node --input-type=module -e "import {buildScriptPrompt} from './src/shared/script/prompt.ts'; console.log(buildScriptPrompt({idea:'¿De dónde sale la sal del mar?',styleId:'stylized-3d',locale:'es',targetSeconds:30}))"` muestra el prompt completo y su schema literal. No invoca proveedores ni consulta URLs. Todavía no hay parser, aplicación al borrador, dibujo ni UI de guion (3.2–3.5).
 
 ### 3.2 Parseo y validación — TDD
 
@@ -475,7 +479,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 2.1 Activos para la vista previa
 - [x] 2.2 `PreviewPlayer`
 - [x] 2.3 Exportar desde la UI
-- [ ] 3.1 Contrato y prompt
+- [x] 3.1 Contrato y prompt
 - [ ] 3.2 Parseo y validación
 - [ ] 3.3 Aplicar guion y dibujo de escenas
 - [ ] 3.4 Guion manual

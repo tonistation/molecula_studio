@@ -103,7 +103,7 @@ export type SceneVisual = KitScene | InertVisual;
 
 /** Validated legacy data is used only at the migration boundary. */
 export type LegacyScene = Omit<Scene, 'visual'> & { visual: StylizedVisual | InertVisual | null };
-export type LegacyProject = Omit<Project, 'schemaVersion' | 'scenes'> & { schemaVersion: 1; scenes: LegacyScene[] };
+export type LegacyProject = Omit<Project, 'schemaVersion' | 'scenes' | 'sources' | 'cover' | 'postText'> & { schemaVersion: 1; scenes: LegacyScene[] };
 
 export interface Word {
   text: string;
@@ -186,6 +186,15 @@ export interface Approval {
   approvedAt: string;
 }
 
+export interface ScriptSource {
+  title: string;
+  url: string;
+}
+
+export interface ScriptCover {
+  headline: string;
+}
+
 export interface Project {
   schemaVersion: 2;
   projectId: string;
@@ -194,6 +203,9 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
   idea: string;
+  sources?: ScriptSource[];
+  cover?: ScriptCover;
+  postText?: string;
   locale: 'es' | 'en';
   styleId: string;
   styleVersion: number;

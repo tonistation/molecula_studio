@@ -29,6 +29,8 @@ export type {
   Scene,
   SceneAudio,
   SceneVisual,
+  ScriptSource,
+  ScriptCover,
   StylizedVisual,
   ValidateOutcome,
   Vec3,

@@ -270,13 +270,14 @@ function readObject(
   path: string,
   value: unknown,
   keys: readonly string[],
+  optionalKeys: readonly string[] = [],
 ): Record<string, unknown> {
   if (!isPlainObject(value)) {
     push(ctx, path, 'type', 'must be an object');
     return {};
   }
   for (const key of Object.keys(value)) {
-    if (!keys.includes(key)) push(ctx, path, 'unknown-key', `unknown key "${key}"`);
+    if (!keys.includes(key) && !optionalKeys.includes(key)) push(ctx, path, 'unknown-key', `unknown key "${key}"`);
   }
   for (const key of keys) {
     if (!Object.hasOwn(value, key)) push(ctx, path, 'required', `missing key "${key}"`);
@@ -456,7 +457,7 @@ interface ReadProjectResult {
 }
 
 function readProject(ctx: Ctx, value: unknown, version: 1 | 2): ReadProjectResult {
-  const root = readObject(ctx, '$', value, ROOT_KEYS);
+  const root = readObject(ctx, '$', value, ROOT_KEYS, version === 2 ? ['sources', 'cover', 'postText'] : []);
 
   const schemaVersion = readConst(ctx, '$.schemaVersion', root.schemaVersion, version);
   const projectId = readId(ctx, '$.projectId', root.projectId);
@@ -501,6 +502,7 @@ function readProject(ctx: Ctx, value: unknown, version: 1 | 2): ReadProjectResul
     createdAt,
     updatedAt,
     idea,
+    ...readScriptMetadata(ctx, root, version),
     locale,
     styleId,
     styleVersion,
@@ -514,6 +516,32 @@ function readProject(ctx: Ctx, value: unknown, version: 1 | 2): ReadProjectResul
   };
 
   return { mode, project, inertVisual: scenes.inertVisual };
+}
+
+function readScriptMetadata(ctx: Ctx, root: Record<string, unknown>, version: 1 | 2): Pick<Project, 'sources' | 'cover' | 'postText'> {
+  const metadata: Pick<Project, 'sources' | 'cover' | 'postText'> = {};
+  if (version !== 2) return metadata;
+  if (Object.hasOwn(root, 'sources')) {
+    metadata.sources = readArray(ctx, '$.sources', root.sources, LIMITS.maxScriptSources).map((value, index) => {
+      const at = `$.sources[${index}]`;
+      const raw = readObject(ctx, at, value, ['title', 'url']);
+      const title = readString(ctx, `${at}.title`, raw.title, 1, 120);
+      const url = readString(ctx, `${at}.url`, raw.url, 1, LIMITS.maxSourceUrl);
+      try {
+        const parsed = new URL(url);
+        if (!/^https?:\/\/[^\s]+$/.test(url) || !parsed.hostname || parsed.username || parsed.password) throw new Error('invalid source URL');
+      } catch {
+        push(ctx, `${at}.url`, 'pattern', 'must be an absolute HTTP(S) URL without whitespace or credentials');
+      }
+      return { title, url };
+    });
+  }
+  if (Object.hasOwn(root, 'cover')) {
+    const raw = readObject(ctx, '$.cover', root.cover, ['headline']);
+    metadata.cover = { headline: readString(ctx, '$.cover.headline', raw.headline, 1, 120) };
+  }
+  if (Object.hasOwn(root, 'postText')) metadata.postText = readString(ctx, '$.postText', root.postText, 0, LIMITS.maxPostText);
+  return metadata;
 }
 
 function readOutput(ctx: Ctx, path: string, value: unknown): Output {
