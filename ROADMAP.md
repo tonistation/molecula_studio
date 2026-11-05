@@ -25,7 +25,7 @@ Base: commit `ad26d62`. Uso local, una persona. Servidor: [más adelante](#camin
 | Composición visual 3D + subtítulos | ✅ | Fase 1 |
 | Exportar MP4 | ✅ CLI y UI, silencioso | Fase 1 (CLI) y Fase 2 (UI) |
 | Vista previa en el estudio | ✅ Borrador silencioso | Fase 2 |
-| Guion automático / manual | Manual ✅ · automático ❌ | Fase 3 |
+| Guion automático / manual | Ambos implementados ✅ · proveedor real pendiente | Fase 3 |
 | Voz automática / manual | ❌ | Fase 4 |
 
 Del plan anterior están completas 9 de 27 unidades (≈33 %), pero son la **base de persistencia**. Ninguna de las cuatro piezas que producen un video existe todavía. Esta ruta las pone primero.
@@ -87,6 +87,7 @@ Todas bajo la frontera actual (token + Origin/Host), salvo `render-assets`.
 | `GET /render-assets/:token/:assetId` | Solo durante un render; token aleatorio de un render; fuera de `/api` porque Remotion no envía cabeceras | 2.3 |
 | `GET /api/capabilities` | `{ codex: boolean, vibi: boolean }` | 3.5 |
 | `POST /api/script/generate` | `{ idea, styleId, locale, targetSeconds }` → `ScriptProposal` (no guarda) | 3.5 |
+| `POST /api/drawing/generate` | `{ project, sceneId }` → una `KitScene` del borrador validado, con continuidad (no guarda) | 3.5 |
 | `PUT /api/projects/:id/scenes/:sceneId/audio` | Modo manual: bytes de audio (+ `?align=vibi` opcional) → ingesta y guarda | 4.2 |
 | `POST /api/projects/:id/scenes/:sceneId/voice` | Modo auto: `{ expectedRevision, voiceId?, provider? }` → Vibi TTS + STT → ingesta y guarda | 4.4 |
 
@@ -338,6 +339,10 @@ La generación va en **dos etapas** con modo dual cada una: **Guion** (texto y d
 - **Adaptador 3.5:** se verificaron `codex --version` (`codex-cli 0.166.0`) y `codex exec --help` antes de implementar: admite los flags requeridos y `--ephemeral`, usado para no conservar la sesión generada. `capabilities` prueba disponibilidad con `--version` (5 s), no autenticación ni créditos; Vibi solo informa un booleano de configuración. Guion y dibujo usan el mismo ejecutor sin shell, prompt por stdin, directorio temporal privado, sandbox `read-only` y límite de 180 s. Se reutilizan sin transformar `SCRIPT_PROPOSAL_SCHEMA`, `KIT_SCENE_SCHEMA` y los parsers compartidos. Lectura regular sin enlaces, UTF-8 estricto y máximo de 2 MiB; limpieza del temporal tanto en éxito como en error. Timeout, desconexión y cierre detienen el grupo de procesos. El cierre impide nuevas generaciones.
 - **Frontera 3.5:** `POST /api/drawing/generate` recibe `{ project, sceneId }` para dibujar el borrador **no guardado**, validado completo y editable, con continuidad de las escenas anteriores. No acepta prompts, schemas, rutas ni opciones de proceso arbitrarias; devuelve una sola `KitScene`, sin guardar. Las tres rutas nuevas conservan token y Origin/Host. Errores accionables sin stderr crudo; texto inválido limitado a 16 000 caracteres y secretos conocidos ocultos. Las respuestas que contienen secretos detectados se rechazan, nunca se reparan silenciosamente. El proceso no hereda variables con nombres de claves/tokens/secretos ni `VIBI_*`, para no exponer credenciales ajenas ni seleccionar cobro API mediante claves heredadas. La autenticación sigue siendo la sesión local de Codex; su configuración y límites de uso son responsabilidad del usuario.
 - **Contrato y documentación 3.5:** Context7 sin cuota; flags y forma de ejecución contrastados con ayuda instalada y [documentación oficial de Codex](https://developers.openai.com/codex/non-interactive-mode). El ejecutable falso en PATH verifica ramas estrictas/cerradas y que su salida cumpla el schema original; una prueba independiente confirma que rechaza un schema no estricto. Esto verifica la integración, **no la aceptación real de esos schemas por el servicio de Codex**. Sin instalaciones, dependencias nuevas, cambios de schema persistido, inicio de sesión ni generación con proveedor real.
+- **UI 3.5:** guion y dibujo por escena ofrecen selector Manual/Auto, con Auto deshabilitado y motivo cuando falta capacidad. Se conserva Manual como valor inicial y la revisión/aplicación explícita de ambas etapas; guion reemplazado conserva la confirmación con cantidad de escenas. Auto muestra espera y errores accionables, permite revisar el texto inválido y volver a Manual. «Dibujar todas con Codex» procesa secuencialmente, aplica cada dibujo al borrador y lo incluye en la continuidad del siguiente; un fallo conserva los dibujos aceptados y muestra el error. No guarda. El redibujo sigue aislado y no cambia narración ni vínculos. Un borrador cambiado durante la espera no puede ser sobrescrito por un resultado anterior; desmontar/cambiar modo aborta la petición pendiente.
+- **Verificación 3.5:** `npm test`: 425/425, sin omitidas, incluido el render CLI real de 2 s; `npm run typecheck`, `npm run build:studio` y E2E completas: 34/34, sin omitidas. Seis tests nuevos de integración cubren ejecutable falso en PATH, flags/cwd/stdin, schemas estrictos originales, continuidad, no guardado, capacidad ausente/fallida/timeout, errores de login/salida inválida/UTF-8/tamaño, ocultación de secretos, token/Origin/Host, cancelación y cierre con limpieza de temporales y descendientes. Tres E2E nuevas verifican capacidad deshabilitada, generación/revisión/aplicación, espera, errores y retorno a Manual, rechazo de resultados obsoletos y fallo parcial de «Dibujar todas». El resto de pruebas manuales sigue en verde. Los harnesses históricos declaran capacidad ausente mediante PATH privado, sin ejecutar el Codex instalado del usuario.
+- **Hito emulado 3.5:** [x] idea → ejecutable Codex **falso** → guion y dos dibujos → vista previa Chromium/ANGLE real con roca 3D y subtítulos estimados → Guardar → MP4 **real** H.264, 1080×1920, 30 fps, 60 frames, 2 s, sin audio. Capturas de vista previa y exportación inspeccionadas; sin errores de consola/CSP/recursos en el recorrido feliz. **No se ejecutó generación real con Codex ni se consumieron créditos**; el hito literal de arriba queda pendiente de una ejecución real autorizada y no se afirma aceptación del proveedor ni aprobación estética humana. Avisos conocidos: tamaño del bundle y `THREE.Clock`.
+- **Demo 3.5:** `npm start` → proyecto con Idea → «Modo de guion: Auto · Codex» → duración → «Generar con Codex» → revisar → «Aplicar al borrador» → confirmar reemplazo si corresponde → «Dibujar todas con Codex». Para un redibujo: tarjeta → «Modo de dibujo: Auto · Codex» → generar → revisar → aplicar. Guardar y «Exportar MP4». Requiere instalación e inicio de sesión previos; usa los límites de esa sesión, no garantiza disponibilidad ni gratuidad. Demo offline automatizada: `npm run build:studio` y `node --test tests/e2e/auto-script.e2e.ts`, sin proveedor real. No se adelanta Fase 4.
 
 ---
 
@@ -498,7 +503,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 3.2 Parseo y validación
 - [x] 3.3 Aplicar guion y dibujo de escenas
 - [x] 3.4 Guion manual (UI verificada con respuestas externas emuladas; ChatGPT web pendiente)
-- [ ] 3.5 Guion automático con Codex
+- [x] 3.5 Guion automático con Codex (verificado con ejecutable falso y MP4 real; proveedor real pendiente)
 - [ ] 4.1 Ingesta de audio
 - [ ] 4.2 Voz manual
 - [ ] 4.3 Cliente Vibi y alineación

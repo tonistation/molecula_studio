@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ApiError, describeError } from '../api.ts';
 
 interface ManualResponseProps<T> {
   label: string;
@@ -8,16 +9,42 @@ interface ManualResponseProps<T> {
   review: (value: T) => ReactNode;
   apply: (value: T) => boolean;
   applyLabel?: string;
+  generate?: (signal: AbortSignal) => Promise<string>;
 }
 
 /** Review is invalidated on paste/edit; only explicit application changes the draft. */
 export function ManualResponse<T>({ label, copyLabel, buildPrompt, parse, review, apply,
-  applyLabel = 'Aplicar al borrador' }: ManualResponseProps<T>) {
+  applyLabel = 'Aplicar al borrador', generate }: ManualResponseProps<T>) {
   const [response, setResponse] = useState('');
   const [proposal, setProposal] = useState<T | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
   const [fallback, setFallback] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const pending = useRef<AbortController | null>(null);
+  useEffect(() => () => pending.current?.abort(), []);
+
+  const generateResponse = async () => {
+    if (!generate || pending.current) return;
+    const controller = new AbortController();
+    pending.current = controller;
+    setGenerating(true); setErrors([]); setProposal(null); setResponse(''); setNotice('');
+    try {
+      const text = await generate(controller.signal);
+      if (controller.signal.aborted) return;
+      setResponse(text);
+      const result = parse(text);
+      setProposal(result.ok ? result.value : null);
+      setErrors(result.ok ? [] : result.errors);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setErrors([describeError(error)]);
+      if (error instanceof ApiError && typeof error.details.responseText === 'string') setResponse(error.details.responseText);
+    } finally {
+      pending.current = null;
+      if (!controller.signal.aborted) setGenerating(false);
+    }
+  };
 
   const copyPrompt = async () => {
     setErrors([]);
@@ -36,16 +63,19 @@ export function ManualResponse<T>({ label, copyLabel, buildPrompt, parse, review
   };
 
   return <div className="manual-response">
-    <button type="button" className="ghost" onClick={() => void copyPrompt()}>{copyLabel}</button>
+    {generate ? <button type="button" disabled={generating} onClick={() => void generateResponse()}>
+      {generating ? 'Generando con Codex…' : 'Generar con Codex'}
+    </button> : <button type="button" className="ghost" onClick={() => void copyPrompt()}>{copyLabel}</button>}
+    {generating && <p role="status">Esperando respuesta de Codex (hasta 180 s)…</p>}
     {fallback && <label className="field"><span>Prompt para copiar</span>
       <textarea aria-label="Prompt para copiar" rows={5} readOnly value={fallback} onFocus={event => event.target.select()} />
     </label>}
     <label className="field"><span>{label}</span>
-      <textarea aria-label={label} rows={5} value={response} spellCheck={false} onChange={event => {
+      <textarea aria-label={label} rows={5} value={response} disabled={generating} spellCheck={false} onChange={event => {
         setResponse(event.target.value); setProposal(null); setErrors([]); setNotice('');
       }} />
     </label>
-    <button type="button" className="ghost" disabled={!response.trim()} onClick={() => {
+    <button type="button" className="ghost" disabled={generating || !response.trim()} onClick={() => {
       const result = parse(response);
       setProposal(result.ok ? result.value : null);
       setErrors(result.ok ? [] : result.errors);

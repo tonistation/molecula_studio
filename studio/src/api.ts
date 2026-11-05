@@ -102,7 +102,7 @@ export function companionToken(): string {
   return meta.content;
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const headers: Record<string, string> = { authorization: `Bearer ${companionToken()}` };
   if (body !== undefined) headers['content-type'] = 'application/json';
 
@@ -112,8 +112,10 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
   } catch {
+    signal?.throwIfAborted();
     throw new ApiError(0, 'companion-unreachable', 'El companion no responde. Verificá que siga iniciado.');
   }
   return parseResponse<T>(response);
@@ -227,6 +229,11 @@ export async function fetchAssetBlobUrl(projectId: string, assetId: string, sign
 }
 
 export const api = {
+  capabilities: (signal?: AbortSignal) => call<{ codex: boolean; vibi: boolean }>('GET', '/api/capabilities', undefined, signal),
+  generateScript: (input: import('../../src/shared/script/prompt.ts').ScriptPromptInput, signal?: AbortSignal) =>
+    call<import('../../src/shared/script/schema.ts').ScriptProposal>('POST', '/api/script/generate', input, signal),
+  generateDrawing: (project: Project, sceneId: string, signal?: AbortSignal) =>
+    call<import('../../src/shared/kit/types.ts').KitScene>('POST', '/api/drawing/generate', { project, sceneId }, signal),
   startRender: (projectId: string, expectedRevision: number) =>
     call<{ renderId: string }>('POST', `/api/projects/${encodeURIComponent(projectId)}/renders`, { expectedRevision }),
   renderStatus: (projectId: string, renderId: string) =>

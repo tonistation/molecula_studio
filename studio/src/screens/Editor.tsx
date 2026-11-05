@@ -7,6 +7,7 @@ import { PreviewPlayer } from '../components/PreviewPlayer.tsx';
 import { ExportPanel } from '../components/ExportPanel.tsx';
 import { ScriptStep } from '../components/ScriptStep.tsx';
 import { DrawingStep } from '../components/DrawingStep.tsx';
+import { useCodexCapability } from '../components/GenerationMode.tsx';
 import { ApiError, api, describeError, type ReadResult, type SaveResult } from '../api.ts';
 import {
   createScene,
@@ -34,6 +35,7 @@ interface EditorProps {
  * persisted revision; edits made while saving keep the draft dirty.
  */
 export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorProps) {
+  const codexCapability = useCodexCapability();
   const [draft, setDraft] = useState<Project>(opened.project);
   const [previewSeek, setPreviewSeek] = useState<{ sceneId: string; sequence: number } | null>(null);
   const [mode, setMode] = useState<ProjectMode>(opened.mode);
@@ -498,7 +500,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
             </label>
           </fieldset>
         </section>
-        <ScriptStep draft={draft} disabled={readOnly || relinking} onEdit={edit} />
+        <ScriptStep draft={draft} disabled={readOnly || relinking} onEdit={edit} codexCapability={codexCapability} />
         </div>
 
         <section className="panel">
@@ -586,7 +588,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
                       Eliminar
                     </button>
                   </div>
-                  <DrawingStep draft={draft} sceneId={scene.sceneId} disabled={readOnly || relinking} onEdit={edit} />
+                  <DrawingStep draft={draft} sceneId={scene.sceneId} disabled={readOnly || relinking} onEdit={edit} codexCapability={codexCapability} />
                 </li>
               ))}
             </ol>

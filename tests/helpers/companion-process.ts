@@ -65,10 +65,11 @@ export class CompanionProcess extends OwnedChild {
   token = '';
 
   constructor(root: string, port: number, options: { forceUnlock?: boolean; fault?: 'write' | 'pause'; studioDir?: string } = {}) {
+    // These persistence tests exercise unavailable provider capability, never the host's Codex installation.
     super(process.execPath, [
       '--import', fileURLToPath(new URL('./loopback-only.ts', import.meta.url)),
       options.fault ? fileURLToPath(new URL('./fault-companion.ts', import.meta.url)) : main,
-    ], { ...process.env, MOLECULA_WORKSPACE: root, MOLECULA_PORT: String(port),
+    ], { ...process.env, PATH: '', MOLECULA_WORKSPACE: root, MOLECULA_PORT: String(port),
       MOLECULA_STUDIO_DIR: options.studioDir ?? studioDir, MOLECULA_FORCE_UNLOCK: options.forceUnlock ? '1' : '0',
       MOLECULA_TEST_FAULT: options.fault ?? '' });
     this.origin = `http://127.0.0.1:${port}`;
