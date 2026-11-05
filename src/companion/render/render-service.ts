@@ -7,12 +7,16 @@ import { renderMedia, selectComposition } from '@remotion/renderer';
 import type { RenderMediaOnProgress } from '@remotion/renderer';
 import { LIMITS, parseProjectText } from '../../shared/schema/index.ts';
 import { projectToVideoProps } from '../../shared/video-props.ts';
+import type { Project } from '../../shared/schema/types.ts';
 
 export interface RenderProjectOptions {
   projectFile: string;
   workspaceRoot: string;
   outputPath?: string;
   onProgress?: RenderMediaOnProgress;
+  /** Trusted saved document read through ProjectStore by the HTTP boundary. */
+  savedProject?: Project;
+  assetUrls?: Record<string, string>;
   /** UTC clock override for deterministic filenames in tests. */
   now?: Date;
 }
@@ -34,31 +38,8 @@ export function createRenderService(deps: RendererDependencies = { bundle, selec
     let staging: string | undefined;
     try {
       // Read-only: reuse the store's bounded schema parser without taking its writer lock.
-      const handle = await open(resolve(options.projectFile), 'r');
-      let bytes: Buffer;
-      try {
-        const info = await handle.stat();
-        if (!info.isFile() || info.size > LIMITS.maxJsonBytes) {
-          throw new Error('El proyecto debe ser un archivo dentro del límite de tamaño.');
-        }
-        // A concurrent writer cannot make this allocation exceed the schema limit.
-        const buffer = Buffer.alloc(LIMITS.maxJsonBytes + 1);
-        let length = 0;
-        while (length < buffer.length) {
-          const read = await handle.read(buffer, length, buffer.length - length);
-          if (read.bytesRead === 0) break;
-          length += read.bytesRead;
-        }
-        bytes = buffer.subarray(0, length);
-      } finally {
-        await handle.close();
-      }
-      const parsed = parseProjectText(bytes);
-      if (!parsed.ok) {
-        throw new Error(`Proyecto inválido: ${parsed.issues.map(i => `${i.path}: ${i.message}`).join('; ')}`);
-      }
-      const project = parsed.project;
-      const inputProps = projectToVideoProps(project, {});
+      const project = options.savedProject ?? await readSavedProject(options.projectFile);
+      const inputProps = projectToVideoProps(project, options.assetUrls ?? {});
       if (project.output.voiceMode !== 'silent') {
         throw new Error('Este paso solo exporta proyectos silenciosos; la voz corresponde a la fase 4.');
       }
@@ -100,6 +81,33 @@ export function createRenderService(deps: RendererDependencies = { bundle, selec
       }
     }
   };
+}
+
+async function readSavedProject(projectFile: string): Promise<Project> {
+  const handle = await open(resolve(projectFile), 'r');
+  let bytes: Buffer;
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > LIMITS.maxJsonBytes) {
+      throw new Error('El proyecto debe ser un archivo dentro del límite de tamaño.');
+    }
+    // A concurrent writer cannot make this allocation exceed the schema limit.
+    const buffer = Buffer.alloc(LIMITS.maxJsonBytes + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const read = await handle.read(buffer, length, buffer.length - length);
+      if (read.bytesRead === 0) break;
+      length += read.bytesRead;
+    }
+    bytes = buffer.subarray(0, length);
+  } finally {
+    await handle.close();
+  }
+  const parsed = parseProjectText(bytes);
+  if (!parsed.ok) {
+    throw new Error(`Proyecto inválido: ${parsed.issues.map(i => `${i.path}: ${i.message}`).join('; ')}`);
+  }
+  return parsed.project;
 }
 
 async function assertAbsent(path: string): Promise<void> {

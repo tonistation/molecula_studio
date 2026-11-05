@@ -2,6 +2,9 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { join, sep } from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { createRenderJobs, RenderRequestError } from '../render/render-jobs.ts';
+import type { renderProject } from '../render/render-service.ts';
 
 import { LIMITS } from '../../shared/schema/limits.ts';
 import { ProjectStore, type WorkspaceOptions } from '../store/project-store.ts';
@@ -44,6 +47,8 @@ export interface CompanionServerOptions {
   store?: ProjectStore;
   /** Injectable clock passed to the store when created here. */
   now?: () => Date;
+  /** Test-only renderer injection; production shares the cached singleton. */
+  renderer?: typeof renderProject;
 }
 
 export interface CompanionServer {
@@ -82,9 +87,10 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
 
   const token = options.token ?? randomBytes(32).toString('hex');
   const state = { port: 0, origin: '' };
+  const renders = createRenderJobs(store, await realpath(options.workspaceRoot), options.renderer);
 
   const server = createServer((req, res) => {
-    void handleRequest(req, res, { store, token, state, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
+    void handleRequest(req, res, { store, token, state, renders, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -107,6 +113,7 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
     origin: state.origin,
     port: state.port,
     async close() {
+      await renders.settle();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await store.close();
     },
@@ -121,6 +128,7 @@ interface HandlerContext {
   state: { port: number; origin: string };
   studioDir: string | undefined;
   extraOrigins: string[] | undefined;
+  renders: ReturnType<typeof createRenderJobs>;
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, context: HandlerContext): Promise<void> {
@@ -128,6 +136,22 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, context:
     assertHost(req, context);
     const url = new URL(req.url ?? '/', context.state.origin);
     const pathname = url.pathname;
+
+    if (pathname.startsWith('/render-assets/')) {
+      // Remotion runs on its own random loopback origin and sends no bearer header.
+      // Keep Host protection; this GET-only capability replaces API Origin/token auth.
+      if (req.method !== 'GET') throw methodNotAllowed('GET');
+      const match = /^\/render-assets\/([a-f0-9]{64})\/([a-z][a-z0-9_-]{0,63})$/.exec(pathname);
+      if (!match) throw new HttpError(404, 'not-found', 'Recurso no encontrado.');
+      const { asset, bytes } = await context.renders.asset(match[1]!, match[2]!);
+      res.setHeader('access-control-allow-origin', '*');
+      res.setHeader('content-type', asset.mimeType);
+      res.setHeader('content-length', String(bytes.byteLength));
+      res.setHeader('cache-control', 'no-store');
+      res.setHeader('x-content-type-options', 'nosniff');
+      res.end(bytes);
+      return;
+    }
 
     if (pathname.startsWith('/api/')) {
       assertOrigin(req, context);
@@ -206,6 +230,32 @@ const PROJECT_ROUTE = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})(?:\/(copy|asset
 async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string, context: HandlerContext): Promise<void> {
   const { store } = context;
   const method = req.method ?? 'GET';
+
+  const renderRoute = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})\/renders(?:\/(r-[a-f0-9-]{36})(\/file)?)?$/.exec(pathname);
+  if (renderRoute) {
+    const projectId = renderRoute[1]!;
+    const renderId = renderRoute[2];
+    if (!renderId) {
+      if (method !== 'POST') throw methodNotAllowed('POST');
+      const body = requireObject(await readJsonBody(req));
+      if (typeof body.expectedRevision !== 'number' || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision < 0) {
+        throw new HttpError(400, 'invalid-argument', 'expectedRevision must be a non-negative safe integer');
+      }
+      sendJson(res, 202, await context.renders.start(projectId, body.expectedRevision, context.state.origin));
+    } else {
+      if (method !== 'GET') throw methodNotAllowed('GET');
+      if (renderRoute[3]) {
+        const { handle, size, filename } = await context.renders.file(projectId, renderId);
+        res.setHeader('content-type', 'video/mp4');
+        res.setHeader('content-length', String(size));
+        res.setHeader('content-disposition', `attachment; filename="${filename}"`);
+        res.setHeader('cache-control', 'no-store');
+        res.setHeader('x-content-type-options', 'nosniff');
+        await pipeline(handle.createReadStream(), res);
+      } else sendJson(res, 200, context.renders.get(projectId, renderId));
+    }
+    return;
+  }
 
   if (pathname === '/api/health') {
     if (method !== 'GET') throw methodNotAllowed('GET');
@@ -531,6 +581,9 @@ interface ErrorBody {
 }
 
 function mapError(error: unknown): { status: number; body: ErrorBody } {
+  if (error instanceof RenderRequestError) {
+    return { status: error.status, body: { error: { code: error.code, message: error.message } } };
+  }
   if (error instanceof HttpError) {
     return { status: error.status, body: { error: { code: error.code, message: error.message } } };
   }
