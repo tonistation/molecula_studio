@@ -292,7 +292,10 @@ La generación va en **dos etapas** con modo dual cada una: **Guion** (texto y d
 
 - **Archivos:** `src/shared/script/parse.ts` + test.
 - **Hacer:** `parseScriptResponse(text)` tolerante: quita bloques de código, toma el primer objeto JSON, valida contra el contrato. Devuelve `{ ok: true, proposal }` o `{ ok: false, errors }` con mensajes en español para la UI. Nunca recorta valores en silencio.
-- **Aceptación:** [ ] casos: válido, con bloque de código, con texto antes y después, campo faltante, demasiadas escenas, total > 60 s.
+- **Aceptación:** [x] casos: válido, con bloque de código, con texto antes y después, campo faltante, demasiadas escenas, total > 60 s.
+- **Decisiones 3.2:** se extrae el primer objeto balanceado, respetando comillas y escapes; los delimitadores de bloque y la prosa exteriores se descartan sin alterar las cadenas. Si ese objeto es inválido, no se busca otro posterior. Se reutiliza el decodificador JSON estricto del proyecto, ahora expuesto como `parseBoundedJsonText`, sin cambiar la selección de versión ni migración. Se conserva el rechazo de claves duplicadas/peligrosas (incluso escapadas), profundidad > 16 y respuestas completas de más de 2 MiB en UTF-8. Validación dirigida por el contrato cerrado de 3.1, más sumas de duración/narración y URLs HTTP(S) absolutas sin credenciales ni espacios. Conteo por puntos de código Unicode y suma compensada para evitar falsos rechazos por acumulación decimal en 60 s; no se redondean ni recortan los valores de la propuesta. Errores en español sin repetir el contenido crudo de la respuesta.
+- **Verificación 3.2:** TDD rojo inicial por módulo ausente; regresión adicional roja/verde de seis duraciones decimales que suman 60 s. Trece pruebas nuevas cubren aceptación, contrato anidado completo, límites de textos/metadatos, escapes, claves hostiles, bytes y profundidad. `npm test`: 405/405, sin omitidas, incluido el render CLI real de 2 s; `npm run typecheck` y `npm run build:studio` en verde. E2E no ejecutadas de nuevo: no hay UI ni rutas nuevas. Sin cambios de schema, dependencias, proveedores, aplicación al borrador ni dibujo. Se conserva el aviso conocido de tamaño del bundle.
+- **Demo 3.2:** `node --test tests/unit/script-parse.test.ts` verifica localmente propuestas con y sin bloques/prosa y muestra los casos de rechazo. `parseScriptResponse(text)` devuelve `{ ok: true, proposal }` o `{ ok: false, errors }`; aún no existe un consumidor en la UI. Aplicación y dibujo corresponden a 3.3.
 
 ### 3.3 `applyScriptProposal` y Dibujo de escenas — TDD
 
@@ -480,7 +483,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 2.2 `PreviewPlayer`
 - [x] 2.3 Exportar desde la UI
 - [x] 3.1 Contrato y prompt
-- [ ] 3.2 Parseo y validación
+- [x] 3.2 Parseo y validación
 - [ ] 3.3 Aplicar guion y dibujo de escenas
 - [ ] 3.4 Guion manual
 - [ ] 3.5 Guion automático con Codex

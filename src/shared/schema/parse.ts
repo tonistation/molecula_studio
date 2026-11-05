@@ -17,8 +17,7 @@ const ENCODER = new TextEncoder();
  */
 export function parseProjectText(input: string | Uint8Array): ParseOutcome {
   try {
-    const text = decodeInput(input);
-    const value = parseJsonText(text);
+    const value = parseBoundedJsonText(input);
     return selectVersion(value);
   } catch (error) {
     if (error instanceof ProjectJsonError) {
@@ -26,6 +25,11 @@ export function parseProjectText(input: string | Uint8Array): ParseOutcome {
     }
     throw error;
   }
+}
+
+/** Strict, bounded JSON decoding shared by imported documents and generated data. */
+export function parseBoundedJsonText(input: string | Uint8Array): unknown {
+  return parseJsonText(decodeInput(input));
 }
 
 function decodeInput(input: string | Uint8Array): string {
