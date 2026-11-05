@@ -20,6 +20,7 @@ test('converts storyboard into contiguous frame ranges and preserves rendering i
   assert.deepEqual(props.scenes.map(s => [s.fromFrame, s.durationInFrames]), [[0, 180], [180, 180]]);
   assert.deepEqual(props.entities, project.entities);
   assert.equal(props.scenes[0]!.text, project.scenes[0]!.text);
+  assert.equal(props.scenes[0]!.title, project.scenes[0]!.title);
   assert.deepEqual(props.scenes[0]!.visual, project.scenes[0]!.visual);
   assert.deepEqual(props.scenes[0]!.words, project.scenes[0]!.words);
   assert.equal(props.scenes[0]!.audioUrl, null);

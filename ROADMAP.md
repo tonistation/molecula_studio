@@ -146,7 +146,7 @@ Ejecutar este paso es la autorización explícita de instalación.
 ### 1.1 `projectToVideoProps` — TDD
 
 - **Archivos:** `src/shared/video-props.ts`, `tests/unit/video-props.test.ts`.
-- **Hacer:** `Project` + `assetUrls: Record<string, string>` → `{ fps, width, height, durationInFrames, captionStyle, voiceMode, entities, scenes: [{ sceneId, fromFrame, durationInFrames, text, visualIntent, visual, words, audioUrl | null, gainDb }] }`. Usar `totalFrames` de `timeline.ts`. Estilo desconocido o visual inerte → error explícito. `visual: null` → escena provisional con fondo y `visualIntent` (no es error). `text` permite estimar subtítulos y `entities` conserva las definiciones referenciadas por los visuales.
+- **Hacer:** `Project` + `assetUrls: Record<string, string>` → `{ fps, width, height, durationInFrames, captionStyle, voiceMode, entities, scenes: [{ sceneId, title, fromFrame, durationInFrames, text, visualIntent, visual, words, audioUrl | null, gainDb }] }`. Usar `totalFrames` de `timeline.ts`. Estilo desconocido o visual inerte → error explícito. `visual: null` → escena provisional con fondo y `visualIntent` (no es error). `text` permite estimar subtítulos y `entities` conserva las definiciones referenciadas por los visuales.
 - **Aceptación:**
   - [x] Con `docs/plan/examples/storyboard-project.json`: frames y fronteras de escena correctos y contiguos.
   - [x] Función pura: misma entrada, misma salida.
@@ -155,7 +155,7 @@ Ejecutar este paso es la autorización explícita de instalación.
 
 - **Archivos:** `src/video/index.ts` (`registerRoot`), `src/video/Root.tsx`, `src/video/VerticalVideo.tsx`; script `npm run video:studio` → `remotion studio src/video/index.ts`.
 - **Hacer:** `<Composition id="Vertical">` 1080×1920, 30 fps, `calculateMetadata` desde las props, `defaultProps` desde el JSON de ejemplo. Un `<Sequence>` por escena con fondo y título provisional.
-- **Aceptación:** [ ] Remotion Studio muestra 12 s con 2 escenas y el scrub funciona.
+- **Aceptación:** [x] Remotion Studio muestra 12 s con 2 escenas y el scrub funciona.
 
 ### 1.3a Contrato `KitScene` y schema 2 — TDD
 
@@ -440,7 +440,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 0.3 Fuente
 - [x] 0.4 Referencias visuales (ADR-09 decidido)
 - [x] 1.1 `projectToVideoProps`
-- [ ] 1.2 Composición base y Remotion Studio
+- [x] 1.2 Composición base y Remotion Studio
 - [ ] 1.3a Contrato KitScene y schema 2
 - [ ] 1.3b Renderer del kit
 - [ ] 1.4 Subtítulos palabra por palabra

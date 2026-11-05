@@ -6,7 +6,9 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "types": ["node"],
-    "noEmit": true
+    "noEmit": true,
+    "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "../src/shared/**/*.ts", "../src/video/**/*.ts", "../src/video/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "../src/shared/**/*.ts", "../src/video/**/*.ts", "../src/video/**/*.tsx"],
+  "exclude": []
 }

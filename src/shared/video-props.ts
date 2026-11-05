@@ -3,6 +3,7 @@ import { totalFrames } from './timeline.ts';
 
 export interface VideoSceneProps {
   sceneId: string;
+  title: string;
   fromFrame: number;
   durationInFrames: number;
   text: string;
@@ -13,7 +14,7 @@ export interface VideoSceneProps {
   gainDb: number;
 }
 
-export interface VideoProps {
+export type VideoProps = {
   fps: number;
   width: number;
   height: number;
@@ -22,7 +23,7 @@ export interface VideoProps {
   voiceMode: Output['voiceMode'];
   entities: Entity[];
   scenes: VideoSceneProps[];
-}
+};
 
 export function projectToVideoProps(project: Project, assetUrls: Record<string, string>): VideoProps {
   if (project.styleId !== 'stylized-3d' || project.styleVersion !== 1) {
@@ -37,6 +38,7 @@ export function projectToVideoProps(project: Project, assetUrls: Record<string, 
     const endFrame = totalFrames(scene.startMs + scene.durationMs, fps);
     return {
       sceneId: scene.sceneId,
+      title: scene.title,
       fromFrame,
       durationInFrames: endFrame - fromFrame,
       text: scene.text,
