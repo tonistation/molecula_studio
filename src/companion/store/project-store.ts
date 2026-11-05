@@ -7,8 +7,9 @@ import {
   serializeProject,
   validateProject,
 } from '../../shared/schema/index.ts';
-import type { Asset, AssetMimeType, Project, ProjectMode } from '../../shared/schema/types.ts';
-import { sha256Hex } from '../../shared/digests.ts';
+import type { Asset, AssetMimeType, Project, ProjectMode, Word } from '../../shared/schema/types.ts';
+import type { KitScene } from '../../shared/kit/types.ts';
+import { bindingDigests, sha256Hex } from '../../shared/digests.ts';
 import { createNodeFsOps, isErrno, type FsOps, type FsStats } from './fs-ops.ts';
 import { isValidOperationId, isValidProjectId, newOperationId, newProjectId } from './ids.ts';
 import { InspectionError } from './media-inspect.ts';
@@ -178,6 +179,21 @@ export interface RelinkResult {
 
 export interface TempReport {
   [projectId: string]: string[];
+}
+
+export interface AttachSceneAudioArgs {
+  projectId: string;
+  sceneId: string;
+  bytes: Uint8Array;
+  mimeType: 'audio/wav' | 'audio/mpeg';
+  source: Asset['source'];
+  words: Word[];
+  expectedRevision: number;
+  expectedDigest: string;
+}
+
+export interface AttachSceneAudioResult extends SaveResult {
+  assetId: string;
 }
 
 /**
@@ -913,6 +929,145 @@ export class ProjectStore {
 
   //#endregion relink
 
+  /** Attaches inspected narration and its alignment in one serialized document commit. */
+  async attachSceneAudio(input: AttachSceneAudioArgs): Promise<AttachSceneAudioResult> {
+    this.#assertReady();
+    assertValidProjectId(input.projectId);
+    if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) {
+      throw new InvalidArgumentError('expectedRevision must be a non-negative safe integer');
+    }
+    if (typeof input.expectedDigest !== 'string' || !/^[a-f0-9]{64}$/.test(input.expectedDigest)) {
+      throw new InvalidArgumentError('expectedDigest must be a lowercase SHA-256 digest');
+    }
+    if (!(input.bytes instanceof Uint8Array) || input.bytes.byteLength === 0) {
+      throw new InvalidArgumentError('audio bytes must be a non-empty Uint8Array');
+    }
+    if (input.mimeType !== 'audio/wav' && input.mimeType !== 'audio/mpeg') {
+      throw new InvalidArgumentError('scene audio must be WAV or MP3');
+    }
+    // Capture mutable caller data before the first await, including queued calls.
+    const args = { ...input, bytes: Uint8Array.from(input.bytes), source: structuredClone(input.source), words: structuredClone(input.words) };
+    return this.#withProject(args.projectId, async () => {
+      const current = await this.#readBytes(args.projectId);
+      if (current.revision !== args.expectedRevision) {
+        throw new ConflictError({ projectId: args.projectId, reason: 'revision', expectedRevision: args.expectedRevision, actualRevision: current.revision });
+      }
+      if (current.digest !== args.expectedDigest) {
+        throw new ConflictError({ projectId: args.projectId, reason: 'digest', expectedDigest: args.expectedDigest, actualDigest: current.digest });
+      }
+      if (current.mode === 'read-only') throw new ReadOnlyProjectError(args.projectId);
+      const selected = current.project.scenes.find((scene) => scene.sceneId === args.sceneId);
+      if (selected === undefined) throw new InvalidArgumentError('sceneId must identify an existing scene');
+      let inspection;
+      try {
+        inspection = await inspectMediaBounded(args.bytes, args.mimeType);
+      } catch (error) {
+        if (error instanceof InspectionError) throw new AssetRejectedError(error.reason, error.message);
+        throw error;
+      }
+      if (inspection.durationMs === null) throw new AssetRejectedError('unreadable', 'audio duration is unavailable');
+      const durationMs = Math.max(LIMITS.minSceneMs,
+        Math.ceil((inspection.durationMs + 300) / LIMITS.timeStepMs) * LIMITS.timeStepMs);
+      if (durationMs > LIMITS.maxSceneMs) throw new AssetRejectedError('audio-too-long', 'audio plus padding exceeds the scene duration limit');
+
+      await this.#checkAssetsDir(args.projectId);
+      let assetId = '';
+      let assetPath = '';
+      for (let attempt = 0; attempt < NAME_ATTEMPTS; attempt += 1) {
+        assetId = this.#freeAssetId(current.project);
+        assetPath = `assets/${assetId}.${MIME_EXTENSION[args.mimeType]}`;
+        if ((await this.#lstatOrNull(join(this.#projectDir(args.projectId), assetPath))) === null) break;
+        assetId = '';
+      }
+      if (assetId === '') throw new StoreError('workspace-exhausted', 'could not allocate an unused audio path');
+      const asset: Asset = { assetId, path: assetPath, kind: 'audio', mimeType: args.mimeType,
+        source: args.source, sha256: await sha256Hex(args.bytes), byteLength: args.bytes.byteLength, durationMs: inspection.durationMs };
+      const project = structuredClone(current.project);
+      const scene = project.scenes.find((item) => item.sceneId === args.sceneId)!;
+      const oldAsset = project.assets.find((item) => item.assetId === scene.audio?.assetId);
+      if (scene.visual !== null && 'kind' in scene.visual && scene.durationMs !== durationMs) {
+        scene.visual = rescaleKitTiming(scene.visual, scene.durationMs, durationMs);
+      }
+      scene.durationMs = durationMs;
+      scene.audio = { assetId, offsetMs: 0, gainDb: 0 };
+      scene.words = args.words;
+      scene.mediaBindings = { audio: null, words: null };
+      scene.revision += 1;
+      const removeOld = oldAsset !== undefined && !project.scenes.some((item) => item.audio?.assetId === oldAsset.assetId);
+      project.assets = [...project.assets.filter((item) => !removeOld || item.assetId !== oldAsset!.assetId), asset];
+      project.output.voiceMode = 'withVoice';
+      let startMs = 0;
+      for (const item of project.scenes) { item.startMs = startMs; startMs += item.durationMs; }
+      project.output.durationMs = startMs;
+      project.revision += 1;
+      const now = this.#isoNow();
+      project.updatedAt = now < project.updatedAt ? project.updatedAt : now;
+      // Reject invalid alignment, source metadata or aggregate limits before publishing bytes.
+      this.#assertEditablePayload(project, args.projectId);
+      const expected = await bindingDigests(project);
+      const binding = expected.scenes.find((item) => item.sceneId === scene.sceneId)!;
+      scene.mediaBindings = {
+        audio: { inputDigest: binding.audioInputDigest!, outputDigest: binding.audioOutputDigest! },
+        words: binding.wordsInputDigest === null ? null : { inputDigest: binding.wordsInputDigest, outputDigest: binding.wordsOutputDigest! },
+      };
+      if (current.project.output.voiceMode === 'silent') {
+        const before = await bindingDigests(current.project);
+        for (const [index, other] of project.scenes.entries()) {
+          if (other.sceneId === scene.sceneId || other.audio === null || other.mediaBindings.words === null) continue;
+          const prior = before.scenes[index]!;
+          const next = expected.scenes[index]!;
+          const historical = other.mediaBindings;
+          // Rebase only the mode-induced input change, never stale text/audio/words.
+          if (historical.audio?.inputDigest === prior.audioInputDigest && historical.audio.outputDigest === prior.audioOutputDigest
+            && historical.words!.inputDigest === prior.wordsInputDigest && historical.words!.outputDigest === prior.wordsOutputDigest
+            && next.wordsInputDigest !== prior.wordsInputDigest && next.wordsInputDigest !== null) {
+            other.mediaBindings.words = { inputDigest: next.wordsInputDigest, outputDigest: next.wordsOutputDigest! };
+            other.revision += 1;
+          }
+        }
+      }
+      this.#assertEditablePayload(project, args.projectId);
+      const bytes = this.#encode(project);
+      if (bytes.byteLength > LIMITS.maxJsonBytes) throw new InvalidArgumentError('updated project exceeds the JSON byte limit');
+      const digest = await sha256Hex(bytes);
+      const assertUnchanged = async () => {
+        const fresh = await this.#readBytes(args.projectId);
+        if (fresh.digest !== current.digest) throw new ConflictError({ projectId: args.projectId, reason: 'digest', expectedDigest: current.digest, actualDigest: fresh.digest });
+      };
+      let receipt: SaveReceipt;
+      let assetPublished = false;
+      try {
+        await assertUnchanged();
+        await this.#writeAssetFile(args.projectId, assetPath, args.bytes, () => { assetPublished = true; });
+        await assertUnchanged();
+        receipt = await this.#commitOver({ projectId: args.projectId, bytes, digest, revision: project.revision, operationId: newOperationId() });
+      } catch (error) {
+        // A post-rename error may have published the document: keep its audio.
+        const after = await this.#readBytes(args.projectId).catch(() => null);
+        if (assetPublished && after !== null && !after.project.assets.some((item) => item.path === assetPath || item.assetId === assetId)) {
+          await this.#removeUnchangedAsset(args.projectId, asset).catch(() => undefined);
+        }
+        throw error;
+      }
+      this.#remember(args.projectId, project.revision, receipt.digest);
+      this.#registerReceipt(receipt, digest);
+      if (removeOld && receipt.sync === 'confirmed') {
+        // Recheck external edits and file identity before removing owned, unused bytes.
+        const after = await this.#readBytes(args.projectId).catch(() => null);
+        if (after?.digest === receipt.digest) await this.#removeUnchangedAsset(args.projectId, oldAsset!).catch(() => undefined);
+      }
+      return { assetId, receipt, revision: project.revision, digest: receipt.digest };
+    });
+  }
+
+  async #removeUnchangedAsset(projectId: string, asset: Asset): Promise<void> {
+    await this.#checkProjectDirectory(projectId);
+    const path = await this.#existingAssetPath(projectId, asset.path);
+    if (path !== null && asset.sha256 !== null && await sha256Hex(await this.#fs.readFile(path)) === asset.sha256) {
+      await this.#fs.unlink(path);
+    }
+  }
+
   //#region Lifecycle
 
   #assertNotClosed(): void {
@@ -1087,7 +1242,7 @@ export class ProjectStore {
    * Writes asset bytes through a temp file in `assets/` and an atomic rename,
    * so a crash never leaves a truncated file under a referenced path.
    */
-  async #writeAssetFile(projectId: string, assetPath: string, bytes: Uint8Array): Promise<void> {
+  async #writeAssetFile(projectId: string, assetPath: string, bytes: Uint8Array, onExclusivePublish?: () => void): Promise<void> {
     const filename = assetFilename(assetPath);
     const assetsDir = join(this.#projectDir(projectId), ASSETS_DIR);
     if (!(await this.#checkAssetsDir(projectId))) {
@@ -1095,17 +1250,27 @@ export class ProjectStore {
     }
     const target = join(assetsDir, filename);
     const temp = join(assetsDir, `.tmp-${newOperationId()}`);
+    let tempWritten = false;
     try {
       await this.#fs.writeFileExclusive(temp, bytes);
+      tempWritten = true;
       await this.#fs.syncFile(temp);
-      await this.#fs.rename(temp, target);
+      if (onExclusivePublish !== undefined) {
+        // New ingestion must never replace an unrelated file, even in a race.
+        await this.#fs.link(temp, target);
+        onExclusivePublish();
+        await this.#fs.unlink(temp);
+      } else {
+        await this.#fs.rename(temp, target);
+      }
       // A failure here must not be reported as a successful restoration.
       await this.#fs.syncDir(assetsDir);
       // Also flush assets/'s entry in its parent. Always do this, including
       // retries after a prior mkdir became visible but its parent sync failed.
       await this.#fs.syncDir(this.#projectDir(projectId));
     } catch (error) {
-      await this.#fs.unlink(temp).catch(() => undefined);
+      // EEXIST during creation means the temporary belongs to someone else.
+      if (tempWritten || !isErrno(error, 'EEXIST')) await this.#fs.unlink(temp).catch(() => undefined);
       if (error instanceof StoreError) throw error;
       throw new StoreCommitError('write', error instanceof Error ? error.message : String(error), {
         cause: error,
@@ -1377,4 +1542,34 @@ function assetFilename(assetPath: string): string {
     throw new InvalidArgumentError(`asset path ${JSON.stringify(assetPath)} is not a project asset reference`);
   }
   return filename;
+}
+
+/** Preserve equal timestamps and strict temporal order even when rounded times collide. */
+function rescaleKitTiming(visual: KitScene, oldDuration: number, duration: number): KitScene {
+  const copy = structuredClone(visual);
+  const times = new Set([0, oldDuration]);
+  for (const object of copy.objects) for (const animation of object.animations) {
+    times.add(animation.startMs); times.add(animation.endMs);
+  }
+  for (const overlay of copy.overlays) if (overlay.type === 'counter') {
+    times.add(overlay.startMs); times.add(overlay.endMs);
+  }
+  for (const frame of copy.camera.keyframes ?? []) times.add(frame.atMs);
+  const ordered = [...times].sort((a, b) => a - b);
+  const scaled = new Map<number, number>();
+  let previous = -1;
+  ordered.forEach((time, index) => {
+    const value = Math.min(duration - (ordered.length - index - 1), Math.max(previous + 1, Math.round(time * duration / oldDuration)));
+    scaled.set(time, value);
+    previous = value;
+  });
+  for (const object of copy.objects) for (const animation of object.animations) {
+    animation.startMs = scaled.get(animation.startMs)!; animation.endMs = scaled.get(animation.endMs)!;
+  }
+  for (const overlay of copy.overlays) if (overlay.type === 'counter') {
+    overlay.startMs = scaled.get(overlay.startMs)!; overlay.endMs = scaled.get(overlay.endMs)!;
+  }
+  for (const frame of copy.camera.keyframes ?? []) frame.atMs = scaled.get(frame.atMs)!;
+  // Particles have speed/seed, not explicit timestamp fields in kitVersion 1.
+  return copy;
 }

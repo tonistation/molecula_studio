@@ -352,17 +352,21 @@ La generación va en **dos etapas** con modo dual cada una: **Guion** (texto y d
 
 - **Archivos:** `src/companion/store/project-store.ts` (método nuevo), `tests/integration/attach-audio.test.ts`.
 - **Hacer:** `attachSceneAudio({ projectId, sceneId, bytes, mimeType, source, words, expectedRevision, expectedDigest })` en **una** transacción:
-  1. Escribir `assets/<assetId>.<ext>` (temporal + rename) e inspeccionar con `inspectMedia` existente.
+   1. Inspeccionar los bytes con el inspector existente antes de escribir. Publicar `assets/<assetId>.<ext>` desde un temporal, de forma atómica y sin reemplazar un archivo competidor (enlace físico + retirada del temporal).
   2. Añadir al manifest con `sha256` y `durationMs`.
   3. `scene.audio = { assetId, offsetMs: 0, gainDb: 0 }` y `scene.words`.
-  4. `durationMs = ceil((audioMs + 300) / 100) * 100`; error si supera 15 000. Recalcular `startMs` y `output.durationMs`.
+   4. **Política aprobada por el usuario:** `durationMs = max(1000, ceil((audioMs + 300) / 100) * 100)`; error si supera 15 000. Al cambiar la duración, reescalar proporcionalmente todos los tiempos visuales explícitos; conservar igualdad y orden estricto tras redondear a milisegundos enteros, y rangos válidos. Recalcular `startMs` y `output.durationMs`; rechazar una suma superior a 60 000 ms sin escribir.
   5. `output.voiceMode = 'withVoice'`.
   6. Calcular `mediaBindings` con `bindingDigests()` **después** de fijar `voiceMode` y duraciones (el digest de palabras depende de ambos).
   7. Guardar con el camino atómico existente. Si el activo anterior ya no lo usa ninguna escena, quitarlo del manifest y borrar su archivo después del commit.
 - **Aceptación:**
-  - [ ] Revisión desactualizada → 409 y nada escrito.
-  - [ ] Audio demasiado largo → error y nada escrito.
-  - [ ] Reabrir muestra bindings vigentes y pasa `validateProject`.
+   - [x] Revisión desactualizada → conflicto tipado (mapeo HTTP existente: 409) y nada escrito.
+   - [x] Audio demasiado largo → error y nada escrito.
+   - [x] Reabrir muestra bindings vigentes y pasa `validateProject`.
+- **Decisiones 4.1:** una operación serializada por proyecto, con revisión y digest de disco obligatorios, comprobados antes de inspeccionar y de nuevo antes/después de publicar el activo. Se capturan bytes, palabras y procedencia al entrar para evitar mutaciones del llamador durante la espera. El documento usa el commit atómico existente; se incrementan revisión del proyecto y de la escena elegida, y se conservan metadatos editoriales y aprobación histórica. Se sustituyen los bindings de la escena elegida, incluidos `null` cuando las palabras están vacías. Al pasar de `silent` a `withVoice`, solo se ajusta el input de palabras de otra escena si sus vínculos previos de audio y palabras eran vigentes; nunca se certifica evidencia desactualizada. Ese ajuste incrementa su revisión de escena.
+- **Tiempos y limpieza 4.1:** cámara/keyframes, animaciones y contadores comparten un mapa proporcional de tiempos únicos; los choques de redondeo se separan por 1 ms, reservando espacio para los tiempos posteriores. Partículas, rótulos y chevrons no tienen tiempos explícitos en `kitVersion: 1`: se conservan sus parámetros. Archivos compartidos por otras escenas permanecen en manifest y disco. El audio antiguo no compartido se retira del manifest; su archivo solo se elimina tras commit confirmado, documento aún idéntico y hash de archivo coincidente. Ante commit incierto o verificación fallida se conservan los medios potencialmente publicados; un fallo previo limpia únicamente el activo nuevo propio si el documento comprobable no lo declara. No hay journal ni promesa de atomicidad multarchivo frente a caída del proceso.
+- **Verificación 4.1:** TDD rojo inicial por método ausente; regresiones adicionales rojo/verde para archivos competidores (destino y temporal) y sustitución de alineación por palabras vacías. `npm test`: 447/447, sin omitidas, incluidas 20 pruebas nuevas con disco real y el render CLI real de 2 s; typecheck y build en verde. Se cubren revisión/digest obsoletos y audio largo sin una sola escritura temporal, límites mínimo/máximo/agregado, WAV/MP3, MIME/procedencia/palabras inválidos, guardado/reapertura y bindings, reescalado al acortar/alargar, concurrencia, archivos compartidos, fallos antes/después del commit, modificaciones externas, symlinks y limpieza segura. E2E no ejecutadas de nuevo: no se modifican UI, rutas ni renderer. Sin cambios de schema, dependencias ni proveedores. Context7 sin cuota; API de archivos contrastada con documentación oficial de Node.js. Aviso conocido de tamaño del bundle no bloqueante. Se mantiene una unidad de commit coherente (store, seam de publicación, pruebas y política), sin dividir infraestructura y oráculos solo por cantidad de líneas.
+- **Demo y alcance 4.1:** `node --test tests/integration/attach-audio.test.ts` recorre ingesta → guardado → reapertura sobre directorios temporales reales y comprueba manifest, bytes, tiempos y vínculos. Los medios sintéticos solo verifican el inspector de cabeceras, no reproducción. No se añade UI ni ruta de audio; escuchar desde el estudio corresponde a 4.2 y exportar con voz a 4.5. La demo sonora queda pendiente de esos pasos, no se afirma que esta entrega reproduzca voz.
 
 ### 4.2 Modo manual de voz
 
@@ -504,7 +508,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 3.3 Aplicar guion y dibujo de escenas
 - [x] 3.4 Guion manual (UI verificada con respuestas externas emuladas; ChatGPT web pendiente)
 - [x] 3.5 Guion automático con Codex (verificado con ejecutable falso y MP4 real; proveedor real pendiente)
-- [ ] 4.1 Ingesta de audio
+- [x] 4.1 Ingesta de audio (store verificado con disco real; UI y reproducción pendientes)
 - [ ] 4.2 Voz manual
 - [ ] 4.3 Cliente Vibi y alineación
 - [ ] 4.4 Voz automática con Vibi

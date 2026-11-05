@@ -1,5 +1,6 @@
 import {
   copyFile,
+  link,
   lstat,
   mkdir,
   open,
@@ -41,6 +42,8 @@ export interface FsOps {
   /** Flushes a directory entry list where the platform supports it. */
   syncDir(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
+  /** Atomically publishes an existing file without replacing a competing entry. */
+  link(from: string, to: string): Promise<void>;
   unlink(path: string): Promise<void>;
   rm(path: string, options: { recursive?: boolean; force?: boolean }): Promise<void>;
   copyFile(from: string, to: string): Promise<void>;
@@ -90,6 +93,7 @@ export function createNodeFsOps(): FsOps {
       }
     },
     rename,
+    link,
     unlink,
     async rm(path, options) {
       await rm(path, options);
