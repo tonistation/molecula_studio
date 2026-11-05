@@ -1,6 +1,5 @@
-import { ProjectJsonError } from '../schema/errors.ts';
 import { LIMITS } from '../schema/limits.ts';
-import { parseBoundedJsonText } from '../schema/parse.ts';
+import { parseResponseObject } from '../response-json.ts';
 import { SCRIPT_PROPOSAL_SCHEMA } from './schema.ts';
 import type { ScriptProposal } from './schema.ts';
 
@@ -25,25 +24,9 @@ interface ContractNode {
 
 /** Import data only: no repair, truncation, URL fetching or proposal application. */
 export function parseScriptResponse(text: string): ScriptParseResult {
-  if (text.length > LIMITS.maxJsonBytes || new TextEncoder().encode(text).byteLength > LIMITS.maxJsonBytes) {
-    return { ok: false, errors: [`La respuesta supera el límite de ${LIMITS.maxJsonBytes} bytes.`] };
-  }
-  const objectText = firstObject(text);
-  if (objectText === null) return { ok: false, errors: ['No se encontró un objeto JSON completo en la respuesta.'] };
-
-  let value: unknown;
-  try {
-    value = parseBoundedJsonText(objectText);
-  } catch (error) {
-    if (!(error instanceof ProjectJsonError)) throw error;
-    const messages: Partial<Record<typeof error.failure, string>> = {
-      'duplicate-key': 'El JSON contiene claves duplicadas.',
-      'dangerous-key': 'El JSON contiene claves peligrosas no permitidas.',
-      'too-deep': `El JSON supera la profundidad máxima de ${LIMITS.maxDepth}.`,
-      'too-large': `El JSON supera el límite de ${LIMITS.maxJsonBytes} bytes.`,
-    };
-    return { ok: false, errors: [messages[error.failure] ?? 'El objeto JSON no es válido. Revisa su sintaxis.'] };
-  }
+  const decoded = parseResponseObject(text);
+  if (!decoded.ok) return decoded;
+  const value = decoded.value;
 
   const errors: string[] = [];
   validateContract(value, SCRIPT_PROPOSAL_SCHEMA, '$', errors);
@@ -66,29 +49,6 @@ export function parseScriptResponse(text: string): ScriptParseResult {
     if (!isSourceUrl(source.url)) errors.push(`$.sources[${index}].url: debe ser una URL HTTP(S) absoluta, sin espacios ni credenciales.`);
   }
   return errors.length > 0 ? { ok: false, errors } : { ok: true, proposal };
-}
-
-/** Fence markers and prose stay outside the slice; markers inside strings stay intact. */
-function firstObject(text: string): string | null {
-  const start = text.indexOf('{');
-  if (start < 0) return null;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let index = start; index < text.length; index += 1) {
-    const character = text[index];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (character === '\\') escaped = true;
-      else if (character === '"') inString = false;
-    } else if (character === '"') inString = true;
-    else if (character === '{') depth += 1;
-    else if (character === '}') {
-      depth -= 1;
-      if (depth === 0) return text.slice(start, index + 1);
-    }
-  }
-  return null;
 }
 
 function validateContract(value: unknown, schema: ContractNode, path: string, errors: string[]): void {

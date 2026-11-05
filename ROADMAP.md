@@ -306,9 +306,13 @@ La generación va en **dos etapas** con modo dual cada una: **Guion** (texto y d
   - Continuidad: el prompt recibe los objetos ya usados; reutilizar `objectId` cuando el sujeto se repite.
   - Modo dual como el guion: «Copiar prompt de dibujo» / «Pegar escena» en manual, y `codex exec` con el schema de `KitScene` en automático (mismo adaptador de 3.5). «Dibujar todas» o «Redibujar esta escena».
 - **Aceptación:**
-  - [ ] El proyecto resultante pasa `validateProject` en ambas etapas.
-  - [ ] Un JSON de escena inválido muestra errores y no toca el borrador.
-  - [ ] Redibujar una escena no cambia las demás.
+   - [x] El proyecto resultante pasa `validateProject` en ambas etapas.
+   - [x] Un JSON de escena inválido muestra errores y no toca el borrador.
+   - [x] Redibujar una escena no cambia las demás.
+- **Dibujo 3.3:** `buildKitPrompt` recibe la escena, las escenas previas y las fuentes editoriales; incluye el catálogo completo, los objetos previos con identidad/semilla y el schema literal compacto `KIT_SCENE_SCHEMA` de `src/shared/kit/output-schema.ts`. Pide una sola escena, estética low-poly, cámara suave, rótulos y continuidad por ID. El contrato de salida representa los campos históricos opcionales mediante variantes de presencia `anyOf` cerradas: cada objeto declara todas sus propiedades como obligatorias, sin añadir `null` ni cambiar el schema persistido. Comparte `$defs` para evitar repetir restricciones. Las relaciones entre campos (IDs, referencias, identidad histórica, tiempos, vectores unitarios) siguen verificándose con `validateKitScene`; no se atribuyen a JSON Schema comprobaciones que no expresa.
+- **Fronteras 3.3:** guion y dibujo comparten `parseResponseObject` en `src/shared/response-json.ts`, extraído de 3.2 sin cambiar sus límites ni su selección del primer objeto. `parseKitResponse(text, { durationMs?, entities? })` devuelve `{ ok: true, scene }` o `{ ok: false, errors }` en español y reutiliza el validador existente. `applyKitScene` siempre comprueba duración y entidades del proyecto destino, valida el proyecto completo y cambia únicamente el visual y la revisión de la escena elegida (+1, igual que el editor). No cambia narración, audio, palabras, bindings, aprobación histórica, fechas ni revisión del proyecto. Ninguna operación guarda ni muta sus entradas.
+- **Verificación 3.3:** TDD rojo inicial por módulos ausentes; 14 pruebas nuevas cubren aplicación, IDs explícitos, redondeo y límite agregado, aislamiento del redibujo, referencias históricas, tiempos, entradas inválidas y límites JSON. El contrato de salida se comprueba con un evaluador de pruebas independiente para su vocabulario, cobertura del catálogo y variantes históricas; todas las ramas están cerradas y dentro de los límites documentados de Structured Outputs. `npm test`: 419/419, sin omitidas, incluido el render CLI real de 2 s; `npm run typecheck` y `npm run build:studio` en verde. E2E no ejecutadas de nuevo: no cambian UI, rutas ni renderer. Context7 sin cuota; restricciones del schema contrastadas con la [documentación oficial de OpenAI](https://developers.openai.com/api/docs/guides/structured-outputs). Sin dependencias, cambios del contrato persistido ni llamadas a proveedores; aceptación efectiva de Codex queda para 3.5. Se conserva el aviso conocido de tamaño del bundle.
+- **Demo y alcance 3.3:** `node --test tests/unit/script-apply.test.ts tests/unit/kit-drawing.test.ts tests/unit/kit-output-schema.test.ts` recorre guion → borrador válido → dibujo → redibujo aislado. Para ver el resultado en el estudio, serializar el borrador aplicado e importarlo con la función existente; la vista previa ya estima sus subtítulos. Se entregan mecanismos puros comunes a manual/automático y a dibujar todas/redibujar una; los botones y confirmaciones corresponden a 3.4 y el adaptador Codex a 3.5, no se adelanta UI ni ejecución de proveedores. Dos unidades de commit: aplicación de guion y flujo completo de dibujo con contrato/pruebas; se mantiene este último unido por coherencia, no por tipo de archivo.
 
 ### 3.4 Modo manual en el estudio
 
@@ -485,7 +489,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 2.3 Exportar desde la UI
 - [x] 3.1 Contrato y prompt
 - [x] 3.2 Parseo y validación
-- [ ] 3.3 Aplicar guion y dibujo de escenas
+- [x] 3.3 Aplicar guion y dibujo de escenas
 - [ ] 3.4 Guion manual
 - [ ] 3.5 Guion automático con Codex
 - [ ] 4.1 Ingesta de audio
