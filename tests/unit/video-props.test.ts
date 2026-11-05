@@ -35,6 +35,26 @@ test('is deterministic and does not mutate its inputs', () => {
   assert.deepEqual(project, before);
 });
 
+test('retains matching Unicode words, timing and emphasis across whitespace changes', () => {
+  const project = storyboard();
+  const scene = project.scenes[0]!;
+  scene.words = [{ text: '¡Qué', startMs: 100, endMs: 800, emphasis: true },
+    { text: 'roca!🪨', startMs: 1100, endMs: 2000, emphasis: false }];
+  scene.text = '  ¡Qué\n roca!🪨  ';
+  assert.deepEqual(projectToVideoProps(project, {}).scenes[0]!.words, scene.words);
+});
+
+test('derives fresh Unicode and punctuation captions without replacing persisted words', () => {
+  const project = storyboard();
+  project.scenes[0]!.text = '¡Qué roca! 🪨';
+  const before = structuredClone(project);
+  assert.equal(projectToVideoProps(project, {}).scenes[0]!.words.map(word => word.text).join(' '), '¡Qué roca! 🪨');
+  project.scenes[0]!.text = 'Cada roca guarda una historia!';
+  assert.equal(projectToVideoProps(project, {}).scenes[0]!.words.at(-1)!.text, 'historia!');
+  assert.deepEqual(project.scenes[0]!.words, before.scenes[0]!.words);
+  assert.deepEqual(project.scenes[0]!.mediaBindings, before.scenes[0]!.mediaBindings);
+});
+
 test('retains visual intent when there is no visual', () => {
   const project = storyboard();
   project.scenes[0]!.visual = null;

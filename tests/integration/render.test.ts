@@ -9,6 +9,8 @@ import { createRenderService } from '../../src/companion/render/render-service.t
 import { ProjectStore } from '../../src/companion/store/project-store.ts';
 import { parseProjectText, serializeProject } from '../../src/shared/schema/index.ts';
 import { fixtureText } from '../helpers/fixtures.ts';
+import { draftVideoProps } from '../../studio/src/preview-model.ts';
+import { projectToVideoProps } from '../../src/shared/video-props.ts';
 
 const exec = promisify(execFile);
 
@@ -42,6 +44,37 @@ function fakeRenderer() {
   });
   return { service, calls, bundles: () => bundles };
 }
+
+test('saved edited narration uses the same derived captions in preview and both export paths', async t => {
+  const { root, input, project } = await setup(t);
+  let store = new ProjectStore({ workspaceRoot: root });
+  t.after(() => store.close());
+  await store.init();
+  const opened = await store.readProject(project.projectId);
+  const edited = structuredClone(opened.project);
+  edited.revision++;
+  edited.scenes[0]!.text = 'Texto nuevo que debe exportarse';
+  await store.saveProject({ projectId: edited.projectId, project: edited, expectedRevision: opened.revision,
+    expectedDigest: opened.digest, operationId: 'edit-caption' });
+  await store.close();
+  store = new ProjectStore({ workspaceRoot: root });
+  await store.init();
+  const saved = (await store.readProject(project.projectId)).project;
+  const bytes = await readFile(input);
+  const preview = draftVideoProps(saved, {});
+  const shared = projectToVideoProps(saved, {});
+  assert.equal(shared.scenes[0]!.words.map(word => word.text).join(' '), edited.scenes[0]!.text);
+  assert.deepEqual(shared, preview);
+  const fake = fakeRenderer();
+  // CLI reads the file; UI passes the admitted saved revision to the same service.
+  await fake.service({ projectFile: input, workspaceRoot: root, outputPath: join(root, 'cli.mp4') });
+  await fake.service({ projectFile: input, workspaceRoot: root, savedProject: saved, outputPath: join(root, 'ui.mp4') });
+  for (const call of fake.calls) assert.deepEqual(call.inputProps, preview);
+  assert.deepEqual(saved.scenes[0]!.words, opened.project.scenes[0]!.words);
+  assert.deepEqual(saved.scenes[0]!.mediaBindings, opened.project.scenes[0]!.mediaBindings);
+  assert.deepEqual(saved.scenes[0]!.audio, opened.project.scenes[0]!.audio);
+  assert.deepEqual(await readFile(input), bytes);
+});
 
 test('renders saved revision with cached bundle, matching props and atomic publication', async t => {
   const { root, input, project } = await setup(t);

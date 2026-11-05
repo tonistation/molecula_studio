@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { readFile, copyFile, realpath } from 'node:fs/promises';
+import { readFile, copyFile, realpath, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { parseProjectText, serializeProject } from '../../src/shared/schema/index.ts';
@@ -22,18 +22,27 @@ test('export: real UI MP4 matches CLI, downloads and survives closing its Chromi
     project.output.durationMs = 2000;
     project.output.voiceMode = 'silent';
     project.assets = [];
-    project.scenes = [{ ...project.scenes[0]!, startMs: 0, durationMs: 2000, text: 'El agua lleva minerales',
-      visual: kit, words: [], audio: null, mediaBindings: { audio: null, words: null } }];
+    const storedWords = project.scenes[0]!.words.map((word, index) => ({ ...word, startMs: index * 300, endMs: index * 300 + 250 }));
+    project.scenes = [{ ...project.scenes[0]!, startMs: 0, durationMs: 2000,
+      visual: kit, words: storedWords, audio: null, mediaBindings: { audio: null, words: null } }];
     await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(serializeProject(project)) });
     const panel = page.getByRole('region', { name: 'Exportar video', exact: true });
     await panel.getByRole('button', { name: 'Exportar MP4' }).waitFor();
     await page.getByLabel('Nombre del proyecto').fill('Exportación comprobada');
+    await page.getByLabel('Texto').first().fill('Texto nuevo que debe exportarse');
     assert.equal(await panel.getByRole('button', { name: 'Guarda antes de exportar' }).isDisabled(), true);
     await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+    await page.getByRole('button', { name: 'Proyectos', exact: true }).click();
+    await page.getByRole('button', { name: 'Abrir', exact: true }).click();
+    const preview = page.getByRole('region', { name: 'Vista previa del borrador' });
+    await preview.locator('[data-caption-word="Texto"]').waitFor();
+    assert.equal(await preview.locator('[data-caption-word="Cada"]').count(), 0);
     const exportButton = panel.getByRole('button', { name: 'Exportar MP4', exact: true });
     await exportButton.waitFor();
     const input = join(root, project.projectId, 'project.json');
     const savedBytes = await readFile(input);
+    const saved = JSON.parse(savedBytes.toString());
+    assert.deepEqual(saved.scenes[0].words, storedWords, 'editing keeps persisted alignment');
     await exportButton.click();
     await panel.getByRole('progressbar').waitFor();
     await exportButton.click();
@@ -49,6 +58,12 @@ test('export: real UI MP4 matches CLI, downloads and survives closing its Chromi
 
     const cli = join(root, 'cli.mp4');
     await exec(process.execPath, ['scripts/render-project.ts', input, cli], { timeout: 220_000 });
+    // An independent fresh-caption reference proves parity is not shared stale text.
+    saved.scenes[0].words = [];
+    const referenceInput = join(root, 'fresh-captions.json');
+    const reference = join(root, 'fresh-captions.mp4');
+    await writeFile(referenceInput, serializeProject(saved));
+    await exec(process.execPath, ['scripts/render-project.ts', referenceInput, reference], { timeout: 220_000 });
     const metadata = async (path: string) => {
       const { stdout } = await exec(resolve('node_modules/.bin/remotion'), ['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', path]);
       const data = JSON.parse(stdout);
@@ -61,10 +76,11 @@ test('export: real UI MP4 matches CLI, downloads and survives closing its Chromi
     assert.deepEqual(actual, await metadata(cli));
     assert.deepEqual(actual, { codec: 'h264', width: 1080, height: 1920, fps: '30/1', frames: 60, duration: 2, audio: false });
     // Same decoded frame, not only matching container metadata. No persisted golden.
-    for (const [name, path] of [['ui', output], ['cli', cli]]) {
+    for (const [name, path] of [['ui', output], ['cli', cli], ['fresh', reference]]) {
       await exec(resolve('node_modules/.bin/remotion'), ['ffmpeg', '-ss', '1', '-i', path!, '-frames:v', '1', join(root, `${name}.png`)]);
     }
     assert.deepEqual(await readFile(join(root, 'ui.png')), await readFile(join(root, 'cli.png')));
+    assert.deepEqual(await readFile(join(root, 'ui.png')), await readFile(join(root, 'fresh.png')));
     if (process.env.EXPORT_SCREENSHOT_DIR) {
       await panel.screenshot({ path: join(process.env.EXPORT_SCREENSHOT_DIR, 'export-completed.png') });
       await copyFile(join(root, 'ui.png'), join(process.env.EXPORT_SCREENSHOT_DIR, 'export-frame.png'));

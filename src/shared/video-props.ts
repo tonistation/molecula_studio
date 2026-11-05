@@ -1,6 +1,7 @@
 import type { CaptionStyle, Entity, Output, Project, Word } from './schema/types.ts';
 import type { KitScene } from './kit/types.ts';
 import { totalFrames } from './timeline.ts';
+import { estimateWords } from './voice/estimate.ts';
 
 export interface VideoSceneProps {
   sceneId: string;
@@ -39,6 +40,10 @@ export function projectToVideoProps(project: Project, assetUrls: Record<string, 
     }
     const fromFrame = totalFrames(scene.startMs, fps);
     const endFrame = totalFrames(scene.startMs + scene.durationMs, fps);
+    const normalize = (text: string) => text.trim().replace(/\s+/gu, ' ');
+    // Derive captions without rewriting persisted alignment or media bindings.
+    const matchesText = normalize(scene.words.map(word => word.text).join(' ')) === normalize(scene.text);
+    const words = matchesText ? scene.words : [];
     return {
       sceneId: scene.sceneId,
       title: scene.title,
@@ -47,7 +52,9 @@ export function projectToVideoProps(project: Project, assetUrls: Record<string, 
       text: scene.text,
       visualIntent: scene.visualIntent,
       visual: scene.visual,
-      words: scene.words,
+      words: project.captionStyle.enabled && words.length === 0
+        ? estimateWords(scene.text, Math.round((endFrame - fromFrame) / fps * 1000))
+        : words,
       audioUrl: scene.audio ? assetUrls[scene.audio.assetId] ?? null : null,
       gainDb: scene.audio?.gainDb ?? 0,
     };
