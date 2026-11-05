@@ -344,6 +344,28 @@ export class ProjectStore {
     };
   }
 
+  /** Reads only a manifest-declared asset through the existing workspace boundary. */
+  async readAsset(projectId: string, assetId: string): Promise<{ asset: Asset; bytes: Uint8Array }> {
+    this.#assertReady();
+    assertValidProjectId(projectId);
+    const loaded = await this.#readBytes(projectId);
+    const asset = loaded.project.assets.find((entry) => entry.assetId === assetId);
+    if (asset === undefined) throw new AssetNotFoundError(projectId, assetId);
+    const path = await this.#existingAssetPath(projectId, asset.path);
+    if (path === null) throw new AssetNotFoundError(projectId, assetId);
+    let bytes: Uint8Array;
+    try {
+      bytes = await this.#fs.readFile(path);
+    } catch (error) {
+      if (isErrno(error, 'ENOENT')) throw new AssetNotFoundError(projectId, assetId);
+      throw error;
+    }
+    if (bytes.byteLength !== asset.byteLength || (asset.sha256 !== null && await sha256Hex(bytes) !== asset.sha256)) {
+      throw new ConflictError({ projectId, assetId, reason: 'asset-content' });
+    }
+    return { asset, bytes };
+  }
+
   //#endregion read
 
   //#region create

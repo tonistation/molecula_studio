@@ -236,8 +236,11 @@ Cambio de contrato autorizado por ADR-09. Leer antes [referencias visuales](docs
 
 - **Hacer:** ruta `GET /api/projects/:id/assets/:assetId` (misma autenticación; solo activos del manifest; nunca rutas de archivo). En `api.ts`: `fetchAssetBlobUrl()`. Revocar los blob URLs al desmontar.
 - **Aceptación:**
-  - [ ] Test de integración: sin token → 401; activo inexistente → 404.
-  - [ ] Los bytes devueltos coinciden con el `sha256` del manifest.
+   - [x] Test de integración: sin token → 401; activo inexistente → 404.
+   - [x] Los bytes devueltos coinciden con el `sha256` del manifest.
+- **Verificación 2.1:** dos pruebas nuevas de integración fallaron primero con 405 (GET aún no implementado). `npm test`: 373/373 en verde, sin omitidas, incluido el render real de 2 s; `npm run typecheck` y `npm run build:studio` en verde. Disco real: bytes/hash del manifest, autenticación, Origin/Host, archivo ausente, activo no declarado, traversal, enlaces de archivo/directorio/proyecto y respuestas sin rutas externas. GET no modifica el documento; bytes alterados (hash o longitud) producen 409, sin sustitución silenciosa.
+- **Decisiones 2.1:** `ProjectStore.readAsset()` reutiliza el parser y las comprobaciones de rutas existentes; solo devuelve bytes de activos declarados. Respuesta con MIME del manifest, longitud, `no-store` y `nosniff`; token solo en cabecera. `fetchAssetBlobUrl()` devuelve `{ url, revoke }` y acepta `AbortSignal`: el consumidor debe abortar peticiones pendientes y llamar a `revoke()` al reemplazar/desmontar; la revocación es idempotente y una cancelación evita URLs tardías. Tres pruebas unitarias verifican esa estrategia. Todavía no hay consumidor montado: su limpieza React y los permisos CSP de reproducción se conectan en 2.2, no se afirma que exista una vista previa. Sin dependencias ni cambios de schema.
+- **Demo:** `npm start`, abrir un proyecto con un activo restaurado mediante «Revincular» y consultar `GET /api/projects/<projectId>/assets/<assetId>` desde el mismo origen con el token de la etiqueta meta en la cabecera `Authorization: Bearer …`. Devuelve bytes del medio (no JSON ni ruta local); omitir la cabecera devuelve 401 y usar un ID de activo no declarado devuelve 404. La verificación automatizada compara SHA-256 con el manifest. No reproduce audio/video todavía.
 
 ### 2.2 `PreviewPlayer`
 
@@ -460,7 +463,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 1.3b Renderer del kit
 - [x] 1.4 Subtítulos palabra por palabra
 - [x] 1.5 Render por línea de comandos 🎬
-- [ ] 2.1 Activos para la vista previa
+- [x] 2.1 Activos para la vista previa
 - [ ] 2.2 `PreviewPlayer`
 - [ ] 2.3 Exportar desde la UI
 - [ ] 3.1 Contrato y prompt

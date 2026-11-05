@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
@@ -71,6 +72,7 @@ interface RawResponse {
   status: number;
   headers: IncomingHttpHeaders;
   text: string;
+  bytes: Buffer;
 }
 
 function request(
@@ -113,6 +115,7 @@ function request(
             status: res.statusCode ?? 0,
             headers: res.headers,
             text: Buffer.concat(chunks).toString('utf8'),
+            bytes: Buffer.concat(chunks),
           });
         });
       },
@@ -588,3 +591,72 @@ test('relink rejects an image whose decoded header bound exceeds 100 MiB without
 });
 
 //#endregion import and relink
+
+test('preview assets require authentication and serve only declared bytes matching the manifest', async () => {
+  await withServer(async ({ handle, workspace }) => {
+    const projectId = 'p-preview';
+    await handle.store.importProject({ text: importableText(projectId) });
+    const path = `/api/projects/${projectId}/assets/voz`;
+    assert.equal((await request(handle, 'GET', path, { token: null })).status, 401);
+    assert.equal((await request(handle, 'GET', path, { token: 'wrong' })).status, 401);
+    assert.equal((await request(handle, 'GET', path, { origin: 'http://evil.example' })).status, 403);
+    assert.equal((await request(handle, 'GET', path, { host: 'evil.example' })).status, 403);
+    assert.equal((await request(handle, 'GET', path)).status, 404, 'declared file is missing');
+    const bytes = wavBytes({ durationMs: 1200 });
+    await handle.store.relinkAsset({ projectId, assetId: 'voz', bytes, mimeType: 'audio/wav' });
+    const before = await readFile(join(workspace, projectId, 'project.json'));
+    const response = await request(handle, 'GET', path, { origin: null });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.bytes, Buffer.from(bytes));
+    const { project } = await handle.store.readProject(projectId);
+    assert.equal(createHash('sha256').update(response.bytes).digest('hex'), project.assets[0]?.sha256);
+    assert.equal(response.headers['content-type'], 'audio/wav');
+    assert.equal(response.headers['content-length'], String(bytes.byteLength));
+    assert.equal(response.headers['cache-control'], 'no-store');
+    assert.equal(response.headers['x-content-type-options'], 'nosniff');
+    assert.equal(response.headers['access-control-allow-origin'], undefined);
+    await writeFile(join(workspace, projectId, 'assets', 'secret.wav'), bytes);
+    assert.equal((await request(handle, 'GET', `/api/projects/${projectId}/assets/secret`)).status, 404);
+    assert.equal((await request(handle, 'GET', '/api/projects/p-absent/assets/voz')).status, 404);
+    for (const suffix of ['voz.wav', '..%2fproject.json', '%2e%2e%2fsecret', 'voz/extra']) {
+      assert.equal((await request(handle, 'GET', `/api/projects/${projectId}/assets/${suffix}`)).status, 404);
+    }
+    const method = await request(handle, 'DELETE', path);
+    assert.equal(method.status, 405);
+    assert.equal(method.headers.allow, 'GET, PUT');
+    assert.deepEqual(await readFile(join(workspace, projectId, 'project.json')), before);
+    const changed = new Uint8Array(bytes);
+    changed[changed.length - 1] = 255;
+    await writeFile(join(workspace, projectId, 'assets', 'voz.wav'), changed);
+    assert.equal((await request(handle, 'GET', path)).status, 409, 'changed bytes must not silently substitute the manifest');
+    await writeFile(join(workspace, projectId, 'assets', 'voz.wav'), wavBytes({ durationMs: 900 }));
+    assert.equal((await request(handle, 'GET', path)).status, 409, 'changed length is also rejected');
+  });
+});
+
+test('preview rejects symlink files and directories without exposing paths or outside bytes', async () => {
+  await withServer(async ({ handle, workspace }) => {
+    const projectId = 'p-preview-links';
+    await handle.store.importProject({ text: importableText(projectId) });
+    const outside = await tempRoot();
+    await writeFile(join(outside, 'voz.wav'), 'outside-secret');
+    const assetDir = join(workspace, projectId, 'assets');
+    await mkdir(assetDir, { recursive: true });
+    await symlink(join(outside, 'voz.wav'), join(assetDir, 'voz.wav'));
+    const path = `/api/projects/${projectId}/assets/voz`;
+    const file = await request(handle, 'GET', path);
+    assert.equal(file.status, 404);
+    await rm(assetDir, { recursive: true });
+    await symlink(outside, assetDir);
+    const directory = await request(handle, 'GET', path);
+    assert.equal(directory.status, 400);
+    await symlink(outside, join(workspace, 'p-linked'));
+    const project = await request(handle, 'GET', '/api/projects/p-linked/assets/voz');
+    assert.equal(project.status, 400);
+    for (const response of [file, directory, project]) {
+      assert.ok(!response.text.includes(outside));
+      assert.ok(!response.text.includes(workspace));
+      assert.ok(!response.text.includes('outside-secret'));
+    }
+  });
+});

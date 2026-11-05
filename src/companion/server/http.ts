@@ -277,7 +277,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
 
   if (suffix === 'assets') {
     if (assetId === undefined) throw new HttpError(404, 'not-found', 'unknown endpoint');
-    if (method !== 'PUT') throw methodNotAllowed('PUT');
+    if (method === 'GET') {
+      const { asset, bytes } = await store.readAsset(projectId, assetId);
+      res.statusCode = 200;
+      res.setHeader('content-type', asset.mimeType);
+      res.setHeader('content-length', String(bytes.byteLength));
+      res.setHeader('cache-control', 'no-store');
+      res.setHeader('x-content-type-options', 'nosniff');
+      res.end(bytes);
+      return;
+    }
+    if (method !== 'PUT') throw methodNotAllowed('GET, PUT');
     const contentType = req.headers['content-type'];
     if (typeof contentType !== 'string' || !ASSET_CONTENT_TYPES.has(contentType.toLowerCase())) {
       throw new HttpError(415, 'unsupported-media-type', 'Content-Type must be audio/wav, audio/mpeg, image/png or image/jpeg');

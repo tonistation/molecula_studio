@@ -167,7 +167,45 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return parsed as T;
 }
 
+export interface AssetBlobUrl {
+  url: string;
+  revoke(): void;
+}
+
+/**
+ * Caller owns the URL: revoke on replacement/unmount and abort pending requests
+ * with the same cleanup. Aborting after resolution does not revoke a live URL.
+ */
+export async function fetchAssetBlobUrl(projectId: string, assetId: string, signal?: AbortSignal): Promise<AssetBlobUrl> {
+  const token = companionToken();
+  let response: Response;
+  try {
+    response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(assetId)}`, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${token}` },
+      signal,
+    });
+  } catch {
+    signal?.throwIfAborted();
+    throw new ApiError(0, 'companion-unreachable', 'El companion no responde. Verifique que siga iniciado.');
+  }
+  if (!response.ok) await parseResponse<never>(response);
+  const blob = await response.blob();
+  signal?.throwIfAborted();
+  const url = URL.createObjectURL(blob);
+  let revoked = false;
+  return {
+    url,
+    revoke() {
+      if (revoked) return;
+      revoked = true;
+      URL.revokeObjectURL(url);
+    },
+  };
+}
+
 export const api = {
+  fetchAssetBlobUrl,
   health: () => call<{ ok: boolean }>('GET', '/api/health'),
   list: () => call<{ projects: ProjectSummary[] }>('GET', '/api/projects'),
   create: (title?: string) => call<CreateResult>('POST', '/api/projects', title === undefined ? {} : { title }),
