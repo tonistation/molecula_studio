@@ -86,7 +86,7 @@ test('unknown style fixture is read-only and its raw bytes stay untouched', asyn
 
 test('an external file with a future schemaVersion is rejected without touching the active project', () => {
   const future = fixtureJson('storyboard');
-  future.schemaVersion = 2;
+  future.schemaVersion = 3;
   const result = parseProjectText(JSON.stringify(future));
   assert.equal(result.ok, false);
   if (result.ok) return;
@@ -99,7 +99,7 @@ test('validated fixtures keep every content field declared by the format', () =>
   if (!result.ok) return;
   const project = result.project;
 
-  assert.equal(project.schemaVersion, 1);
+  assert.equal(project.schemaVersion, 2);
   assert.equal(project.locale, 'es');
   assert.equal(project.styleId, 'stylized-3d');
   assert.equal(project.styleVersion, 1);

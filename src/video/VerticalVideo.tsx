@@ -6,7 +6,7 @@ export const VerticalVideo = ({ scenes }: VideoProps) => (
     {scenes.map(scene => (
       <Sequence key={scene.sceneId} from={scene.fromFrame} durationInFrames={scene.durationInFrames}>
         <AbsoluteFill style={{
-          backgroundColor: scene.visual?.background ?? '#DDEEF5',
+          backgroundColor: scene.visual?.palette.background ?? '#DDEEF5',
           color: '#172D45',
           justifyContent: 'center',
           alignItems: 'center',

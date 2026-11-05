@@ -1,10 +1,10 @@
 /**
- * Contract constants for project schema 1.
+ * Contract constants for current projects and bounded legacy input.
  *
  * Single source of truth: validators, editor limits and future companion
  * checks must import these values instead of repeating literals.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const LIMITS = {
   maxJsonBytes: 2 * 1024 * 1024,

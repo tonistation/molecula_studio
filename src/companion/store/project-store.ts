@@ -397,9 +397,9 @@ export class ProjectStore {
     if (args.expectedDigest !== undefined && !/^[a-f0-9]{64}$/.test(args.expectedDigest)) {
       throw new InvalidArgumentError('expectedDigest must be a lowercase SHA-256 digest');
     }
-    this.#assertEditablePayload(args.project, args.projectId);
+    const project = this.#assertEditablePayload(args.project, args.projectId);
 
-    const bytes = this.#encode(args.project);
+    const bytes = this.#encode(project);
     if (bytes.length > LIMITS.maxJsonBytes) {
       throw new InvalidProjectError(args.projectId, 'too-large', [
         { path: '$', code: 'too-large', message: `project exceeds ${LIMITS.maxJsonBytes} bytes` },
@@ -1147,7 +1147,7 @@ export class ProjectStore {
     return new TextEncoder().encode(serializeProject(project));
   }
 
-  #assertEditablePayload(project: Project, projectId: string): void {
+  #assertEditablePayload(project: Project, projectId: string): Project {
     if (project.projectId !== projectId) {
       throw new InvalidArgumentError(
         `payload projectId ${JSON.stringify(project.projectId)} does not match ${JSON.stringify(projectId)}`,
@@ -1160,6 +1160,7 @@ export class ProjectStore {
     if (result.mode === 'read-only') {
       throw new ReadOnlyProjectError(projectId);
     }
+    return result.project;
   }
 
   /**

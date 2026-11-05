@@ -20,7 +20,7 @@ function validated(name: string) {
 }
 
 test('schema version and limits are exported from a single source', () => {
-  assert.equal(SCHEMA_VERSION, 1);
+  assert.equal(SCHEMA_VERSION, 2);
   assert.equal(LIMITS.maxJsonBytes, 2 * 1024 * 1024);
   assert.equal(LIMITS.maxDepth, 16);
   assert.equal(LIMITS.maxScenes, 12);
@@ -39,7 +39,7 @@ test('schema version and limits are exported from a single source', () => {
 test('empty example is a valid editable project without scenes', () => {
   const result = validated('empty');
   assert.equal(result.mode, 'editable');
-  assert.equal(result.project.schemaVersion, 1);
+  assert.equal(result.project.schemaVersion, 2);
   assert.equal(result.project.projectId, 'project_empty');
   assert.equal(result.project.revision, 0);
   assert.deepEqual(result.project.scenes, []);
@@ -65,12 +65,12 @@ test('storyboard example keeps scenes, entities and references', () => {
   assert.ok(car);
   assert.equal(car.definitionVersion, 1);
   const instances = project.scenes.flatMap((scene) =>
-    scene.visual && 'components' in scene.visual
-      ? scene.visual.components.filter((component) => component.entityId === 'entity_car')
+    scene.visual && 'kind' in scene.visual
+      ? scene.visual.objects.filter((object) => object.legacy?.entityId === 'entity_car')
       : [],
   );
   assert.equal(instances.length, 2);
-  for (const instance of instances) assert.equal(instance.definitionVersion, car.definitionVersion);
+  for (const instance of instances) assert.equal(instance.legacy?.definitionVersion, car.definitionVersion);
 });
 
 test('serialize then parse is a deep-equal roundtrip for both examples', () => {
@@ -92,7 +92,7 @@ test('serializeProject writes 2-space indent, trailing newline and declared key 
 
   assert.ok(text.endsWith('\n'));
   assert.ok(!text.endsWith('\n\n'));
-  assert.match(text, /^\{\n {2}"schemaVersion": 1,\n {2}"projectId": "project_rocks",\n/);
+  assert.match(text, /^\{\n {2}"schemaVersion": 2,\n {2}"projectId": "project_rocks",\n/);
 
   const rootOrder = [
     'schemaVersion',
@@ -174,7 +174,7 @@ test('emptyProject returns a complete, valid, empty document', () => {
     title: 'Nuevo proyecto',
   });
 
-  assert.equal(project.schemaVersion, 1);
+  assert.equal(project.schemaVersion, 2);
   assert.equal(project.revision, 0);
   assert.equal(project.title, 'Nuevo proyecto');
   assert.equal(project.createdAt, '2026-11-03T12:00:00Z');

@@ -9,7 +9,7 @@ export interface EmptyProjectArgs {
 }
 
 /**
- * Creates a complete, empty schema-1 document: no scenes, no entities, no
+ * Creates a complete, empty schema-2 document: no scenes, no entities, no
  * assets and zero duration. The document is validated before returning so a
  * broken default can never reach the store.
  */

@@ -4,6 +4,7 @@ export type { EmptyProjectArgs } from './empty.ts';
 export { parseProjectText } from './parse.ts';
 export { serializeProject } from './serialize.ts';
 export { validateProject } from './validate.ts';
+export type { KitScene, KitObject, KitAnimation, KitCamera } from '../kit/types.ts';
 export type {
   Approval,
   Asset,

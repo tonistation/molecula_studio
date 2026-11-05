@@ -7,10 +7,10 @@ import { ProjectStore } from '../../../src/companion/store/project-store.ts';
 import { startCompanionServer } from '../../../src/companion/server/http.ts';
 import { InvalidArgumentError, InvalidProjectError } from '../../../src/companion/store/errors.ts';
 import { serializeProject } from '../../../src/shared/schema/serialize.ts';
+import { validateProject } from '../../../src/shared/schema/validate.ts';
 import { fixtureJson } from '../../helpers/fixtures.ts';
 import { wavBytes } from '../../helpers/media.ts';
 import { sha256Hex } from '../../../src/shared/digests.ts';
-import type { Project } from '../../../src/shared/schema/types.ts';
 
 test('snapshot copy keeps entity/scene identities and bindings, copies real assets and reports missing ones', async () => {
   const root = await mkdtemp(join(tmpdir(), 'molecula-copy-assets-'));
@@ -18,7 +18,9 @@ test('snapshot copy keeps entity/scene identities and bindings, copies real asse
   await store.init();
   try {
     const created = await store.createProject();
-    const draft = fixtureJson('storyboard') as Project;
+    const validated = validateProject(fixtureJson('storyboard'));
+    assert.ok(validated.ok);
+    const draft = validated.project;
     draft.projectId = created.projectId;
     const bytes = wavBytes();
     draft.assets = ['present', 'missing'].map((assetId) => ({ assetId, kind: 'audio', path: `assets/${assetId}.wav`,

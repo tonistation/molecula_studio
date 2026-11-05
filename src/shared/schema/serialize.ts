@@ -1,9 +1,7 @@
 import type {
   Approval,
   Asset,
-  Camera,
   CaptionStyle,
-  Component,
   DigestPair,
   Entity,
   Identity,
@@ -13,13 +11,13 @@ import type {
   Scene,
   SceneAudio,
   SceneVisual,
-  StylizedVisual,
   Word,
 } from './types.ts';
 
 /**
  * Serializes a project with 2-space indentation, a trailing newline and the
- * key order declared by the schema. Serializing never changes revisions or
+ * root/scene key order declared by the schema. Nested kit keys sort by name.
+ * Serializing never changes revisions or
  * timestamps; it is a pure formatting operation.
  */
 export function serializeProject(project: Project): string {
@@ -162,42 +160,27 @@ function orderScene(scene: Scene): unknown {
 function orderSceneVisual(visual: SceneVisual | null): unknown {
   if (visual === null) return null;
   if ('inert' in visual) return visual.inert;
-  return orderStylizedVisual(visual);
-}
-
-function orderStylizedVisual(visual: StylizedVisual): unknown {
   return {
-    templateId: visual.templateId,
-    palette: visual.palette,
-    background: visual.background,
-    camera: orderCamera(visual.camera),
-    components: visual.components.map(orderComponent),
+    kind: visual.kind,
+    kitVersion: visual.kitVersion,
+    palette: orderKitData(visual.palette),
+    sky: orderKitData(visual.sky),
+    environment: orderKitData(visual.environment),
+    objects: orderKitData(visual.objects),
+    particles: orderKitData(visual.particles),
+    labels: orderKitData(visual.labels),
+    overlays: orderKitData(visual.overlays),
+    camera: orderKitData(visual.camera),
   };
 }
 
-function orderCamera(camera: Camera): unknown {
-  return {
-    projection: camera.projection,
-    keyframes: camera.keyframes.map((keyframe) => ({
-      atMs: keyframe.atMs,
-      position: [...keyframe.position],
-      target: [...keyframe.target],
-      fovDeg: keyframe.fovDeg,
-    })),
-  };
-}
-
-function orderComponent(component: Component): unknown {
-  return {
-    componentId: component.componentId,
-    entityId: component.entityId,
-    definitionVersion: component.definitionVersion,
-    position: [...component.position],
-    rotation: [...component.rotation],
-    scale: component.scale,
-    motion: component.motion,
-    state: component.state,
-  };
+function orderKitData(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(orderKitData);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+      .map(([key, child]) => [key, orderKitData(child)]));
+  }
+  return value;
 }
 
 function orderSceneAudio(audio: SceneAudio): unknown {

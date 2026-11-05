@@ -192,7 +192,7 @@ test('import rejects hostile or invalid JSON without creating a project', async 
     const valid = serializeProject(importable({ projectId: 'p-hostile' }));
 
     await assert.rejects(
-      store.importProject({ text: valid.replace('"schemaVersion": 1', '"schemaVersion": 2') }),
+      store.importProject({ text: valid.replace('"schemaVersion": 2', '"schemaVersion": 3') }),
       (error: unknown) => error instanceof InvalidProjectError && error.failure === 'unsupported-version',
     );
     await assert.rejects(

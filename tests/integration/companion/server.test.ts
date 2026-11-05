@@ -430,7 +430,7 @@ test('import endpoint validates, publishes and reports collisions without overwr
 
     // Invalid and hostile documents are refused with the parser failure.
     const unsupported = await request(handle, 'POST', '/api/imports', {
-      body: { text: text.replace('"schemaVersion": 1', '"schemaVersion": 2') },
+      body: { text: text.replace('"schemaVersion": 2', '"schemaVersion": 3') },
     });
     assert.equal(unsupported.status, 422);
     const unsupportedBody = jsonOf<{ error: { code: string; failure: string } }>(unsupported);

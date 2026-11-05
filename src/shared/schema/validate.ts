@@ -1,6 +1,8 @@
-import { LIMITS, SCHEMA_VERSION } from './limits.ts';
+import { LIMITS } from './limits.ts';
 import { issue } from './errors.ts';
 import type { IssueCode } from './errors.ts';
+import { validateKitScene } from '../kit/validate.ts';
+import { migrateV1Project } from './migrate.ts';
 import type {
   Approval,
   Asset,
@@ -13,6 +15,7 @@ import type {
   Entity,
   Identity,
   Issue,
+  LegacyProject,
   MediaBindings,
   Output,
   Project,
@@ -141,9 +144,11 @@ const MIME_TYPES = ['audio/wav', 'audio/mpeg', 'image/png', 'image/jpeg'] as con
 const ORIGINS = ['user', 'fixture', 'provider'] as const;
 
 type Ctx = { issues: Issue[] };
+type InputScene = Omit<Scene, 'visual'> & { visual: SceneVisual | StylizedVisual | null };
+type InputProject = Omit<Project, 'schemaVersion' | 'scenes'> & { schemaVersion: 1 | 2; scenes: InputScene[] };
 
 /**
- * Validates an already-parsed value against schema 1.
+ * Validates current data or validates and purely migrates schema 1 to schema 2.
  *
  * Never mutates the input and never throws for malformed data: all findings
  * come back as `issues`. Unknown styles return `mode: 'read-only'` with the
@@ -154,12 +159,25 @@ export function validateProject(value: unknown): ValidateOutcome {
   if (structural.length > 0) return { ok: false, issues: structural };
 
   const ctx: Ctx = { issues: [] };
-  const result = readProject(ctx, value);
-  if (ctx.issues.length > 0) return { ok: false, issues: ctx.issues };
-  if (result.inertVisual === undefined) {
-    return { ok: true, mode: result.mode, project: result.project };
+  const version = isPlainObject(value) ? value.schemaVersion : undefined;
+  if (version !== 1 && version !== 2) {
+    return { ok: false, issues: [issue('$.schemaVersion', 'const', 'must be 1 or 2')] };
   }
-  return { ok: true, mode: result.mode, project: result.project, inertVisual: result.inertVisual };
+  const result = readProject(ctx, value, version);
+  if (ctx.issues.length > 0) return { ok: false, issues: ctx.issues };
+  if (version === 1) {
+    const migrated = migrateV1Project(result.project as LegacyProject);
+    // Revalidate the wire shape, not the internal inert wrapper. This avoids
+    // double wrapping and preserves the exact allowed depth of opaque payloads.
+    return validateProject({ ...migrated, scenes: migrated.scenes.map(scene => ({ ...scene,
+      visual: scene.visual && 'inert' in scene.visual ? scene.visual.inert : scene.visual,
+    })) });
+  }
+  const project = result.project as Project;
+  if (result.inertVisual === undefined) {
+    return { ok: true, mode: result.mode, project };
+  }
+  return { ok: true, mode: result.mode, project, inertVisual: result.inertVisual };
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +195,11 @@ function inspectStructure(root: unknown): Issue[] {
       }
       return;
     }
-    if (typeof value !== 'object' || value === null) return;
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
+    if (typeof value !== 'object') {
+      issues.push(issue(path, 'type', 'only JSON data is supported'));
+      return;
+    }
 
     if (seen.has(value)) {
       issues.push(issue(path, 'cycle', 'cyclic structures are not valid JSON data'));
@@ -194,18 +216,31 @@ function inspectStructure(root: unknown): Issue[] {
 
     seen.add(value);
     try {
+      if (Object.getOwnPropertySymbols(value).length > 0) {
+        issues.push(issue(path, 'type', 'symbol keys are not JSON data'));
+      }
       if (Array.isArray(value)) {
         for (let index = 0; index < value.length; index += 1) {
-          walk(value[index], `${path}[${index}]`, depth + 1);
+          if (!Object.hasOwn(value, index)) {
+            issues.push(issue(`${path}[${index}]`, 'type', 'sparse arrays are not JSON data'));
+          }
         }
-        return;
       }
-      for (const key of Object.keys(value)) {
+      for (const key of Object.getOwnPropertyNames(value)) {
+        if (Array.isArray(value) && key === 'length') continue;
         if (DANGEROUS_KEYS.has(key)) {
           issues.push(issue(path, 'dangerous-key', `key "${key}" is not allowed`));
           continue;
         }
-        walk((value as Record<string, unknown>)[key], `${path}.${key}`, depth + 1);
+        if (Array.isArray(value) && !/^(0|[1-9][0-9]*)$/.test(key)) {
+          issues.push(issue(`${path}.${key}`, 'type', 'array properties are not JSON data'));
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+        if (!descriptor.enumerable || !('value' in descriptor)) {
+          issues.push(issue(`${path}.${key}`, 'type', 'hidden properties and accessors are not JSON data'));
+        } else {
+          walk(descriptor.value, `${path}.${key}`, depth + 1);
+        }
       }
     } finally {
       seen.delete(value);
@@ -416,14 +451,14 @@ function readOptionalObject(
 
 interface ReadProjectResult {
   mode: ProjectMode;
-  project: Project;
+  project: InputProject;
   inertVisual?: unknown;
 }
 
-function readProject(ctx: Ctx, value: unknown): ReadProjectResult {
+function readProject(ctx: Ctx, value: unknown, version: 1 | 2): ReadProjectResult {
   const root = readObject(ctx, '$', value, ROOT_KEYS);
 
-  const schemaVersion = readConst(ctx, '$.schemaVersion', root.schemaVersion, SCHEMA_VERSION);
+  const schemaVersion = readConst(ctx, '$.schemaVersion', root.schemaVersion, version);
   const projectId = readId(ctx, '$.projectId', root.projectId);
   const revision = readInt(ctx, '$.revision', root.revision, 0, Number.MAX_SAFE_INTEGER);
   const title = readString(ctx, '$.title', root.title, 1, 120);
@@ -449,6 +484,7 @@ function readProject(ctx: Ctx, value: unknown): ReadProjectResult {
       : 'read-only';
 
   const scenes = readScenes(ctx, '$.scenes', root.scenes, {
+    schemaVersion,
     mode,
     output,
     entities: new Map(entities.map((entity) => [entity.entityId, entity])),
@@ -457,7 +493,7 @@ function readProject(ctx: Ctx, value: unknown): ReadProjectResult {
 
   const approval = readApproval(ctx, '$.approval', root.approval, revision, updatedAt);
 
-  const project: Project = {
+  const project: InputProject = {
     schemaVersion,
     projectId,
     revision,
@@ -741,6 +777,7 @@ function readProportions(ctx: Ctx, path: string, value: unknown): Proportions {
 // ---------------------------------------------------------------------------
 
 interface SceneEnv {
+  schemaVersion: 1 | 2;
   mode: ProjectMode;
   output: Output;
   entities: Map<string, Entity>;
@@ -752,7 +789,7 @@ function readScenes(
   path: string,
   value: unknown,
   env: SceneEnv,
-): { items: Scene[]; inertVisual?: unknown } {
+): { items: InputScene[]; inertVisual?: unknown } {
   const rawScenes = readArray(ctx, path, value, LIMITS.maxScenes);
   const seen = new Set<string>();
   const inertVisual: Array<{ sceneId: string; visual: unknown }> = [];
@@ -847,13 +884,25 @@ function readSceneVisual(
   value: unknown,
   durationMs: number,
   env: SceneEnv,
-): SceneVisual | null {
+): InputScene['visual'] {
   if (value === null) return null;
   if (!isPlainObject(value)) {
     push(ctx, path, 'type', 'visual must be null or an object');
     return null;
   }
+  if (value.kind === 'code') {
+    push(ctx, `${path}.kind`, 'const', 'visual.kind "code" is reserved and is not supported');
+    return null;
+  }
   if (env.mode === 'read-only') return { inert: value };
+  if (env.schemaVersion === 2) {
+    const result = validateKitScene(value, { durationMs, entities: env.entities });
+    if (!result.ok) {
+      ctx.issues.push(...result.issues.map(finding => ({ ...finding, path: `${path}${finding.path.slice(1)}` })));
+      return null;
+    }
+    return result.scene;
+  }
   return readStylizedVisual(ctx, path, value, durationMs, env.entities);
 }
 

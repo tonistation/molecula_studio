@@ -13,7 +13,7 @@ const ENCODER = new TextEncoder();
  *
  * Order of defence: byte limit, UTF-8 decoding, strict JSON grammar with
  * duplicate/dangerous-key and depth checks, version selection, then schema
- * validation. Input-driven problems never throw.
+ * validation and pure v1-to-v2 migration. Input-driven problems never throw.
  */
 export function parseProjectText(input: string | Uint8Array): ParseOutcome {
   try {

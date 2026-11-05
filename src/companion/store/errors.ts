@@ -82,7 +82,7 @@ export class InvalidProjectError extends StoreError {
   readonly issues: Issue[];
 
   constructor(projectId: string, failure: ParseFailure, issues: Issue[]) {
-    super('invalid-project', `project "${projectId}" is not a valid schema-1 document (${failure})`);
+    super('invalid-project', `project "${projectId}" is not a valid supported project document (${failure})`);
     this.projectId = projectId;
     this.failure = failure;
     this.issues = issues;

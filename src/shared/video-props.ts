@@ -1,4 +1,5 @@
-import type { CaptionStyle, Entity, Output, Project, StylizedVisual, Word } from './schema/types.ts';
+import type { CaptionStyle, Entity, Output, Project, Word } from './schema/types.ts';
+import type { KitScene } from './kit/types.ts';
 import { totalFrames } from './timeline.ts';
 
 export interface VideoSceneProps {
@@ -8,7 +9,7 @@ export interface VideoSceneProps {
   durationInFrames: number;
   text: string;
   visualIntent: string;
-  visual: StylizedVisual | null;
+  visual: KitScene | null;
   words: Word[];
   audioUrl: string | null;
   gainDb: number;

@@ -1,3 +1,5 @@
+import type { KitScene } from '../kit/types.ts';
+
 /** A single validation finding. `path` is rooted at `$` and uses dot/bracket notation. */
 export type Issue = { path: string; code: string; message: string };
 
@@ -97,7 +99,11 @@ export interface InertVisual {
   readonly inert: unknown;
 }
 
-export type SceneVisual = StylizedVisual | InertVisual;
+export type SceneVisual = KitScene | InertVisual;
+
+/** Validated legacy data is used only at the migration boundary. */
+export type LegacyScene = Omit<Scene, 'visual'> & { visual: StylizedVisual | InertVisual | null };
+export type LegacyProject = Omit<Project, 'schemaVersion' | 'scenes'> & { schemaVersion: 1; scenes: LegacyScene[] };
 
 export interface Word {
   text: string;
@@ -181,7 +187,7 @@ export interface Approval {
 }
 
 export interface Project {
-  schemaVersion: 1;
+  schemaVersion: 2;
   projectId: string;
   revision: number;
   title: string;

@@ -18,7 +18,7 @@ Base: commit `ad26d62`. Uso local, una persona. Servidor: [más adelante](#camin
 
 | Pieza | Estado | En esta ruta |
 |---|---|---|
-| Schema `project.json` v1, validación, digests | ✅ | Se reutiliza tal cual |
+| Schema `project.json` v2, migración desde v1, validación, digests | ✅ | Se extiende la base existente sin cambiar los vínculos de medios |
 | Companion local: HTTP loopback, token, `ProjectStore` atómico | ✅ | Se extiende con rutas nuevas |
 | Estudio React: proyectos, escenas (texto/duración), guardar/reabrir, importar, relink | ✅ | Se extiende |
 | Reloj por frame (`src/shared/timeline.ts`) | ✅ | Se reutiliza para calcular frames |
@@ -171,9 +171,14 @@ Cambio de contrato autorizado por ADR-09. Leer antes [referencias visuales](docs
   - `camera`: `{ move: 'static' | 'dolly-in' | 'pan' | 'orbit' | 'follow', from, to, target | targetObjectId, easing }`.
   - Límites: ≤ 24 objetos, ≤ 8 animaciones por objeto, ≤ 4 sistemas de partículas, ≤ 6 rótulos por escena.
 - **Schema 2:** `visual` pasa a `{ kind: 'kit', … } | { kind: 'code', … } | null`. `code` queda **reservado y rechazado** por el validador hasta su fase. Migración v1 → v2 pura: los `StylizedVisual` v1 se convierten a escenas `kit` equivalentes; abrir un v1 lo migra en memoria y se guarda como v2. Mantener todas las pruebas de M1 en verde.
+- **Extensiones de compatibilidad aprobadas:** tipos `car`, `rockLayers` y `label`; `params` cerrados por tipo conservan proporciones y propiedades, y `seed` conserva la semilla de cada entidad. `legacy: { entityId, definitionVersion, motion, state }` retiene la referencia y el movimiento procedural v1; se comprueba contra la identidad registrada, sin permitir sobrescribirla. Las definiciones de `entities` permanecen intactas.
+- **Cámara y paleta v1:** `camera.keyframes?` conserva todos los tiempos, posiciones, objetivos y FOV (hasta 8 keyframes). Cuando existe, esa pista es la fuente de la trayectoria; `from`, `to` y `target` resumen sus extremos y objetivo inicial. Se mantiene la proyección perspectiva. `palette: { background, preset? }` conserva el fondo y el preset `daylight`/`dark`, sin aproximar la cámara ni las identidades. La interpretación visual corresponde a 1.3b.
+- **Fronteras:** validar v1 antes de migrar y validar el resultado como v2. Estilos desconocidos permanecen opacos y de solo lectura; `visual.kind: 'code'` se rechaza incluso allí. Abrir no escribe ni incrementa revisiones. El digest de concurrencia sigue describiendo los bytes originales del disco. Se preservan `approval` histórico y vínculos de medios; el digest de contenido cambia y no convierte esa aprobación en vigente. Importar/copiar conserva su política previa de limpiar la aprobación.
+- **Límites adicionales del contrato:** hasta 12 nubes, 8 overlays, 64 puntos por curso de agua, 32 puntos por perfil y 1000 partículas por sistema; parámetros numéricos acotados y referencias verificadas. Contrato exacto en `src/shared/kit/types.ts` y límites en `src/shared/kit/schema.ts`. Serialización estable: orden declarado en raíz/escena y claves anidadas del kit ordenadas por nombre; los visuales desconocidos no se reinterpretan.
 - **Aceptación:**
-  - [ ] Validador rechaza tipos desconocidos, campos extra, `kind: 'code'` y límites excedidos con mensajes claros.
-  - [ ] Los fixtures v1 migran y validan como v2; ida y vuelta guardar/reabrir estable.
+  - [x] Validador rechaza tipos desconocidos, campos extra, `kind: 'code'` y límites excedidos con mensajes claros.
+  - [x] Los fixtures v1 migran y validan como v2; ida y vuelta guardar/reabrir estable.
+- **Verificación 1.3a:** `npm run typecheck`, `npm test` (330 pruebas) y `npm run build:studio` en verde. Incluye fidelidad de cámara/identidades, corpus histórico de seguridad, aprobación histórica, límites exactos y guardar/reabrir con disco real y conflictos de digest. No implica aprobación visual ni renderer del kit.
 
 ### 1.3b Renderer del kit con Three.js
 
@@ -441,7 +446,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 0.4 Referencias visuales (ADR-09 decidido)
 - [x] 1.1 `projectToVideoProps`
 - [x] 1.2 Composición base y Remotion Studio
-- [ ] 1.3a Contrato KitScene y schema 2
+- [x] 1.3a Contrato KitScene y schema 2
 - [ ] 1.3b Renderer del kit
 - [ ] 1.4 Subtítulos palabra por palabra
 - [ ] 1.5 Render por línea de comandos 🎬
