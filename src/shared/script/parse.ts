@@ -1,4 +1,5 @@
 import { LIMITS } from '../schema/limits.ts';
+import { hasForbiddenControl } from '../schema/text.ts';
 import { parseResponseObject } from '../response-json.ts';
 import { SCRIPT_PROPOSAL_SCHEMA } from './schema.ts';
 import type { ScriptProposal } from './schema.ts';
@@ -74,6 +75,7 @@ function validateContract(value: unknown, schema: ContractNode, path: string, er
       return;
     case 'string': {
       if (typeof value !== 'string') return report('debe ser texto.');
+      if (hasForbiddenControl(value)) return report('no debe contener caracteres de control salvo tabulación o salto de línea.');
       const length = [...value].length;
       if (length < schema.minLength! || length > schema.maxLength!) report(`debe contener entre ${schema.minLength} y ${schema.maxLength} caracteres.`);
       if (schema.pattern && !new RegExp(schema.pattern).test(value)) report('el texto no tiene el formato permitido.');

@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { parseScriptResponse } from '../../src/shared/script/parse.ts';
 import type { ScriptProposal } from '../../src/shared/script/schema.ts';
 import { LIMITS } from '../../src/shared/schema/limits.ts';
+import { SCRIPT_PROPOSAL_SCHEMA } from '../../src/shared/script/schema.ts';
+import { applyScriptProposal } from '../../src/shared/script/apply.ts';
+import { validateProject } from '../../src/shared/schema/validate.ts';
+import { fixtureJson } from '../helpers/fixtures.ts';
 
 function proposal(): ScriptProposal {
   return { title: 'Sal', sources: [{ title: 'Fuente', url: 'https://example.org/sal' }], scenes: [{ title: 'Pregunta', narration: '¿De dónde sale la sal?', visualIntent: 'Un salero junto al mar', seconds: 3 }], cover: { headline: 'Sal del mar' }, postText: 'Comparte esta pregunta.' };
@@ -17,6 +21,62 @@ function rejects(value: unknown, pattern?: RegExp): void {
     if (pattern) assert.match(result.errors.join('\n'), pattern);
   }
 }
+
+const textFields = [
+  { path: '$.title', schema: SCRIPT_PROPOSAL_SCHEMA.properties.title, set: (p: ScriptProposal, text: string) => { p.title = text; } },
+  { path: '$.scenes[0].title', schema: SCRIPT_PROPOSAL_SCHEMA.properties.scenes.items.properties.title, set: (p: ScriptProposal, text: string) => { p.scenes[0]!.title = text; } },
+  { path: '$.scenes[0].narration', schema: SCRIPT_PROPOSAL_SCHEMA.properties.scenes.items.properties.narration, set: (p: ScriptProposal, text: string) => { p.scenes[0]!.narration = text; } },
+  { path: '$.scenes[0].visualIntent', schema: SCRIPT_PROPOSAL_SCHEMA.properties.scenes.items.properties.visualIntent, set: (p: ScriptProposal, text: string) => { p.scenes[0]!.visualIntent = text; } },
+  { path: '$.sources[0].title', schema: SCRIPT_PROPOSAL_SCHEMA.properties.sources.items.properties.title, set: (p: ScriptProposal, text: string) => { p.sources[0]!.title = text; } },
+  { path: '$.sources[0].url', schema: SCRIPT_PROPOSAL_SCHEMA.properties.sources.items.properties.url, set: (p: ScriptProposal, text: string) => { p.sources[0]!.url = text; } },
+  { path: '$.cover.headline', schema: SCRIPT_PROPOSAL_SCHEMA.properties.cover.properties.headline, set: (p: ScriptProposal, text: string) => { p.cover.headline = text; } },
+  { path: '$.postText', schema: SCRIPT_PROPOSAL_SCHEMA.properties.postText, set: (p: ScriptProposal, text: string) => { p.postText = text; } },
+];
+
+test('script review and output schema reject every project-forbidden control in persisted text', () => {
+  for (const field of textFields) {
+    for (let code = 0; code < 32; code++) {
+      if (code === 9 || code === 10) continue;
+      const text = `https://example.org/hello${String.fromCodePoint(code)}world`;
+      const value = proposal();
+      field.set(value, text);
+      const result = parseScriptResponse(JSON.stringify(value));
+      assert.equal(result.ok, false, `${field.path}: U+${code.toString(16)}`);
+      if (!result.ok) {
+        assert.ok(result.errors.some(error => error.startsWith(`${field.path}:`) && /caracteres de control/.test(error)));
+        assert.ok(result.errors.every(error => !error.includes(text)));
+      }
+      const pattern = (field.schema as { pattern?: string }).pattern;
+      assert.ok(pattern, field.path);
+      assert.equal(new RegExp(pattern).test(text), false, field.path);
+    }
+  }
+});
+
+test('script text preserves project-allowed tabs, newlines, DEL and Unicode through review and apply', () => {
+  const input = validateProject(fixtureJson('storyboard'));
+  assert.ok(input.ok);
+  for (const field of textFields) {
+    const samples = field.path.endsWith('.url')
+      ? ['https://example.org/hello\u007fworld']
+      : ['hello\tworld', 'hello\nworld', 'hello\u007fworld', '😀 café ``` {literal}'];
+    for (const text of samples) {
+      const value = proposal();
+      field.set(value, text);
+      const result = parseScriptResponse(JSON.stringify(value));
+      assert.deepEqual(result, { ok: true, proposal: value }, field.path);
+      const pattern = (field.schema as { pattern?: string }).pattern;
+      assert.ok(pattern, field.path);
+      assert.equal(new RegExp(pattern).test(text), true, field.path);
+      assert.ok(validateProject(applyScriptProposal(input.project, value, ['s-new'])).ok);
+    }
+  }
+  for (const whitespace of ['\t', '\n']) {
+    const value = proposal();
+    value.sources[0]!.url = `https://example.org/hello${whitespace}world`;
+    rejects(value, /url/);
+  }
+});
 
 test('script parser accepts plain JSON, fences and surrounding prose without changing values', () => {
   const value = proposal();

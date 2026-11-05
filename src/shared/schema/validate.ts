@@ -1,4 +1,5 @@
 import { LIMITS } from './limits.ts';
+import { hasForbiddenControl } from './text.ts';
 import { issue } from './errors.ts';
 import type { IssueCode } from './errors.ts';
 import { validateKitScene } from '../kit/validate.ts';
@@ -1152,12 +1153,4 @@ function readApproval(
 
 function textLength(value: string): number {
   return [...value].length;
-}
-
-function hasForbiddenControl(value: string): boolean {
-  for (const character of value) {
-    const code = character.codePointAt(0) ?? 0;
-    if (code < 0x20 && code !== 0x09 && code !== 0x0a) return true;
-  }
-  return false;
 }
