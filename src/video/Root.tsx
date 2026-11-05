@@ -23,7 +23,7 @@ const saltProps: VideoProps = {
   scenes: [0, 1].map(i => ({
     sceneId: `salt-${i}`, title: 'El río transporta minerales', fromFrame: i * 150, durationInFrames: 150,
     text: i === 0 ? '¿De dónde sale la sal del mar?' : 'El río transporta minerales hasta el mar.',
-    visualIntent: 'Un río baja la montaña y arrastra una roca.', words: [], audioUrl: null, gainDb: 0,
+    visualIntent: 'Un río baja la montaña y arrastra una roca.', words: [], audioUrl: null, gainDb: 0, audioOffsetMs: 0,
     visual: i === 0 ? saltKit : { ...saltKit, camera: { ...saltKit.camera, from: [7, 6, 13], to: [6, 5.5, 12] } },
   })),
 };

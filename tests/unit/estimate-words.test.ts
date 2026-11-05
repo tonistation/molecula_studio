@@ -71,10 +71,15 @@ test('single unpunctuated word occupies the full scene', () => {
 });
 
 test('invalid durations and exceeded limits fail explicitly instead of truncating', () => {
-  for (const duration of [NaN, Infinity, 0, 999, 15001, 1000.5]) {
+  for (const duration of [NaN, Infinity, 0, 15001, 1000.5]) {
     assert.throws(() => estimateWords('mar', duration), RangeError);
   }
   assert.throws(() => estimateWords('a '.repeat(301), 1000), /palabras/);
   assert.throws(() => estimateWords('x'.repeat(LIMITS.maxSceneText + 1), 1000), /texto/);
   assert.throws(() => estimateWords('x'.repeat(81), 1000), /80/);
+});
+
+test('audio shorter than a scene is estimated over its actual duration, rejecting impossible word density', () => {
+  assert.deepEqual(estimateWords('mar', 240), [{ text: 'mar', startMs: 0, endMs: 240, emphasis: false }]);
+  assert.throws(() => estimateWords('a b', 1), /duración/);
 });

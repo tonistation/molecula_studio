@@ -36,14 +36,14 @@ export function PreviewPlayer({ draft, seek, missingAssets }: {
 
   return <section className="panel preview-panel" aria-label="Vista previa del borrador">
     <h2>Vista previa</h2>
-    <p className="muted small">Borrador en vivo · 9:16 · sin voz</p>
+    <p className="muted small">Borrador en vivo · 9:16 · {draft.output.voiceMode === 'silent' ? 'sin voz' : 'con voz · tiempos estimados para audio manual'}</p>
     {prepared.error ? <p role="status">{prepared.error}</p> : !props || props.durationInFrames === 0 ?
       <p className="muted">Añada una escena para ver la vista previa.</p> :
       <Player ref={player} className="preview-transport" component={VerticalVideo} inputProps={props}
         durationInFrames={props.durationInFrames} fps={props.fps}
         compositionWidth={props.width} compositionHeight={props.height}
         style={{ width: '100%', aspectRatio: '9 / 16' }}
-        controls alwaysShowControls showVolumeControls={false} numberOfSharedAudioTags={0}
+        controls alwaysShowControls showVolumeControls={false} numberOfSharedAudioTags={2}
         errorFallback={() => <p role="status" style={{ fontSize: 54, padding: 80, background: '#FFF0E8', color: '#772211' }}>
           No se pudo mostrar la escena. Vuelva a abrir el proyecto para reintentar.
         </p>}

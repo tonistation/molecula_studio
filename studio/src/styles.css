@@ -332,6 +332,7 @@ button.ghost.danger {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .editor-grid {
@@ -421,7 +422,8 @@ button.ghost.danger {
   gap: 12px;
 }
 
-.scene-card {
+.scene-card,
+.voice-scene {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 12px;

@@ -1,14 +1,15 @@
 import { LIMITS } from '../schema/limits.ts';
 import type { Word } from '../schema/types.ts';
 
-/** Estimates scene-local milliseconds; rejects overflow rather than dropping narration. */
+/** Estimates scene-local milliseconds over a scene or its shorter audio span. */
 export function estimateWords(text: string, durationMs: number): Word[] {
-  if (!Number.isInteger(durationMs) || durationMs < LIMITS.minSceneMs || durationMs > LIMITS.maxSceneMs) {
-    throw new RangeError('La duración debe estar entre 1000 y 15000 ms enteros.');
+  if (!Number.isInteger(durationMs) || durationMs < 1 || durationMs > LIMITS.maxSceneMs) {
+    throw new RangeError('La duración debe estar entre 1 y 15000 ms enteros.');
   }
   if (Array.from(text).length > LIMITS.maxSceneText) throw new RangeError('El texto supera el límite de la escena.');
   const tokens = text.match(/\S+/gu) ?? [];
   if (tokens.length > LIMITS.maxWordsPerScene) throw new RangeError('Hay demasiadas palabras en la escena.');
+  if (tokens.length > durationMs) throw new RangeError('La duración del audio no permite asignar al menos 1 ms por palabra.');
   if (tokens.some(token => Array.from(token).length > 80)) throw new RangeError('Cada palabra admite hasta 80 caracteres.');
   if (!tokens.length) return [];
 

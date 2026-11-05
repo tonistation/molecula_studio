@@ -14,7 +14,7 @@ import type { CodexOptions } from '../../src/companion/providers/codex-cli.ts';
 
 /** DOM/logic only. Faults wrap real filesystem operations; no fake save receipts. */
 export async function withStudio(t: TestContext, run: (args: {
-  page: Page; root: string; store: ProjectStore; fault: { value: 'none' | 'write' | 'sync' | 'copy-sync' };
+  page: Page; root: string; store: ProjectStore; fault: { value: 'none' | 'write' | 'sync' | 'copy-sync' | 'audio-sync' };
   consoleErrors: string[];
   resourceErrors: string[];
   restartCompanion: () => Promise<ProjectStore>;
@@ -24,7 +24,8 @@ export async function withStudio(t: TestContext, run: (args: {
     catch { t.skip('Lightpanda unavailable; not a pass'); return; }
   }
   const root = await mkdtemp(join(tmpdir(), 'molecula-f06-'));
-  const fault = { value: 'none' as 'none' | 'write' | 'sync' | 'copy-sync' };
+  const fault = { value: 'none' as 'none' | 'write' | 'sync' | 'copy-sync' | 'audio-sync' };
+  let audioProjectSyncs = 0;
   const fs = createNodeFsOps();
   const canonicalRoot = await fs.realpath(root);
   const store = new ProjectStore({ workspaceRoot: root, fsOps: {
@@ -34,6 +35,9 @@ export async function withStudio(t: TestContext, run: (args: {
       return fs.writeFileExclusive(path, bytes);
     },
     syncDir: async (path) => {
+      // Audio publishes its asset first; only the second project-directory sync
+      // follows the canonical document rename and yields a real uncertain receipt.
+      if (fault.value === 'audio-sync' && /\/p-[^/]+$/.test(path) && ++audioProjectSyncs === 2) throw new Error('injected audio commit sync failure');
       if (fault.value === 'sync' && /\/p-[^/]+$/.test(path)) throw new Error('injected sync failure');
       if (fault.value === 'copy-sync' && path === canonicalRoot) throw new Error('injected copy publication sync failure');
       return fs.syncDir(path);

@@ -7,6 +7,7 @@ import { PreviewPlayer } from '../components/PreviewPlayer.tsx';
 import { ExportPanel } from '../components/ExportPanel.tsx';
 import { ScriptStep } from '../components/ScriptStep.tsx';
 import { DrawingStep } from '../components/DrawingStep.tsx';
+import { VoiceStep } from '../components/VoiceStep.tsx';
 import { useCodexCapability } from '../components/GenerationMode.tsx';
 import { ApiError, api, describeError, type ReadResult, type SaveResult } from '../api.ts';
 import {
@@ -209,6 +210,32 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
       setDigest(fresh.digest);
       setMissingAssets(fresh.missingAssets);
       setNotice(`Recurso revinculado${result.replaced ? ' con identificador nuevo' : ''}. Los vínculos editoriales no se renuevan.${result.receipt?.sync === 'uncertain' ? ' Persistencia incierta: verifique el disco.' : ''}`);
+    } finally { relinkLock.current = false; setRelinking(false); }
+  };
+
+  const attachAudio = async (sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string) => {
+    const current = live.current;
+    if (current.dirty || operationLock.current || current.saving || readOnly || relinkLock.current || pendingSave.current) {
+      throw new Error('Guarde o verifique los cambios antes de subir audio.');
+    }
+    // The same synchronous lock protects edits, saves, navigation and asset writes.
+    relinkLock.current = true;
+    setRelinking(true); setError(null); setNotice(null);
+    try {
+      const result = await api.attachAudio(current.draft.projectId, sceneId, bytes, mimeType, license, current.confirmedRevision, current.digest);
+      if (result.receipt.sync === 'uncertain') {
+        throw new ApiError(409, 'audio-unconfirmed', 'La persistencia del audio es incierta; los bytes pueden estar publicados. Verifique el disco antes de continuar.');
+      }
+      const fresh = result.opened;
+      setDraft(fresh.project); setMode(fresh.mode); setReadOnlyRaw(fresh.raw);
+      setConfirmedRevision(fresh.revision); setDigest(fresh.digest); setMissingAssets(fresh.missingAssets);
+      live.current = { draft: fresh.project, dirty: false, saving: false, confirmedRevision: fresh.revision, digest: fresh.digest };
+      setDirty(false); setConflict(false);
+      setNotice(`Audio guardado · rev. ${fresh.revision}`);
+    } catch (caught) {
+      setConflict(caught instanceof ApiError && (caught.code === 'conflict' || caught.code === 'audio-unconfirmed' || caught.status === 0 || caught.status >= 500));
+      setError(`${describeError(caught)} El borrador se conserva. Recargue desde disco para comprobar si el audio llegó a guardarse antes de reintentar.`);
+      throw caught;
     } finally { relinkLock.current = false; setRelinking(false); }
   };
 
@@ -501,6 +528,8 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
           </fieldset>
         </section>
         <ScriptStep draft={draft} disabled={readOnly || relinking} onEdit={edit} codexCapability={codexCapability} />
+        <VoiceStep draft={draft} dirty={dirty} disabled={readOnly || saving || needsVerification || relinking}
+          missingAssets={missingAssets} onUpload={attachAudio} />
         </div>
 
         <section className="panel">
@@ -571,7 +600,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
                   </label>
                   <div className="scene-actions">
                     <span className="muted small">
-                      Inicia en {(scene.startMs / 1000).toFixed(1)} s · sin voz (M1)
+                      Inicia en {(scene.startMs / 1000).toFixed(1)} s · {scene.audio ? 'audio adjunto' : 'sin voz'}
                     </span>
                     <button type="button" className="ghost" disabled={readOnly || index === 0} onClick={() => moveScene(index, -1)}>
                       Subir

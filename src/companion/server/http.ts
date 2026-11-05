@@ -7,6 +7,9 @@ import { createRenderJobs, RenderRequestError } from '../render/render-jobs.ts';
 import type { renderProject } from '../render/render-service.ts';
 import { capabilities } from '../providers/capabilities.ts';
 import { generateScript, generateDrawing, GenerationError, type CodexOptions } from '../providers/codex-cli.ts';
+import { estimateWords } from '../../shared/voice/estimate.ts';
+import { inspectMediaBounded } from '../store/inspection-runner.ts';
+import { InspectionError } from '../store/media-inspect.ts';
 
 import { LIMITS } from '../../shared/schema/limits.ts';
 import { ProjectStore, type WorkspaceOptions } from '../store/project-store.ts';
@@ -239,6 +242,57 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   const { store } = context;
   const method = req.method ?? 'GET';
 
+  const audioRoute = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})\/scenes\/([a-z][a-z0-9_-]{0,63})\/audio$/.exec(pathname);
+  if (audioRoute) {
+    if (method !== 'PUT') throw methodNotAllowed('PUT');
+    const align = new URL(req.url!, context.state.origin).searchParams.get('align');
+    if (align === 'vibi') throw new HttpError(501, 'alignment-unavailable', 'La alineación Vibi estará disponible tras el paso 4.3. No se contactó al proveedor ni se generó costo.');
+    if (align !== null) throw new HttpError(400, 'invalid-argument', 'Alineación no compatible. Omita align para usar tiempos estimados gratuitos.');
+    const mimeType = req.headers['content-type'];
+    if (mimeType !== 'audio/wav' && mimeType !== 'audio/mpeg') throw new HttpError(415, 'unsupported-media-type', 'Suba un archivo WAV o MP3.');
+    const revision = req.headers['x-expected-revision'];
+    const digest = req.headers['x-expected-digest'];
+    const licenseHeader = req.headers['x-asset-license'];
+    if (typeof revision !== 'string' || !/^\d+$/.test(revision) || !Number.isSafeInteger(Number(revision))
+      || typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest)) {
+      throw new HttpError(400, 'invalid-argument', 'Se requieren revisión y digest válidos del proyecto guardado.');
+    }
+    let license: string;
+    try { license = typeof licenseHeader === 'string' ? decodeURIComponent(licenseHeader) : ''; }
+    catch { throw new HttpError(400, 'invalid-argument', 'La licencia debe ser texto UTF-8 codificado con encodeURIComponent.'); }
+    if (!license.trim() || [...license].length > 200 || /[\x00-\x1f\x7f]/u.test(license)) {
+      throw new HttpError(400, 'invalid-argument', 'Indique la licencia o el permiso real de uso (1–200 caracteres).');
+    }
+    const projectId = audioRoute[1]!;
+    const sceneId = audioRoute[2]!;
+    const current = await store.readProject(projectId);
+    if (current.revision !== Number(revision) || current.digest !== digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: digest, actualDigest: current.digest });
+    const scene = current.project.scenes.find(item => item.sceneId === sceneId);
+    if (!scene) throw new HttpError(404, 'scene-not-found', 'La escena ya no existe.');
+    const bytes = await readRawBody(req, ASSET_LIMIT);
+    let audioMs: number;
+    try {
+      const inspection = await inspectMediaBounded(bytes, mimeType);
+      if (inspection.durationMs === null) throw new AssetRejectedError('unreadable', 'No se pudo determinar la duración del audio.');
+      audioMs = inspection.durationMs;
+    } catch (error) {
+      if (error instanceof InspectionError) throw new AssetRejectedError(error.reason, error.message);
+      throw error;
+    }
+    if (audioMs + 300 > LIMITS.maxSceneMs) throw new AssetRejectedError('audio-too-long', 'El audio más 300 ms de margen supera los 15 s por escena.');
+    let words;
+    try { words = estimateWords(scene.text, audioMs); }
+    catch (error) { throw new HttpError(422, 'invalid-alignment', error instanceof RangeError ? error.message : 'No se pudieron estimar los tiempos.'); }
+    const result = await store.attachSceneAudio({ projectId, sceneId, bytes, mimeType,
+      expectedRevision: Number(revision), expectedDigest: digest,
+      source: { origin: 'user', license, attribution: '' }, words });
+    // Re-reading returns the canonical disk digest, not a recomputed content digest.
+    const opened = await store.readProject(projectId);
+    if (opened.digest !== result.digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: result.digest, actualDigest: opened.digest });
+    sendJson(res, 200, { ...result, opened });
+    return;
+  }
+
   if (['/api/capabilities', '/api/script/generate', '/api/drawing/generate'].includes(pathname)) {
     const capability = pathname === '/api/capabilities';
     if (method !== (capability ? 'GET' : 'POST')) throw methodNotAllowed(capability ? 'GET' : 'POST');
@@ -457,6 +511,8 @@ async function readJsonBody(req: IncomingMessage, limit = BODY_LIMIT): Promise<u
 }
 
 async function readRawBody(req: IncomingMessage, limit: number): Promise<Uint8Array> {
+  const declared = req.headers['content-length'];
+  if (declared !== undefined && Number(declared) > limit) throw new HttpError(413, 'body-too-large', `request body exceeds ${limit} bytes`);
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
@@ -509,7 +565,8 @@ const CSP = [
   "img-src 'self' data:",
   "font-src 'self'",
   "connect-src 'self'",
-  "media-src 'self' blob:",
+  // Remotion's shared HTML audio tags prime playback with an embedded silent MP3.
+  "media-src 'self' blob: data:",
   "base-uri 'none'",
   "form-action 'self'",
   "frame-ancestors 'none'",

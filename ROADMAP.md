@@ -24,9 +24,9 @@ Base: commit `ad26d62`. Uso local, una persona. Servidor: [más adelante](#camin
 | Reloj por frame (`src/shared/timeline.ts`) | ✅ | Se reutiliza para calcular frames |
 | Composición visual 3D + subtítulos | ✅ | Fase 1 |
 | Exportar MP4 | ✅ CLI y UI, silencioso | Fase 1 (CLI) y Fase 2 (UI) |
-| Vista previa en el estudio | ✅ Borrador silencioso | Fase 2 |
+| Vista previa en el estudio | ✅ Borrador con audio manual por escena | Fases 2 y 4.2 |
 | Guion automático / manual | Ambos implementados ✅ · proveedor real pendiente | Fase 3 |
-| Voz automática / manual | ❌ | Fase 4 |
+| Voz automática / manual | Manual implementada ✅ · automática pendiente | Fase 4 |
 
 Del plan anterior están completas 9 de 27 unidades (≈33 %), pero son la **base de persistencia**. Ninguna de las cuatro piezas que producen un video existe todavía. Esta ruta las pone primero.
 
@@ -372,7 +372,13 @@ La generación va en **dos etapas** con modo dual cada una: **Guion** (texto y d
 
 - **Hacer:** ruta `PUT /api/projects/:id/scenes/:sceneId/audio` (bytes WAV/MP3; cabeceras `x-expected-revision`, `x-expected-digest`, `x-asset-license`). Palabras: `estimateWords(text, audioMs)` por defecto (gratis), o alineación real con el STT de Vibi si se pide `?align=vibi` (disponible tras 4.3; muestra el costo por duración antes). `VoiceStep.tsx`: «Copiar guion de locución» (escenas numeradas), «Subir audio» por escena, estado por escena (sin voz / lista / desactualizada).
 - **Regla UI:** requiere proyecto guardado; si hay cambios, pedir guardar primero.
-- **Aceptación:** [ ] audio externo por escena suena sincronizado en la vista previa.
+- **Aceptación:** [x] audio externo por escena suena sincronizado en la vista previa (verificación automatizada con PCM sintético real; escucha humana pendiente).
+- **Decisión de alcance aprobada 4.2:** el usuario autorizó adelantar desde 4.5 el audio por escena de la composición compartida `VerticalVideo`, sin transporte paralelo exclusivo de la vista previa. Cada `Sequence` delimita su audio; `voiceMode: 'silent'` lo excluye, `offsetMs` recorta el origen en frames y `gainDb` se convierte a amplitud sin limitar ganancias positivas. Se usa `Html5Audio` del paquete `remotion` instalado (4.0.541), con Web Audio, CORS anónimo y pausa durante buffering. La documentación actual prefiere `@remotion/media` para proyectos nuevos, pero no está instalado: se conserva la alternativa HTML5 oficialmente soportada sin añadir dependencias. Context7 sin cuota; documentación oficial y tipos instalados contrastados.
+- **Frontera HTTP 4.2:** `PUT` conserva token/Origin/Host, handles de proyecto/escena, límite de 50 MiB y comprobaciones de revisión/digest. `x-asset-license` es texto del usuario codificado con `encodeURIComponent` (UTF-8), obligatorio, sin permiso predeterminado; procedencia `user` y atribución vacía. Inspección acotada antes de estimar sobre la duración real del archivo, sin incluir los 300 ms de margen. El store vuelve a inspeccionar dentro de su transacción y guarda con el mecanismo 4.1. La respuesta incluye recibo, revisión, digest y `opened` canónico refrescado; una modificación externa posterior produce conflicto, no sustitución silenciosa. `?align=vibi` devuelve 501 `alignment-unavailable`, sin red ni costo, hasta 4.3; no se simula alineación real.
+- **Estimación y UI 4.2:** `estimateWords` admite ahora spans de audio desde 1 ms; el mínimo de escena del schema sigue siendo 1000 ms. Rechaza una cantidad de palabras que no permita al menos 1 ms por palabra. Narración numerada para copiar, alternativa seleccionable si falla el portapapeles, licencia explícita y carga WAV/MP3 por escena. Requiere borrador guardado, sin guardados inciertos pendientes; la ingesta bloquea edición, navegación y otras escrituras mediante el bloqueo existente. Un error o conflicto conserva el borrador. Estados `sin voz` / `lista` / `desactualizada` derivados de `bindingDigests` y recursos faltantes; editar texto no renueva vínculos históricos.
+- **Vista previa y seguridad 4.2:** reutiliza descarga autenticada de activos, blob URLs y su limpieza al reemplazar/desmontar. Dos tags de audio compartido permiten reproducción y cambios de escena; la CSP permite `data:` **solo en `media-src`** para el MP3 silencioso de inicialización de Remotion. Scripts y conexiones conservan la política local anterior, sin `unsafe-inline` ni red externa. Los subtítulos manuales son estimados; no se afirma alineación fonética real.
+- **Verificación 4.2:** `npm test`: 453/453, incluidas seis pruebas nuevas y el render CLI real silencioso de 2 s; typecheck y build en verde. E2E completas: 36/36, incluidas dos nuevas, sin omitidas. API con disco real: autenticación, Origin/Host, revisión/digest, concurrencia, formatos/procedencia inválidos, límite de bytes, audio largo y subsegundo, estimación no representable, ningún archivo publicado al rechazar. Política pura de audio/ganancia/offset/modo silencioso y estados de voz. Chromium/ANGLE: subida de dos WAV PCM no silenciosos generados localmente, duración decodificada de 2 s, muestras de audio no nulas en el grafo Web Audio durante reproducción, play/pausa, cambio de escena con blob identificado por SHA-256 y seek dentro del segundo audio; guardado/reapertura, detección aislada de voz desactualizada, protección del borrador sucio y conflicto con escritor externo. Un fallo real de sincronización posterior al rename produce recibo incierto: no confirma guardado ni reemplaza el borrador hasta recargar explícitamente desde disco. Capturas de escritorio/móvil/vista previa inspeccionadas; metadatos con SHA largo se envuelven sin desborde ni truncamiento. Sin errores de consola/CSP/recursos en las pruebas nuevas. No se escuchó voz humana ni se invocaron proveedores. Sin dependencias ni cambios de schema; avisos conocidos no bloqueantes de tamaño del bundle y `THREE.Clock`. Una unidad de commit coherente (ruta, UI, reproducción, oráculos y documentación), sin dividir infraestructura ni pruebas críticas por cantidad de líneas.
+- **Demo 4.2:** `npm start` → crear/importar proyecto con escenas → guardar cambios → «Voz manual» → «Copiar guion de locución» → grabar/producir audio externamente → indicar licencia o permiso real → «Subir audio · escena N». La ingesta guarda y ajusta las duraciones; usar Play y los botones numerados de escena para revisar. Editar narración marca su voz desactualizada y exige guardar antes de reemplazarla. La exportación con voz sigue rechazada hasta 4.5; no hay STT/TTS de Vibi todavía.
 
 ### 4.3 Cliente Vibi y alineación por palabras — TDD
 
@@ -400,7 +406,8 @@ Referencia: <https://vibi.pro/docs> (página con JavaScript; abrir en navegador)
 
 ### 4.5 Render con voz
 
-- **Hacer:** audio por escena en `VerticalVideo` con el componente que recomiende la documentación/skill de Remotion de la versión instalada; volumen desde `gainDb`. `voiceMode: 'silent'` excluye el audio. En render, los audios se sirven por `render-assets`.
+- **Adelantado con autorización a 4.2:** audio por escena en `VerticalVideo`, volumen desde `gainDb`, offset y exclusión con `voiceMode: 'silent'`, verificados en la vista previa compartida.
+- **Hacer pendiente:** habilitar y verificar exportación con voz por CLI y UI; conservar la frontera `render-assets` para servir los audios durante render. El guard actual del renderer todavía rechaza `withVoice`; la reproducción en vista previa no equivale a MP4 con audio.
 - **Hito 🎯 primer video completo:**
   - [ ] Video de 30–45 s con 3D, voz y subtítulos sincronizados.
   - [ ] El MP4 tiene pista de audio y se escucha completo.
@@ -509,7 +516,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 3.4 Guion manual (UI verificada con respuestas externas emuladas; ChatGPT web pendiente)
 - [x] 3.5 Guion automático con Codex (verificado con ejecutable falso y MP4 real; proveedor real pendiente)
 - [x] 4.1 Ingesta de audio (store verificado con disco real; UI y reproducción pendientes)
-- [ ] 4.2 Voz manual
+- [x] 4.2 Voz manual (subida y reproducción sincronizada verificadas con PCM real; sin escucha humana ni proveedor)
 - [ ] 4.3 Cliente Vibi y alineación
 - [ ] 4.4 Voz automática con Vibi
 - [ ] 4.5 Render con voz 🎯

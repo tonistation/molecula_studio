@@ -14,6 +14,7 @@ export interface VideoSceneProps {
   words: Word[];
   audioUrl: string | null;
   gainDb: number;
+  audioOffsetMs: number;
 }
 
 export type VideoProps = {
@@ -57,6 +58,7 @@ export function projectToVideoProps(project: Project, assetUrls: Record<string, 
         : words,
       audioUrl: scene.audio ? assetUrls[scene.audio.assetId] ?? null : null,
       gainDb: scene.audio?.gainDb ?? 0,
+      audioOffsetMs: scene.audio?.offsetMs ?? 0,
     };
   });
   return {

@@ -65,10 +65,11 @@ test('retains visual intent when there is no visual', () => {
 
 test('maps selected audio URL and gain', () => {
   const project = storyboard();
-  project.scenes[0]!.audio = { assetId: 'asset_voice', offsetMs: 0, gainDb: -3 };
+  project.scenes[0]!.audio = { assetId: 'asset_voice', offsetMs: 500, gainDb: -3 };
   const scene = projectToVideoProps(project, { asset_voice: 'blob:audio' }).scenes[0]!;
   assert.equal(scene.audioUrl, 'blob:audio');
   assert.equal(scene.gainDb, -3);
+  assert.equal(scene.audioOffsetMs, 500);
 });
 
 test('rejects unsupported styles and inert visuals explicitly', () => {
