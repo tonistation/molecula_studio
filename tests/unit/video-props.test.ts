@@ -14,6 +14,8 @@ test('converts storyboard into contiguous frame ranges and preserves rendering i
   const project = storyboard();
   const props = projectToVideoProps(project, {});
   assert.equal(props.fps, 30);
+  assert.equal(props.styleId, project.styleId);
+  assert.equal(props.styleVersion, project.styleVersion);
   assert.equal(props.width, 1080);
   assert.equal(props.height, 1920);
   assert.equal(props.durationInFrames, 360);

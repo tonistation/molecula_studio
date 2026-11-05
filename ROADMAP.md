@@ -192,9 +192,11 @@ Cambio de contrato autorizado por ADR-09. Leer antes [referencias visuales](docs
 - **Determinismo:** prohibido `Math.random`, `Date`, `useFrame` de R3F y animaciones CSS. Variación solo desde `seed`.
 - **Render 3D:** usar `chromiumOptions: { gl: 'angle' }` (en CLI: `Config.setChromiumOpenGlRenderer('angle')`). Si aparecen frames negros o artefactos, revisar esto primero y bajar `concurrency`.
 - **Aceptación:**
-  - [ ] La escena de ejemplo se ve en Remotion Studio con estética comparable a `ref-sal.jpg` (low-poly plano, cámara en movimiento, partículas, rótulos).
-  - [ ] Ir a un frame, avanzar y volver produce la misma imagen.
-  - [ ] Un mismo `objectId` reutilizado en dos escenas se ve idéntico (continuidad).
+   - [x] La escena de ejemplo se ve en Remotion Studio con estética comparable a `ref-sal.jpg` (low-poly plano, cámara en movimiento, partículas, rótulos).
+   - [x] Ir a un frame, avanzar y volver produce la misma imagen.
+   - [x] Un mismo `objectId` reutilizado en dos escenas se ve idéntico (continuidad).
+- **Verificación 1.3b:** `npm run typecheck`, `npm test` (347 pruebas) y `npm run build:studio` en verde. Remotion Studio y capturas PNG reales con Chrome Headless Shell/ANGLE: dos planos de `SalDelMar`, objetos compartidos, catálogo completo, rótulos y error visible de estilo desconocido; sin errores de consola tras corregir una clave React faltante. Captura de la región de vista previa idéntica en seek 60 → 90 → 60; el frame 90 difiere. Comparación visual con `ref-sal.jpg` local y criterios escritos, sin copiar su marca; la aprobación estética final queda a criterio del usuario. No se exportó MP4 ni se implementaron subtítulos.
+- **Demo:** `npm run video:studio` → composición `SalDelMar` (10 s, dos planos de 5 s; comparte los mismos objetos y semillas). Revisar 2 s y 7 s y volver a 2 s. `Vertical` conserva el storyboard migrado con su pista de cámara/FOV. `sal-del-mar.json` es una escena `KitScene`, no un proyecto completo. En `follow`, `from`/`to` son offsets del sujeto; `orbit` interpola el arco horizontal más corto alrededor del objetivo. Las animaciones terminadas conservan su estado final; no acumulan deltas entre frames.
 
 ### 1.4 Subtítulos palabra por palabra
 
@@ -447,7 +449,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 1.1 `projectToVideoProps`
 - [x] 1.2 Composición base y Remotion Studio
 - [x] 1.3a Contrato KitScene y schema 2
-- [ ] 1.3b Renderer del kit
+- [x] 1.3b Renderer del kit
 - [ ] 1.4 Subtítulos palabra por palabra
 - [ ] 1.5 Render por línea de comandos 🎬
 - [ ] 2.1 Activos para la vista previa

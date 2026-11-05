@@ -16,6 +16,8 @@ export interface VideoSceneProps {
 }
 
 export type VideoProps = {
+  styleId: string;
+  styleVersion: number;
   fps: number;
   width: number;
   height: number;
@@ -51,6 +53,8 @@ export function projectToVideoProps(project: Project, assetUrls: Record<string, 
     };
   });
   return {
+    styleId: project.styleId,
+    styleVersion: project.styleVersion,
     fps,
     width: project.output.width,
     height: project.output.height,

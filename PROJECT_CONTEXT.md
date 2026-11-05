@@ -1,6 +1,6 @@
 # Contexto de Molecula Studio
 
-Estudio local-first para crear videos verticales animados mediante guion, voz, vista previa y exportación. **M1/G1 técnico local cerrado y V01 implementado/revisado** en la base `cbfc125`. No existe todavía composición 3D, preview audiovisual ni exportación MP4. El [ROADMAP](ROADMAP.md) es el plan activo; el backlog anterior está congelado. Evidencia histórica: 305 pruebas y 25 E2E, con procedencia diferenciada en [delivery](docs/plan/delivery.md); no implica una ejecución nueva ni aprobación estética.
+Estudio local-first para crear videos verticales animados mediante guion, voz, vista previa y exportación. **M1/G1 técnico local cerrado y V01 implementado/revisado** en la base `cbfc125`. Existe renderer 3D determinista del kit y vista previa en Remotion Studio (1.3b); todavía no hay subtítulos, preview audiovisual integrado en el editor ni exportación MP4. El [ROADMAP](ROADMAP.md) es el plan activo; el backlog anterior está congelado. Evidencia histórica: 305 pruebas y 25 E2E, con procedencia diferenciada en [delivery](docs/plan/delivery.md); no implica una ejecución nueva ni aprobación estética.
 
 ## Lectura mínima
 
@@ -12,7 +12,7 @@ Estudio local-first para crear videos verticales animados mediante guion, voz, v
 
 Instalado/declarado en `package.json` y lockfile: React/React DOM 19, TypeScript 7.0.2, Vite 8, plugin React, tipos Node/React y `playwright-core` para pruebas. Node fijado por `.nvmrc`; engines `>=26.3.0 <27`. Usar módulos ESM y APIs nativas Node para companion, archivos, HTTP, crypto y tests. No actualizar versiones como efecto lateral.
 
-Instalados: Remotion para composición, preview y render MP4, y Three.js vía `@remotion/three`; consultar [licencias](docs/dev/licenses.md). Guion y voz tendrán modos automático y manual; Vibi es el proveedor previsto para voz. Sin DB: JSON schema 2, kit declarativo validado y migración pura desde schema 1 implementados en 1.3a; activos relativos y vínculos de medios se conservan. Abrir v1 no escribe en disco; el siguiente guardado usa v2. El renderer del kit corresponde a 1.3b.
+Instalados: Remotion para composición, preview y render MP4, y Three.js vía `@remotion/three`; consultar [licencias](docs/dev/licenses.md). Guion y voz tendrán modos automático y manual; Vibi es el proveedor previsto para voz. Sin DB: JSON schema 2, kit declarativo validado y migración pura desde schema 1 implementados en 1.3a; activos relativos y vínculos de medios se conservan. Abrir v1 no escribe en disco; el siguiente guardado usa v2. Renderer del kit implementado en 1.3b; `npm run video:studio` permite ver `Vertical` y `SalDelMar`. Cámara, objetos y partículas derivan del tiempo absoluto; `remotion.config.ts` selecciona ANGLE.
 
 ## Estilo de código y producto
 

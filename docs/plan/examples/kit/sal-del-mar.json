@@ -1,0 +1,39 @@
+{
+  "kind": "kit",
+  "kitVersion": 1,
+  "palette": { "background": "#BCE6F3", "preset": "daylight" },
+  "sky": {
+    "top": "#68C9EE",
+    "bottom": "#E4F4D4",
+    "sun": { "position": [0, 7.5, -4], "radius": 0.75, "color": "#FFE785" },
+    "clouds": [{ "position": [-4, 6, -4], "scale": 1.1 }, { "position": [1, 6, -4], "scale": 0.8 }]
+  },
+  "environment": {
+    "seed": 412,
+    "terrain": { "type": "mountain", "color": "#70AD6C", "height": 5, "size": 12 },
+    "water": { "type": "river", "color": "#21BCD8", "width": 0.85, "points": [[0, 4.5, -1.7], [0, 3.3, -0.5], [0.3, 1.9, 0.6], [0, 0.15, 1.8], [1, 0.15, 3], [0.3, 0.15, 4.8]] }
+  },
+  "objects": [
+    {
+      "id": "river-rock", "type": "rock", "params": { "radius": 0.48 }, "seed": 73,
+      "position": [0.2, 0.65, 2], "rotation": [0, 0, 0], "scale": 1, "color": "#8A776B",
+      "animations": [
+        { "type": "move", "startMs": 0, "endMs": 4500, "easing": "ease-in-out", "params": { "from": [0.2, 0.65, 2], "to": [0.45, 0.65, 4.4] } },
+        { "type": "roll", "startMs": 0, "endMs": 4500, "easing": "ease-in-out", "params": { "axis": [1, 0, 0], "turns": 1.5 } }
+      ]
+    },
+    { "id": "bank-rock", "type": "rock", "params": { "radius": 0.65 }, "seed": 91, "position": [-1.7, 0.4, 3], "rotation": [0, 0, 0], "scale": 1, "color": "#B3A38E", "animations": [] },
+    { "id": "bank-rock-small", "type": "rock", "params": { "radius": 0.4 }, "seed": 93, "position": [2, 0.3, 2.5], "rotation": [0, 0, 0], "scale": 1, "color": "#B3A38E", "animations": [] },
+    { "id": "water-marker", "type": "sphere", "params": { "radius": 0.1 }, "position": [0.1, 2, 1.1], "rotation": [0, 0, 0], "scale": 1, "color": "#B6F6FF", "animations": [] }
+  ],
+  "particles": [
+    { "type": "sparkle", "seed": 23, "count": 45, "position": [0.5, 0.8, 3], "spread": [2.4, 1.2, 4], "color": "#E3FFFF", "speed": 1.2, "size": 0.06 },
+    { "type": "rain", "seed": 24, "count": 35, "position": [0, 4, -0.3], "spread": [3.5, 5, 2], "color": "#A6E9FB", "speed": 1.4, "size": 0.035 }
+  ],
+  "labels": [
+    { "objectId": "river-rock", "text": "Minerales de la roca", "color": "#263F46" },
+    { "objectId": "water-marker", "text": "Agua dulce", "color": "#197B90" }
+  ],
+  "overlays": [{ "type": "chevrons", "count": 3, "direction": "down", "color": "#FFFFFF" }],
+  "camera": { "move": "dolly-in", "from": [13, 10, 21], "to": [11, 9, 19], "target": [0, 2, 1], "easing": "ease-in-out" }
+}
