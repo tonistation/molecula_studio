@@ -146,10 +146,10 @@ Ejecutar este paso es la autorización explícita de instalación.
 ### 1.1 `projectToVideoProps` — TDD
 
 - **Archivos:** `src/shared/video-props.ts`, `tests/unit/video-props.test.ts`.
-- **Hacer:** `Project` + `assetUrls: Record<string, string>` → `{ fps, width, height, durationInFrames, captionStyle, voiceMode, scenes: [{ sceneId, fromFrame, durationInFrames, visual, words, audioUrl | null, gainDb }] }`. Usar `totalFrames` de `timeline.ts`. Estilo desconocido o visual inerte → error explícito. `visual: null` → escena provisional con fondo y `visualIntent` (no es error).
+- **Hacer:** `Project` + `assetUrls: Record<string, string>` → `{ fps, width, height, durationInFrames, captionStyle, voiceMode, entities, scenes: [{ sceneId, fromFrame, durationInFrames, text, visualIntent, visual, words, audioUrl | null, gainDb }] }`. Usar `totalFrames` de `timeline.ts`. Estilo desconocido o visual inerte → error explícito. `visual: null` → escena provisional con fondo y `visualIntent` (no es error). `text` permite estimar subtítulos y `entities` conserva las definiciones referenciadas por los visuales.
 - **Aceptación:**
-  - [ ] Con `docs/plan/examples/storyboard-project.json`: frames y fronteras de escena correctos y contiguos.
-  - [ ] Función pura: misma entrada, misma salida.
+  - [x] Con `docs/plan/examples/storyboard-project.json`: frames y fronteras de escena correctos y contiguos.
+  - [x] Función pura: misma entrada, misma salida.
 
 ### 1.2 Composición base y Remotion Studio
 
@@ -439,7 +439,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [ ] 0.2 Instalar dependencias
 - [ ] 0.3 Fuente
 - [x] 0.4 Referencias visuales (ADR-09 decidido)
-- [ ] 1.1 `projectToVideoProps`
+- [x] 1.1 `projectToVideoProps`
 - [ ] 1.2 Composición base y Remotion Studio
 - [ ] 1.3a Contrato KitScene y schema 2
 - [ ] 1.3b Renderer del kit
