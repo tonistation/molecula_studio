@@ -1,6 +1,6 @@
 # Contexto de Molecula Studio
 
-Estudio local-first para crear videos verticales animados mediante guion, voz, vista previa y exportación. **M1/G1 técnico local cerrado y V01 implementado/revisado** en la base `cbfc125`. Existen renderer 3D determinista del kit, subtítulos karaoke con fuente local y vista previa en Remotion Studio (1.3b–1.4); todavía no hay preview audiovisual integrado en el editor ni exportación MP4. El [ROADMAP](ROADMAP.md) es el plan activo; el backlog anterior está congelado. Evidencia histórica: 305 pruebas y 25 E2E, con procedencia diferenciada en [delivery](docs/plan/delivery.md); no implica una ejecución nueva ni aprobación estética.
+Estudio local-first para crear videos verticales animados mediante guion, voz, vista previa y exportación. **M1/G1 técnico local cerrado y V01 implementado/revisado** en la base `cbfc125`. Existen renderer 3D determinista del kit, subtítulos karaoke con fuente local, vista previa en Remotion Studio y exportación MP4 silenciosa por CLI (1.3b–1.5); todavía no hay preview audiovisual ni exportación integrados en el editor. El [ROADMAP](ROADMAP.md) es el plan activo; el backlog anterior está congelado. Evidencia histórica: 305 pruebas y 25 E2E, con procedencia diferenciada en [delivery](docs/plan/delivery.md); no implica una ejecución nueva ni aprobación estética.
 
 ## Lectura mínima
 
@@ -24,4 +24,4 @@ Existentes: `src/shared/` (schema, digests, timeline); `src/companion/store/` (d
 
 ## Límites operativos
 
-Un companion escritor por workspace; loopback, token efímero, Origin/Host estrictos y handles, nunca rutas arbitrarias. Guardar borradores sigue disponible sin audio/render. Los secretos van solo en variables de entorno. La exportación prevista usa la revisión guardada, sin bloquear por `approval`, y admite un render a la vez en memoria. Ejecutar solo el paso solicitado; instalación, proveedores, gasto, commit y push requieren autorización aplicable. Las decisiones y límites completos están en [ROADMAP](ROADMAP.md#reglas-para-opencode).
+Un companion escritor por workspace; loopback, token efímero, Origin/Host estrictos y handles, nunca rutas arbitrarias por HTTP. Guardar borradores sigue disponible sin audio/render. Los secretos van solo en variables de entorno. La exportación CLI usa la revisión guardada, sin bloquear por `approval`, y admite un render a la vez en memoria del servicio. Ejecutar solo el paso solicitado; instalación, proveedores, gasto, commit y push requieren autorización aplicable. Las decisiones y límites completos están en [ROADMAP](ROADMAP.md#reglas-para-opencode).

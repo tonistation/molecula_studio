@@ -22,8 +22,8 @@ Base: commit `ad26d62`. Uso local, una persona. Servidor: [más adelante](#camin
 | Companion local: HTTP loopback, token, `ProjectStore` atómico | ✅ | Se extiende con rutas nuevas |
 | Estudio React: proyectos, escenas (texto/duración), guardar/reabrir, importar, relink | ✅ | Se extiende |
 | Reloj por frame (`src/shared/timeline.ts`) | ✅ | Se reutiliza para calcular frames |
-| Composición visual 3D + subtítulos | ❌ | Fase 1 |
-| Exportar MP4 | ❌ | Fase 1 (CLI) y Fase 2 (UI) |
+| Composición visual 3D + subtítulos | ✅ | Fase 1 |
+| Exportar MP4 | ✅ CLI; UI pendiente | Fase 1 (CLI) y Fase 2 (UI) |
 | Vista previa en el estudio | ❌ | Fase 2 |
 | Guion automático / manual | ❌ | Fase 3 |
 | Voz automática / manual | ❌ | Fase 4 |
@@ -220,8 +220,12 @@ Cambio de contrato autorizado por ADR-09. Leer antes [referencias visuales](docs
 - **Script:** `npm run render -- <ruta/project.json> [salida.mp4]`.
 - **Test real:** renderizar 2 s de un fixture mínimo y comprobar 1080×1920, 30 fps y duración ±1 frame (`npx remotion ffprobe` o `@remotion/media-parser`).
 - **Hito 🎬:**
-  - [ ] Existe el primer MP4 del ejemplo storyboard.
-  - [ ] Se ve el 3D y los subtítulos.
+   - [x] Existe el primer MP4 del ejemplo storyboard.
+   - [x] Se ve el 3D y los subtítulos.
+- **Verificación 1.5:** exportación real del storyboard original (v1 migrado en memoria, sin modificarlo) a `workspace/.renders/project_rocks/3-20261105-180000.mp4`. `ffprobe` confirma H.264, yuv420p, 1080×1920, 30 fps, 12 s y 360 frames, sin pista de audio. Inspección visual de frames extraídos del MP4 a 1 s y 7 s: personajes/objetos 3D, capas, rótulo y subtítulos visibles. Chrome Headless Shell con ANGLE; no Lightpanda. El archivo generado y las capturas no se incluyen en Git. No implica aprobación estética humana.
+- **Pruebas 1.5:** TDD rojo inicial por módulo ausente; pruebas de cache/props, revisión guardada sin modificar, publicación/limpieza, exclusión mutua, salidas existentes/enlaces/extensión, errores del CLI y `.renders` ignorado por el store. Test real del CLI con fixture mínimo de 2 s y metadatos H.264, 1080×1920, 30 fps, duración y frames ±1. `npm test`: 364/364 en verde, sin omitidas; conserva esa prueba real en la suite completa. `npm run typecheck` y `npm run build:studio` en verde.
+- **Decisiones 1.5:** bundle cacheado en memoria del servicio único y una exportación a la vez; `concurrency: 1` por prudencia con WebGL. Se reutiliza el parser del store sin adquirir su bloqueo de escritura ni importar/modificar el documento. Solo modo `silent`; `withVoice` falla explícitamente hasta Fase 4. Nombre por defecto en UTC; si la salida ya existe, se rechaza. Temporal privado junto al destino y publicación mediante rename, con limpieza al fallar. Directorios de salida con enlaces simbólicos se rechazan. Context7 sin cuota; APIs contrastadas con documentación oficial y tipos instalados. Sin dependencias ni cambios de schema.
+- **Demo:** `npm run render -- workspace/<projectId>/project.json` produce `workspace/.renders/<projectId>/<revision>-<yyyyMMdd-HHmmss>.mp4`; el workspace se deduce como padre de la carpeta del documento. Para el storyboard externo, usar `npm run render -- docs/plan/examples/storyboard-project.json workspace/storyboard.mp4` (nombre nuevo). Abrir el MP4 y revisar ambos planos; no hay voz. Persiste un aviso no bloqueante de Three.js sobre `THREE.Clock`.
 
 ---
 
@@ -454,7 +458,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 1.3a Contrato KitScene y schema 2
 - [x] 1.3b Renderer del kit
 - [x] 1.4 Subtítulos palabra por palabra
-- [ ] 1.5 Render por línea de comandos 🎬
+- [x] 1.5 Render por línea de comandos 🎬
 - [ ] 2.1 Activos para la vista previa
 - [ ] 2.2 `PreviewPlayer`
 - [ ] 2.3 Exportar desde la UI

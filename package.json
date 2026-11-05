@@ -14,6 +14,7 @@
     "test:integration": "node --test \"tests/integration/**/*.test.ts\"",
     "dev:companion": "node src/companion/main.ts",
     "video:studio": "remotion studio src/video/index.ts",
+    "render": "node scripts/render-project.ts",
     "build:studio": "vite build --config studio/vite.config.ts",
     "start": "npm run build:studio && npm run dev:companion",
     "test:e2e": "npm run build:studio && node --test \"tests/e2e/**/*.e2e.ts\""

@@ -2,7 +2,7 @@
 
 Plan de una aplicación local para crear videos animados verticales a partir de guiones, escenas, voz y subtítulos. La visión contempla varios estilos; la primera entrega propone un único estilo 3D.
 
-**Estado: M1/G1 técnico local cerrado y V01 implementado/revisado** (base `cbfc125`). Existen schema ejecutable, `ProjectStore`, companion HTTP y estudio React para crear/editar/guardar/reabrir borradores; V01 añade reloj/selección de escena, no composición. Todavía **no** hay render, voz sintética, proveedores ni exportación MP4. El [ROADMAP](ROADMAP.md) es el plan activo hacia el primer video; el [backlog anterior](docs/plan/implementation-tasks.md) está congelado. Véanse el [contexto](PROJECT_CONTEXT.md) y la [evidencia histórica](docs/plan/delivery.md).
+**Estado: Fase 1 del ROADMAP implementada.** Existen schema 2, `ProjectStore`, companion HTTP y estudio React para crear/editar/guardar/reabrir borradores, además del renderer 3D, subtítulos, Remotion Studio y exportación MP4 silenciosa por CLI. Todavía no hay vista previa/exportación integradas en el editor, voz sintética ni proveedores. El [ROADMAP](ROADMAP.md) es el plan activo; el [backlog anterior](docs/plan/implementation-tasks.md) está congelado. Véanse el [contexto](PROJECT_CONTEXT.md) y la [evidencia histórica](docs/plan/delivery.md).
 
 ## Ejecutar localmente
 
@@ -19,7 +19,10 @@ Abrí `http://127.0.0.1:4787`. El companion sirve el estudio en loopback con un 
 npm run typecheck       # raíz + studio
 npm test                # unit + integración (disco real)
 npm run test:e2e        # navegador real (Lightpanda) contra el companion
+npm run render -- workspace/<projectId>/project.json [salida.mp4]
 ```
+
+El render lee la revisión guardada, no modifica el JSON y no exige aprobación editorial. Por defecto publica en `<workspace>/.renders/<projectId>/<revision>-<fecha-UTC>.mp4`; el workspace es el padre de la carpeta del documento. Una salida explícita es relativa al directorio actual; debe ser `.mp4` y no existir. Solo admite modo silencioso por ahora. Ejemplo externo: `npm run render -- docs/plan/examples/storyboard-project.json workspace/storyboard.mp4`.
 
 ## Por dónde empezar
 
@@ -53,8 +56,8 @@ El HTML es una propuesta visual estática, no la aplicación ni una prueba de pe
 
 ## Límites actuales
 
-**Continuidad visual requerida:** el JSON ya conserva entidades reutilizables; cada aparición referencia `entityId` y versión. La continuidad de datos está probada, no la geometría/render aún inexistentes. Las variantes deben ser intencionales, sin editor avanzado en el MVP. Véase [continuidad visual](docs/plan/visual-continuity.md) y V02/V07 para sus oráculos.
+**Continuidad visual requerida:** el JSON conserva entidades reutilizables y el kit tiene renderer determinista con pruebas de seek y objetos compartidos. Las variantes deben ser intencionales, sin editor avanzado en el MVP. La aprobación estética final sigue siendo humana. Véase [continuidad visual](docs/plan/visual-continuity.md).
 
-La primera fase implementada cubre persistencia y recuperación, no generación: guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. Render, voz y exportación siguen pendientes en el [ROADMAP](ROADMAP.md) y requieren los permisos aplicables. No se afirma rendimiento, calidad de exportación ni reproducibilidad audiovisual comprobada. Riesgos estáticos adicionales de revisión de save/retención están documentados en [API](docs/plan/api-contracts.md), sin fixes funcionales en esta intervención.
+Guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. El primer MP4 silencioso del storyboard está exportado y verificado (H.264, 1080×1920, 30 fps, 12 s). Voz, proveedores y flujo integrado siguen pendientes en el [ROADMAP](ROADMAP.md). No se afirma rendimiento garantizado ni aprobación estética humana. Riesgos históricos de save/retención están documentados en [API](docs/plan/api-contracts.md).
 
 Repositorio de referencia: [tonistation/molecula_studio](https://github.com/tonistation/molecula_studio).
