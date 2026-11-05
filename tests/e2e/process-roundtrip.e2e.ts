@@ -106,7 +106,7 @@ test('F08 offline processes: imported approval notice, identity and stale media 
       const source = JSON.stringify(external);
       await browser.page.getByLabel('JSON externo').setInputFiles({ name: 'external.json', mimeType: 'application/json', buffer: Buffer.from(source) });
       await browser.page.getByText(/La aprobación importada se eliminó/).waitFor();
-      await browser.page.getByText('Sin aprobación: se requiere revisión editorial antes de exportar.', { exact: true }).waitFor();
+      await browser.page.getByText('Sin aprobación: la exportación no confirma revisión editorial.', { exact: true }).waitFor();
       await browser.page.getByLabel('Revincular f08_voice').setInputFiles({ name: 'voice.wav', mimeType: 'audio/wav', buffer: Buffer.from(audio) });
       await browser.page.getByText(/Recurso revinculado/).waitFor();
       await browser.page.getByLabel('Idea').fill('Identity and historical bindings retained');
@@ -129,7 +129,7 @@ test('F08 offline processes: imported approval notice, identity and stale media 
       const fresh = await start({ studioDir });
       browser = await processBrowser(fresh.origin, 'chromium');
       await browser.page.getByRole('button', { name: 'Abrir', exact: true }).click();
-      await browser.page.getByText('Sin aprobación: se requiere revisión editorial antes de exportar.', { exact: true }).waitFor();
+      await browser.page.getByText('Sin aprobación: la exportación no confirma revisión editorial.', { exact: true }).waitFor();
       assert.deepEqual((await readProject(fresh.request(`/api/projects/${external.projectId}`))).project, saved);
       assert.deepEqual(await readFile(file), savedBytes);
       browser.assertClean();

@@ -23,7 +23,7 @@ Base: commit `ad26d62`. Uso local, una persona. Servidor: [más adelante](#camin
 | Estudio React: proyectos, escenas (texto/duración), guardar/reabrir, importar, relink | ✅ | Se extiende |
 | Reloj por frame (`src/shared/timeline.ts`) | ✅ | Se reutiliza para calcular frames |
 | Composición visual 3D + subtítulos | ✅ | Fase 1 |
-| Exportar MP4 | ✅ CLI; UI pendiente | Fase 1 (CLI) y Fase 2 (UI) |
+| Exportar MP4 | ✅ CLI y UI, silencioso | Fase 1 (CLI) y Fase 2 (UI) |
 | Vista previa en el estudio | ✅ Borrador silencioso | Fase 2 |
 | Guion automático / manual | ❌ | Fase 3 |
 | Voz automática / manual | ❌ | Fase 4 |
@@ -259,9 +259,13 @@ Cambio de contrato autorizado por ADR-09. Leer antes [referencias visuales](docs
   - Rutas `renders` y `render-assets` (ver tabla). El render lee el `project.json` **guardado** (ADR-06).
   - `ExportPanel.tsx`: deshabilitado con cambios sin guardar («Guarda antes de exportar»); progreso por polling cada 1 s; al terminar muestra la ruta y «Descargar».
 - **Aceptación:**
-  - [ ] Exportar desde la UI produce el mismo video que el CLI.
-  - [ ] Un segundo clic durante un render muestra «Ya hay una exportación en curso».
-  - [ ] Cerrar la pestaña no corta el render.
+   - [x] Exportar desde la UI produce el mismo video que el CLI.
+   - [x] Un segundo clic durante un render muestra «Ya hay una exportación en curso».
+   - [x] Cerrar la pestaña no corta el render.
+- **Verificación 2.3:** TDD inicial: la ruta nueva devuelve 404 antes de implementarla. `npm test`: 380/380, sin omitidas, incluido el render CLI real de 2 s; `npm run typecheck`, `npm run build:studio` y E2E completa (28/28, sin omitidas) en verde. Integración con disco real y renderer falso: revisión incorrecta, autenticación, Origin/Host, admisión simultánea, exclusión entre proyectos, progreso, archivo no disponible, descarga, salida sustituida por enlace, errores sin token y liberación del render. Los activos temporales cubren manifest, bytes alterados, enlace simbólico, token distinto por render y caducidad tanto al fallar como al completar. Una edición externa durante el bundle no cambia el documento guardado ya aceptado ni se sobrescribe.
+- **Navegador 2.3:** Chromium real/ANGLE exporta un kit con 3D y karaoke de 2 s desde la UI. Descarga con bytes idénticos al archivo publicado; UI y CLI coinciden en H.264, 1080×1920, 30 fps, 60 frames y 2 s sin audio, y en el PNG decodificado a 1 s. Capturas del panel terminado y del frame inspeccionadas: ruta/descarga, terreno, agua, objetos, rótulos y subtítulos visibles. Otro render termina después de cerrar la pestaña; se verifica por la API y sus metadatos. Sin errores de consola, CSP ni recursos en esa prueba. Se conservan Lightpanda para DOM y Chromium para render/visual; no se modifica el Studio del usuario. No implica aprobación estética humana.
+- **Decisiones 2.3:** `ProjectStore` lee y valida la revisión guardada una vez; ese objeto en memoria se pasa al servicio existente para evitar la carrera entre comprobar revisión y releer disco. No hay snapshots persistentes, journal ni cola. Admisión única por proceso, bundle cacheado y progreso por polling secuencial cada 1 s; cerrar el panel detiene consultas, no el trabajo. `approval` no bloquea. Token aleatorio de 256 bits por render, manifest fijado, `no-store`, solo GET, revocado al terminar; `render-assets` conserva Host estricto y usa esa capacidad en lugar del bearer/Origin de `/api`, porque el bundle de Remotion tiene otro origen loopback. CORS sin credenciales solo en esa ruta. Los errores del renderer se muestran sin diagnóstico crudo que pueda contener URLs secretas. Descarga autenticada mediante blob, nunca token del companion en URL. Sin cambios de schema ni dependencias. Context7 sin cuota; documentación oficial y tipos instalados consultados.
+- **Límites y demo 2.3:** `npm start` → importar storyboard → guardar cambios → «Exportar MP4» → progreso → ruta y «Descargar». Sin guardar, «Guarda antes de exportar» está deshabilitado. Otro clic activo muestra «Ya hay una exportación en curso». Se exporta sin voz; audio sigue en 4.5. El archivo queda en `.renders`; cerrar la pestaña no lo cancela, pero reiniciar el companion pierde los estados/IDs y no se recupera automáticamente la UI al reabrir. Los avisos conocidos de tamaño del bundle y `THREE.Clock` no bloquean.
 
 ---
 
@@ -469,7 +473,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 1.5 Render por línea de comandos 🎬
 - [x] 2.1 Activos para la vista previa
 - [x] 2.2 `PreviewPlayer`
-- [ ] 2.3 Exportar desde la UI
+- [x] 2.3 Exportar desde la UI
 - [ ] 3.1 Contrato y prompt
 - [ ] 3.2 Parseo y validación
 - [ ] 3.3 Aplicar guion y dibujo de escenas

@@ -445,3 +445,6 @@ button.ghost.danger {
 
 .preview-panel { max-width: 396px; margin-inline: auto; }
 .scene-index { padding: 0; }
+.export-path {
+  overflow-wrap: anywhere;
+}

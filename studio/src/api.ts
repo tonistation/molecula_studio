@@ -172,6 +172,28 @@ export interface AssetBlobUrl {
   revoke(): void;
 }
 
+export interface RenderStatus {
+  status: 'rendering' | 'completed' | 'failed';
+  progress: number;
+  outputPath?: string;
+  error?: string;
+}
+
+async function downloadRender(projectId: string, renderId: string): Promise<void> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/renders/${encodeURIComponent(renderId)}/file`, {
+    headers: { authorization: `Bearer ${companionToken()}` },
+  });
+  if (!response.ok) await parseResponse<never>(response);
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `exportacion-${renderId}.mp4`;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 /**
  * Caller owns the URL: revoke on replacement/unmount and abort pending requests
  * with the same cleanup. Aborting after resolution does not revoke a live URL.
@@ -205,6 +227,11 @@ export async function fetchAssetBlobUrl(projectId: string, assetId: string, sign
 }
 
 export const api = {
+  startRender: (projectId: string, expectedRevision: number) =>
+    call<{ renderId: string }>('POST', `/api/projects/${encodeURIComponent(projectId)}/renders`, { expectedRevision }),
+  renderStatus: (projectId: string, renderId: string) =>
+    call<RenderStatus>('GET', `/api/projects/${encodeURIComponent(projectId)}/renders/${encodeURIComponent(renderId)}`),
+  downloadRender,
   fetchAssetBlobUrl,
   health: () => call<{ ok: boolean }>('GET', '/api/health'),
   list: () => call<{ projects: ProjectSummary[] }>('GET', '/api/projects'),

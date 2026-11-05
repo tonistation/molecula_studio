@@ -4,6 +4,7 @@ import type { Asset, Project, ProjectMode, Scene } from '../../../src/shared/sch
 import { serializeProject } from '../../../src/shared/schema/serialize.ts';
 import { AssetManifest } from './AssetManifest.tsx';
 import { PreviewPlayer } from '../components/PreviewPlayer.tsx';
+import { ExportPanel } from '../components/ExportPanel.tsx';
 import { ApiError, api, describeError, type ReadResult, type SaveResult } from '../api.ts';
 import {
   createScene,
@@ -369,7 +370,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
 
       {importNotice !== undefined && <div className="banner banner-warn" role="status">{importNotice}</div>}
       {draft.approval === null && <p className="muted small" role="status">
-        Sin aprobación: se requiere revisión editorial antes de exportar.
+        Sin aprobación: la exportación no confirma revisión editorial.
       </p>}
       {relinking && <p role="status">Operación en curso…</p>}
 
@@ -404,6 +405,8 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
       <div className="editor-grid">
         <div>
         <PreviewPlayer draft={draft} seek={previewSeek} missingAssets={missingAssets} />
+        <ExportPanel projectId={draft.projectId} revision={confirmedRevision} dirty={dirty}
+          disabled={readOnly || saving || needsVerification || relinking} />
         <section className="panel">
           <h2>Idea y estilo</h2>
           <label className="field">

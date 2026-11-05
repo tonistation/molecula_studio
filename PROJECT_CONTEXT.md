@@ -1,6 +1,6 @@
 # Contexto de Molecula Studio
 
-Estudio local-first para crear videos verticales animados mediante guion, voz, vista previa y exportación. **M1/G1 técnico local cerrado y V01 implementado/revisado** en la base `cbfc125`. Existen renderer 3D determinista del kit, subtítulos karaoke con fuente local, vista previa en Remotion Studio y exportación MP4 silenciosa por CLI (1.3b–1.5). El editor integra vista previa silenciosa del borrador con controles y seek por escena (2.2); todavía no hay exportación desde la UI ni voz. El [ROADMAP](ROADMAP.md) es el plan activo; el backlog anterior está congelado. Evidencia histórica: 305 pruebas y 25 E2E, con procedencia diferenciada en [delivery](docs/plan/delivery.md); no implica una ejecución nueva ni aprobación estética.
+Estudio local-first para crear videos verticales animados mediante guion, voz, vista previa y exportación. **M1/G1 técnico local cerrado y V01 implementado/revisado** en la base `cbfc125`. Existen renderer 3D determinista del kit, subtítulos karaoke con fuente local, vista previa en Remotion Studio y exportación MP4 silenciosa por CLI (1.3b–1.5). El editor integra vista previa silenciosa del borrador con controles y seek por escena (2.2), y exportación de la revisión guardada con progreso y descarga (2.3); todavía no hay voz. El [ROADMAP](ROADMAP.md) es el plan activo; el backlog anterior está congelado. Evidencia histórica: 305 pruebas y 25 E2E, con procedencia diferenciada en [delivery](docs/plan/delivery.md); no implica una ejecución nueva ni aprobación estética.
 
 ## Lectura mínima
 
