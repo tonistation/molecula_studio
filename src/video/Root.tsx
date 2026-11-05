@@ -18,10 +18,12 @@ if (!saltResult.ok) throw new Error(`Invalid salt scene: ${JSON.stringify(saltRe
 const saltKit = saltResult.scene;
 const saltProps: VideoProps = {
   ...defaultProps,
+  captionStyle: { ...defaultProps.captionStyle, fontSizePx: 52, color: '#D5D9DF', highlightColor: '#FFFFFF' },
   durationInFrames: 300,
   scenes: [0, 1].map(i => ({
     sceneId: `salt-${i}`, title: 'El río transporta minerales', fromFrame: i * 150, durationInFrames: 150,
-    text: '', visualIntent: 'Un río baja la montaña y arrastra una roca.', words: [], audioUrl: null, gainDb: 0,
+    text: i === 0 ? '¿De dónde sale la sal del mar?' : 'El río transporta minerales hasta el mar.',
+    visualIntent: 'Un río baja la montaña y arrastra una roca.', words: [], audioUrl: null, gainDb: 0,
     visual: i === 0 ? saltKit : { ...saltKit, camera: { ...saltKit.camera, from: [7, 6, 13], to: [6, 5.5, 12] } },
   })),
 };

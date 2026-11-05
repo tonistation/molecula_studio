@@ -2,8 +2,9 @@ import { AbsoluteFill, Sequence } from 'remotion';
 import type { VideoProps } from '../shared/video-props.ts';
 import { KitScene } from './kit/KitScene.tsx';
 import { resolveStyle } from './styles/registry.ts';
+import { Captions } from './captions/Captions.tsx';
 
-export const VerticalVideo = ({ scenes, styleId, styleVersion }: VideoProps) => {
+export const VerticalVideo = ({ scenes, styleId, styleVersion, captionStyle }: VideoProps) => {
   const style = resolveStyle(styleId, styleVersion);
   if (!style.ok) {
     return <AbsoluteFill style={{
@@ -28,6 +29,8 @@ export const VerticalVideo = ({ scenes, styleId, styleVersion }: VideoProps) => 
           }}>
             {scene.title || scene.visualIntent}
           </AbsoluteFill>}
+          {captionStyle.enabled && <Captions text={scene.text} words={scene.words}
+            durationInFrames={scene.durationInFrames} style={captionStyle} />}
         </Sequence>
       ))}
     </AbsoluteFill>

@@ -207,8 +207,11 @@ Cambio de contrato autorizado por ADR-09. Leer antes [referencias visuales](docs
   - Estilo «karaoke» de las referencias: frase corta de 2–5 palabras en el tercio superior; palabras inactivas en gris translúcido, palabra activa en blanco y negrita (`highlightColor`); `emphasis` con recuadro. Respetar `anchor` y `safeMarginPx`. Se puede apoyar en `createTikTokStyleCaptions` de `@remotion/captions`.
   - Fuente cargada con `@remotion/fonts` + `delayRender` (importar el archivo como módulo, no `staticFile`).
 - **Aceptación:**
-  - [ ] Subtítulos legibles y dentro del margen seguro.
-  - [ ] Una palabra larga hace salto de línea; nunca se corta.
+   - [x] Subtítulos legibles y dentro del margen seguro.
+   - [x] Una palabra larga hace salto de línea; nunca se corta.
+- **Verificación 1.4:** TDD rojo/verde de estimación y paginado; `npm run typecheck`, `npm test` (357 pruebas) y `npm run build:studio` en verde. Chrome Headless Shell/ANGLE real, no Lightpanda: fuente local cargada, tres anclajes, margen de 240 px, palabra larga en varias líneas, énfasis con recuadro y cinco palabras de 80 caracteres sin recorte. Captura idéntica al volver de frame 100 a 60; el frame 100 cambia la palabra activa. Subtítulos deshabilitados no aparecen; Remotion Studio y captura PNG de `SalDelMar` conservan el kit 3D. Sin errores de consola en la comprobación de navegador. No se exportó MP4.
+- **Decisiones 1.4:** las palabras existentes tienen prioridad y conservan tiempos/énfasis; solo se estiman si `words` está vacío. Estimación pura con pausa proporcional tras puntuación; errores explícitos ante duración, texto o cantidad fuera de `LIMITS`, o palabras de más de 80 caracteres (límite vigente de `Word.text`), sin truncar narración. Frases de 2–5 palabras, salvo narración de una palabra; durante pausas no se destaca ninguna. Se respetan colores/tamaño del proyecto; `SalDelMar` usa 52 px y activo blanco como referencia. Frases excepcionalmente densas reducen tamaño para caber, sin ocultar contenido. `loadFont()` de `@remotion/fonts` gestiona internamente `delayRender`/`continueRender`; el TTF se importa como módulo. Sin cambios de schema ni dependencias.
+- **Demo:** `npm run video:studio` → `SalDelMar`; revisar 0–5 s y 5–10 s. `Vertical` usa sus palabras guardadas y colores del storyboard. Son subtítulos estimados sin voz; sincronía con audio corresponde a Fase 4.
 
 ### 1.5 Render por línea de comandos
 
@@ -450,7 +453,7 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 1.2 Composición base y Remotion Studio
 - [x] 1.3a Contrato KitScene y schema 2
 - [x] 1.3b Renderer del kit
-- [ ] 1.4 Subtítulos palabra por palabra
+- [x] 1.4 Subtítulos palabra por palabra
 - [ ] 1.5 Render por línea de comandos 🎬
 - [ ] 2.1 Activos para la vista previa
 - [ ] 2.2 `PreviewPlayer`
