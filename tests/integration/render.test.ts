@@ -78,6 +78,36 @@ test('rejects invalid, unsupported and voiced projects before bundling or output
   assert.deepEqual(await readdir(root), [project.projectId]);
 });
 
+test('independent services publish the same destination without replacing the winner', async t => {
+  const { root, input } = await setup(t);
+  const outputPath = join(root, 'shared.mp4');
+  let arrivals = 0;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const services = ['first complete mp4', 'second complete mp4'].map(contents => createRenderService({
+    bundle: async () => '/bundle',
+    selectComposition: async () => ({} as never),
+    renderMedia: async options => {
+      await writeFile(options.outputLocation!, contents);
+      if (++arrivals === 2) release();
+      await gate;
+      return { buffer: null, slowestFrames: [], contentType: 'video/mp4' };
+    },
+  }));
+  const results = await Promise.allSettled(services.map(service => service({
+    projectFile: input, workspaceRoot: root, outputPath,
+  })));
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  const loser = results.find(result => result.status === 'rejected');
+  assert.ok(loser?.status === 'rejected');
+  assert.match(loser.reason.message, /existe/i);
+  const winner = results.findIndex(result => result.status === 'fulfilled');
+  assert.equal(await readFile(outputPath, 'utf8'), ['first complete mp4', 'second complete mp4'][winner]);
+  assert.deepEqual((await readdir(root)).sort(), [input.split('/').at(-2), 'shared.mp4'].sort());
+  // A failed publication releases its service and removes only its private staging directory.
+  await services[1 - winner]!({ projectFile: input, workspaceRoot: root, outputPath: join(root, 'retry.mp4') });
+});
+
 test('preserves existing output and refuses symlinked render directories', async t => {
   const { root, input } = await setup(t);
   const fake = fakeRenderer();

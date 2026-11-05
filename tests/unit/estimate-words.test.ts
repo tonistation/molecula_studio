@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LIMITS } from '../../src/shared/schema/limits.ts';
+import { parseProjectText } from '../../src/shared/schema/index.ts';
 import { estimateWords } from '../../src/shared/voice/estimate.ts';
+import { fixtureText } from '../helpers/fixtures.ts';
 
 test('estimation preserves Unicode text and normalizes whitespace without mutation', () => {
   const words = estimateWords('  ¿De\n dónde  sale la sal? 🌊 ', 5000);
@@ -12,6 +14,34 @@ test('estimation preserves Unicode text and normalizes whitespace without mutati
 
 test('empty narration produces no captions', () => {
   assert.deepEqual(estimateWords(' \n\t ', 1000), []);
+});
+
+test('non-BMP word limits count code points instead of UTF-16 code units', () => {
+  for (const length of [50, 80]) {
+    const text = '🧂'.repeat(length);
+    assert.deepEqual(estimateWords(text, 1000), [{ text, startMs: 0, endMs: 1000, emphasis: false }]);
+  }
+  assert.throws(() => estimateWords('🧂'.repeat(81), 1000), /80/);
+});
+
+test('non-BMP scene text accepts the schema boundary and rejects one code point more', () => {
+  const text = Array.from({ length: 25 }, () => '🧂'.repeat(79)).join(' ') + '🧂';
+  assert.equal(Array.from(text).length, LIMITS.maxSceneText);
+  assert.equal(estimateWords(text, 5000).map(word => word.text).join(' '), text);
+  assert.throws(() => estimateWords(text + '🧂', 5000), /texto/);
+});
+
+test('schema-valid storyboard narration with non-BMP text can be estimated', () => {
+  const parsed = parseProjectText(fixtureText('storyboard'));
+  assert.ok(parsed.ok);
+  const project = parsed.project;
+  const scene = project.scenes[0]!;
+  scene.text = '🧂'.repeat(50);
+  scene.words = [];
+  scene.mediaBindings = { audio: null, words: null };
+  const validated = parseProjectText(JSON.stringify(project));
+  assert.ok(validated.ok);
+  assert.equal(estimateWords(validated.project.scenes[0]!.text, scene.durationMs)[0]!.text, scene.text);
 });
 
 test('longer words receive more speaking time and punctuation creates a pause', () => {

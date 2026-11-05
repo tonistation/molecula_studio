@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, open, rename, rm } from 'node:fs/promises';
+import { link, lstat, mkdir, mkdtemp, open, rm } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundle } from '@remotion/bundler';
@@ -83,9 +83,14 @@ export function createRenderService(deps: RendererDependencies = { bundle, selec
         serveUrl, composition, inputProps, codec: 'h264', chromiumOptions,
         outputLocation: temporary, concurrency: 1, onProgress: options.onProgress,
       });
-      // No partial MP4 is visible at the destination. Never replace a known file.
-      await assertAbsent(output);
-      await rename(temporary, output);
+      // Same-filesystem hard links publish complete bytes atomically without replacing any destination.
+      // Removing private staging below leaves the winning output link intact.
+      await link(temporary, output).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+          throw new Error('La salida ya existe; elija otro nombre.');
+        }
+        throw error;
+      });
       return output;
     } finally {
       try {
