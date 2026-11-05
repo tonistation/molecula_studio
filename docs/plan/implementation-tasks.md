@@ -1,3 +1,5 @@
+> **Congelado. Plan activo: [ROADMAP.md](../../ROADMAP.md).** Las decisiones y tareas siguientes son históricas; ante diferencias prevalece el ROADMAP.
+
 # Trabajo restante listo para delegación controlada
 
 **No ejecutar ahora.** Base auditada `cbfc125`: M1/G1 técnico cerrado + V01 revisado; 9/27 unidades completas, **18 pendientes**, E05 condicional. Estas tarjetas preparan ejecución posterior y revisión fresca, no declaran terminado el plan ni autorizan instalaciones, media nativa, proveedores, gastos, commits o push. [Delivery](delivery.md) conserva hitos/evidencia; este archivo contiene instrucciones ejecutables, no un segundo PRD.

@@ -1,6 +1,8 @@
 # Arquitectura local con persistencia primero
 
-Baseline: **React + TypeScript + Vite** y companion Node.js local ya implementados en M1; composición Three.js + DOM/SVG y exportación Chromium/Playwright + FFmpeg todavía propuestas. No requiere DB ni servicios remotos. Estado/evidencia: [delivery](delivery.md). Contratos actuales y diseño futuro: [API](api-contracts.md); una decisión técnica no autoriza ejecución nativa, proveedores o gasto.
+Baseline implementado: **React + TypeScript + Vite** y companion Node.js local. La arquitectura objetivo usa Remotion para composición, vista previa y exportación, con Three.js vía `@remotion/three`; todavía no está implementada. El [ROADMAP activo](../../ROADMAP.md) prevalece sobre este diseño histórico. Estado/evidencia: [delivery](delivery.md). Una decisión técnica no autoriza instalación, ejecución nativa, proveedores ni gasto.
+
+> **Alcance histórico:** salvo la tabla de decisiones actualizada a continuación, las secciones de este documento describen el plan anterior congelado. Si difieren del ROADMAP, no son requisitos de la ruta activa; en particular, no se exige su pipeline de captura, journal, snapshots ni aprobación previa a exportar.
 
 ## Decisiones y alternativas descartadas por ahora
 
@@ -10,8 +12,7 @@ Baseline: **React + TypeScript + Vite** y companion Node.js local ya implementad
 | React/TS/Vite para estudio | UI y contratos tipados, desarrollo local sencillo | Mantener runtime de render aislado de estado UI |
 | Three.js para primer estilo | Cámara y escenas 3D reales | Calidad depende de dirección artística y fixtures, no solo librería |
 | DOM/SVG para overlays | Tipografía y datos editables | Capturar composición completa, no canvas aislado |
-| Chromium/Playwright + FFmpeg | Frames explícitos y mux de audio local | Pipeline propio, recursos y licencias de distribución por revisar |
-| Sin Remotion, Motion Canvas ni Theatre en baseline | Evita solapar relojes y añadir una licencia comercial obligatoria de Remotion | Si un prototipo exige reemplazo, comparar un solo motor alternativo con evidencia |
+| ADR-01: Remotion para composición, preview y render; Three.js vía `@remotion/three` | Un solo código y reloj por frame para vista previa y MP4; incluye codificación | Instalación pendiente en el paso 0.2; verificar licencia aplicable y condiciones de distribución |
 | JSON + activos relativos | Portable, inspeccionable y suficiente para v0.1 | Manejo explícito de activos faltantes y conflicto de archivo |
 
 La selección histórica para M1 quedó fijada en `.nvmrc`, package/lock y [setup](../dev/setup.md#versiones-instaladas). No se verifica vigencia LTS ni se actualizan versiones en esta intervención documental; cualquier actualización futura exige evaluación explícita, nunca al abrir proyecto.

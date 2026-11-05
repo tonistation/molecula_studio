@@ -6,3 +6,5 @@ tmp/
 workspace/
 .molecula-workspaces/
 *.log
+.atl/
+docs/ux/references/*.jpg
