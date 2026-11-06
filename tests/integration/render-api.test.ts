@@ -100,6 +100,8 @@ test('render-assets: random per-render capability, manifest only, Host boundary,
   t.after(async () => { release(); await server.close(); await rm(root, { recursive: true, force: true }); });
   const source = JSON.parse(fixtureText('storyboard'));
   const bytes = wavBytes();
+  source.output.voiceMode = 'withVoice';
+  source.scenes[0].audio = { assetId: 'voice', offsetMs: 0, gainDb: 0 };
   source.assets = [{ assetId: 'voice', kind: 'audio', path: 'assets/voice.wav', mimeType: 'audio/wav',
     byteLength: bytes.length, sha256: null, durationMs: 1000,
     source: { origin: 'fixture', license: 'Synthetic test data', attribution: '' } }];

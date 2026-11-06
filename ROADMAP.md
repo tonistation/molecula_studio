@@ -23,7 +23,7 @@ Base: commit `ad26d62`. Uso local, una persona. Servidor: [más adelante](#camin
 | Estudio React: proyectos, escenas (texto/duración), guardar/reabrir, importar, relink | ✅ | Se extiende |
 | Reloj por frame (`src/shared/timeline.ts`) | ✅ | Se reutiliza para calcular frames |
 | Composición visual 3D + subtítulos | ✅ | Fase 1 |
-| Exportar MP4 | ✅ CLI y UI, silencioso | Fase 1 (CLI) y Fase 2 (UI) |
+| Exportar MP4 | ✅ CLI y UI, silencioso o con voz guardada | Fases 1, 2 y 4.5 |
 | Vista previa en el estudio | ✅ Borrador con audio manual por escena | Fases 2 y 4.2 |
 | Guion automático / manual | Ambos implementados ✅ · proveedor real pendiente | Fase 3 |
 | Voz automática / manual | Ambas implementadas ✅ · proveedor real pendiente | Fase 4 |
@@ -421,11 +421,16 @@ Referencia: <https://vibi.pro/docs> (página con JavaScript; abrir en navegador)
 ### 4.5 Render con voz
 
 - **Adelantado con autorización a 4.2:** audio por escena en `VerticalVideo`, volumen desde `gainDb`, offset y exclusión con `voiceMode: 'silent'`, verificados en la vista previa compartida.
-- **Hacer pendiente:** habilitar y verificar exportación con voz por CLI y UI; conservar la frontera `render-assets` para servir los audios durante render. El guard actual del renderer todavía rechaza `withVoice`; la reproducción en vista previa no equivale a MP4 con audio.
+- **Implementado:** exportación con voz por CLI y UI desde la revisión guardada. Se retiran únicamente los guards temporales de modo silencioso; `VerticalVideo` sigue siendo la composición compartida. La UI informa que usa el modo de voz y los audios guardados. No se adelanta la confirmación de voz desactualizada de 5.2.
 - **Hito 🎯 primer video completo:**
-  - [ ] Video de 30–45 s con 3D, voz y subtítulos sincronizados.
-  - [ ] El MP4 tiene pista de audio y se escucha completo.
-  - [ ] Idea sugerida que encaja con el kit inicial: «¿De dónde sale la sal del mar?».
+  - [x] Video de 31,2 s con 3D, locución española sintetizada localmente y subtítulos con tiempos estimados sobre cada audio; no implica alineación fonética verificada.
+  - [x] El MP4 tiene pista AAC completa, decodificada y con señal en las tres escenas.
+  - [ ] Escucha humana completa, aprobación de calidad de voz y sincronía fonética fina.
+  - [x] Idea sugerida: «¿De dónde sale la sal del mar?».
+- **Seguridad y ciclo de vida 4.5:** HTTP conserva su capacidad `render-assets` por render, Host estricto, manifest admitido y comprobación de metadatos/bytes mediante el store; token revocado al terminar o fallar. El CLI no abre un store escritor: servidor privado `127.0.0.1` en puerto efímero, token aleatorio de 256 bits, solo GET de audios referenciados y declarados, sin rutas arbitrarias. Comprueba directorios reales, rechaza symlinks, abre con `O_NOFOLLOW` y acota lectura a 50 MiB/longitud declarada más un byte; verifica longitud y hash disponible. Cierra el servidor y limpia temporales en `finally`, incluso ante error del decoder. Ninguna capacidad se persiste; diagnósticos de selección/render se sustituyen por un error seguro y se reduce el logging de Remotion. Pruebas reales de audio corrupto y ausente comprueban stdout/stderr sin URLs de capacidad y salida no publicada. Se conserva publicación atómica sin reemplazo.
+- **Verificación 4.5:** TDD rojo inicial por guard silencioso. `npm test`: 467/467, typecheck y build en verde; E2E completas: 40/40, sin omitidas, con `--test-concurrency=2`. Dos pruebas nuevas de integración y una E2E Chromium/ANGLE: WAV real de 2 s con cuatro frecuencias distingue trims de 500/1500 ms, fronteras de escena y ganancia de −6 dB mediante PCM decodificado; AAC, H.264, 1080×1920, 30 fps, 60 frames y duración ±1 frame. Con los mismos audios adjuntos, `silent` no produce pista de audio. UI descarga bytes idénticos al MP4; UI y CLI tienen WAV decodificado y frame PNG idénticos. Se mantienen todas las pruebas previas, incluido export silencioso y cierre de pestaña. Frontera CLI: token incorrecto, Host, método, activo no declarado, hash alterado, symlinks de archivo/directorio, caducidad en éxito/fallo y token nuevo al reintentar; HTTP ahora ejercita `withVoice` con sus protecciones existentes. Capturas del panel y frames reales inspeccionadas: kit 3D, rótulos y karaoke visibles; sin errores de consola/CSP/recursos en la E2E nueva.
+- **Demo real y límites 4.5:** `workspace/voiced-demo-4.5-local/.renders/project_sea_salt/6-20261106-005425.mp4` (ignorado por Git): 936 frames/31,2 s de video y AAC estéreo de 48 kHz/31,211 s. Tres escenas con narración española producida mediante `/usr/bin/say`, voz Paulina ya instalada, sin descargas ni proveedor; se ingirió mediante `attachSceneAudio` y estimación gratuita. PCM decodificado con señal hasta el final de cada locución, capturas a 2/13/25 s muestran el 3D y los subtítulos. No es una grabación humana ni Vibi; no hubo escucha humana ni validación fonética. Uso personal local; no se afirma permiso de redistribución de la voz macOS. El kit existente se reutiliza en las tres escenas, no se afirma una pieza editorial final. Audio, MP4, scripts de demo y capturas permanecen en directorios ignorados, fuera del commit.
+- **Decisiones y demo de uso:** Context7 sin cuota; APIs contrastadas con documentación oficial de `renderMedia`/`Html5Audio` y tipos instalados. Sin dependencias ni cambios de schema, claves reales ni gasto. `npm start` → proyecto guardado con voz manual/automática → «Exportar MP4» → «Descargar»; o `npm run render -- workspace/<projectId>/project.json`. Para regenerar este ejemplo local, usar el proyecto guardado en `workspace/voiced-demo-4.5-local/project_sea_salt/project.json` con una salida nueva. Avisos conocidos de tamaño de bundle y `THREE.Clock` no bloqueantes. Una unidad coherente de commit para capability CLI, habilitación HTTP/UI, pruebas y documentación; no se separan oráculos del comportamiento por cantidad de líneas.
 
 ---
 
@@ -533,5 +538,5 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] 4.2 Voz manual (subida y reproducción sincronizada verificadas con PCM real; sin escucha humana ni proveedor)
 - [x] 4.3 Cliente Vibi y alineación (HTTP falso y UI con consentimiento; sin proveedor real ni gasto)
 - [x] 4.4 Voz automática con Vibi (HTTP falso, MP3 local y UI con consentimiento; proveedor real pendiente)
-- [ ] 4.5 Render con voz 🎯
+- [x] 4.5 Render con voz (CLI/UI y demo hablada local de 31,2 s; escucha humana y precisión fonética pendientes)
 - [ ] 5.1 – 5.4 Flujo guiado y pulido

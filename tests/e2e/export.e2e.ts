@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { parseProjectText, serializeProject } from '../../src/shared/schema/index.ts';
 import { fixtureText } from '../helpers/fixtures.ts';
 import { withStudio } from '../helpers/studio-browser.ts';
+import { voicedFixture, assertRenderedAudio } from '../helpers/render-audio.ts';
 
 const exec = promisify(execFile);
 
@@ -103,6 +104,54 @@ test('export: real UI MP4 matches CLI, downloads and survives closing its Chromi
     }
     assert.equal(done.status, 'completed', 'server completes after browser tab disconnect');
     assert.deepEqual(await metadata(done.outputPath), actual);
+    assert.deepEqual(consoleErrors, []);
+    assert.deepEqual(resourceErrors, []);
+  }, 'chromium');
+});
+
+test('voiced UI export downloads synchronized AAC and matches the CLI decoded audio and frames', { timeout: 300_000 }, async t => {
+  await withStudio(t, async ({ page, root, store, consoleErrors, resourceErrors }) => {
+    root = await realpath(root);
+    page.setDefaultTimeout(120_000);
+    const parsed = parseProjectText(fixtureText('storyboard'));
+    assert.ok(parsed.ok);
+    const project = parsed.project;
+    const audio = voicedFixture(project);
+    const kit = JSON.parse(await readFile('docs/plan/examples/kit/sal-del-mar.json', 'utf8'));
+    for (const object of kit.objects) for (const animation of object.animations) animation.endMs = 900;
+    for (const scene of project.scenes) scene.visual = structuredClone(kit);
+    const imported = await store.importProject({ text: serializeProject(project) });
+    await store.relinkAsset({ projectId: imported.projectId, assetId: 'voice', bytes: audio, mimeType: 'audio/wav' });
+    await page.reload();
+    await page.getByRole('button', { name: 'Abrir', exact: true }).click();
+    const preview = page.getByRole('region', { name: 'Vista previa del borrador' });
+    await preview.locator('[data-caption-word="Primera"]').waitFor();
+    const input = join(root, imported.projectId, 'project.json');
+    const original = await readFile(input);
+    const panel = page.getByRole('region', { name: 'Exportar video', exact: true });
+    await panel.getByRole('button', { name: 'Exportar MP4', exact: true }).click();
+    await panel.getByText('Exportación completada', { exact: true }).waitFor();
+    const output = await panel.locator('.export-path').innerText();
+    await assertRenderedAudio(output);
+    const downloadEvent = page.waitForEvent('download');
+    await panel.getByRole('button', { name: 'Descargar', exact: true }).click();
+    const download = await downloadEvent;
+    assert.equal(await download.failure(), null);
+    assert.deepEqual(await readFile((await download.path())!), await readFile(output));
+    const cli = join(root, 'voiced-cli.mp4');
+    await exec(process.execPath, ['scripts/render-project.ts', input, cli], { timeout: 220_000 });
+    await assertRenderedAudio(cli);
+    for (const [name, path] of [['ui', output], ['cli', cli]]) {
+      await exec(resolve('node_modules/.bin/remotion'), ['ffmpeg', '-ss', '0.3', '-i', path!, '-frames:v', '1', join(root, `voiced-${name}.png`)]);
+      await exec(resolve('node_modules/.bin/remotion'), ['ffmpeg', '-i', path!, '-vn', '-codec:a', 'pcm_s16le', join(root, `voiced-${name}.wav`)]);
+    }
+    assert.deepEqual(await readFile(join(root, 'voiced-ui.png')), await readFile(join(root, 'voiced-cli.png')));
+    assert.deepEqual(await readFile(join(root, 'voiced-ui.wav')), await readFile(join(root, 'voiced-cli.wav')));
+    if (process.env.EXPORT_SCREENSHOT_DIR) {
+      await panel.screenshot({ path: join(process.env.EXPORT_SCREENSHOT_DIR, 'voiced-export-completed.png') });
+      await copyFile(join(root, 'voiced-ui.png'), join(process.env.EXPORT_SCREENSHOT_DIR, 'voiced-export-frame.png'));
+    }
+    assert.deepEqual(await readFile(input), original);
     assert.deepEqual(consoleErrors, []);
     assert.deepEqual(resourceErrors, []);
   }, 'chromium');

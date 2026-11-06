@@ -46,7 +46,6 @@ export function createRenderJobs(store: ProjectStore, workspaceRoot: string, ren
       try {
         const saved = await store.readProject(projectId);
         if (saved.revision !== expectedRevision) throw new RenderRequestError(409, 'render-revision', 'La revisión guardada cambió. Recargue el proyecto.');
-        if (saved.project.output.voiceMode !== 'silent') throw new RenderRequestError(422, 'render-unsupported', 'Solo se puede exportar sin voz hasta la fase 4.');
         if (saved.project.scenes.length === 0) throw new RenderRequestError(422, 'render-empty', 'Añada y guarde al menos una escena antes de exportar.');
         const token = randomBytes(32).toString('hex');
         const assetUrls = Object.fromEntries(saved.project.assets.map(asset => [asset.assetId, `${origin}/render-assets/${token}/${asset.assetId}`]));

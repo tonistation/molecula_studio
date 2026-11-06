@@ -8,6 +8,7 @@ import type { RenderMediaOnProgress } from '@remotion/renderer';
 import { LIMITS, parseProjectText } from '../../shared/schema/index.ts';
 import { projectToVideoProps } from '../../shared/video-props.ts';
 import type { Project } from '../../shared/schema/types.ts';
+import { serveRenderAssets } from './render-assets.ts';
 
 export interface RenderProjectOptions {
   projectFile: string;
@@ -36,12 +37,17 @@ export function createRenderService(deps: RendererDependencies = { bundle, selec
     if (busy) throw new Error('Ya hay una exportación en curso.');
     busy = true;
     let staging: string | undefined;
+    let assets: Awaited<ReturnType<typeof serveRenderAssets>> | undefined;
     try {
       // Read-only: reuse the store's bounded schema parser without taking its writer lock.
       const project = options.savedProject ?? await readSavedProject(options.projectFile);
-      const inputProps = projectToVideoProps(project, options.assetUrls ?? {});
-      if (project.output.voiceMode !== 'silent') {
-        throw new Error('Este paso solo exporta proyectos silenciosos; la voz corresponde a la fase 4.');
+      // HTTP owns its existing capability. Standalone CLI needs a private loopback server.
+      if (project.output.voiceMode === 'withVoice' && options.assetUrls === undefined) {
+        assets = await serveRenderAssets(project, options.projectFile);
+      }
+      const inputProps = projectToVideoProps(project, options.assetUrls ?? assets?.assetUrls ?? {});
+      if (project.output.voiceMode === 'withVoice' && project.scenes.some(scene => scene.audio && !inputProps.scenes.find(item => item.sceneId === scene.sceneId)?.audioUrl)) {
+        throw new Error('Falta un recurso de audio declarado para exportar.');
       }
       const date = (options.now ?? new Date()).toISOString().replace(/[-:]/g, '').slice(0, 15).replace('T', '-');
       const output = resolve(options.outputPath ?? join(options.workspaceRoot, '.renders', project.projectId, `${project.revision}-${date}.mp4`));
@@ -59,11 +65,16 @@ export function createRenderService(deps: RendererDependencies = { bundle, selec
       });
       const serveUrl = await bundled;
       const chromiumOptions = { gl: 'angle' as const };
-      const composition = await deps.selectComposition({ serveUrl, id: 'Vertical', inputProps, chromiumOptions });
-      await deps.renderMedia({
-        serveUrl, composition, inputProps, codec: 'h264', chromiumOptions,
-        outputLocation: temporary, concurrency: 1, onProgress: options.onProgress,
-      });
+      try {
+        const composition = await deps.selectComposition({ serveUrl, id: 'Vertical', inputProps, chromiumOptions, logLevel: 'error', onBrowserLog: () => undefined });
+        await deps.renderMedia({
+          serveUrl, composition, inputProps, codec: 'h264', chromiumOptions, logLevel: 'error', onBrowserLog: () => undefined,
+          outputLocation: temporary, concurrency: 1, onProgress: options.onProgress,
+        });
+      } catch {
+        // Media/decoder diagnostics can include capability URLs; neither CLI nor HTTP may leak them.
+        throw new Error('No se pudo exportar el video. Revise el proyecto y sus recursos; vuelva a intentarlo.');
+      }
       // Same-filesystem hard links publish complete bytes atomically without replacing any destination.
       // Removing private staging below leaves the winning output link intact.
       await link(temporary, output).catch(error => {
@@ -75,7 +86,8 @@ export function createRenderService(deps: RendererDependencies = { bundle, selec
       return output;
     } finally {
       try {
-        if (staging !== undefined) await rm(staging, { recursive: true, force: true });
+        try { await assets?.close(); }
+        finally { if (staging !== undefined) await rm(staging, { recursive: true, force: true }); }
       } finally {
         busy = false;
       }

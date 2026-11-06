@@ -53,7 +53,7 @@ export function ExportPanel({ projectId, revision, dirty, disabled }: {
 
   return <section className="panel export-panel" aria-label="Exportar video">
     <h2>Exportar video</h2>
-    <p className="muted small">MP4 silencioso de la revisión guardada: {revision}. Cerrar esta pestaña no cancela la exportación.</p>
+    <p className="muted small">MP4 de la revisión guardada: {revision}, con el modo de voz y los audios guardados. Cerrar esta pestaña no cancela la exportación.</p>
     <button type="button" onClick={() => { void start(); }} disabled={dirty || disabled}>
       {dirty ? 'Guarda antes de exportar' : 'Exportar MP4'}
     </button>
