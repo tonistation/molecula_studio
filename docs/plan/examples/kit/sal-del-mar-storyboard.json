@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 2,
+  "projectId": "project_salt_journey",
+  "revision": 0,
+  "title": "¿De dónde sale la sal del mar?",
+  "createdAt": "2026-11-06T00:00:00Z",
+  "updatedAt": "2026-11-06T00:00:00Z",
+  "idea": "Seguir el viaje de las sales: lluvia sobre roca, disolución, transporte fluvial y evaporación del agua del mar.",
+  "locale": "es",
+  "styleId": "stylized-3d",
+  "styleVersion": 1,
+  "seed": 2719,
+  "output": { "width": 1080, "height": 1920, "fps": 30, "durationMs": 36000, "container": "mp4", "voiceMode": "silent" },
+  "captionStyle": { "enabled": true, "fontId": "builtin-sans-heavy-v1", "fontSizePx": 52, "color": "#D5D9DF", "highlightColor": "#FFFFFF", "anchor": "upper", "safeMarginPx": 120 },
+  "entities": [],
+  "scenes": [
+    {
+      "sceneId": "scene_rain", "revision": 0, "title": "La pregunta y la lluvia", "startMs": 0, "durationMs": 9000,
+      "text": "¿De dónde sale la sal del mar? Parte de la respuesta empieza lejos de la costa, con la lluvia sobre las rocas.",
+      "visualIntent": "Plano general de montañas bajo lluvia azul, con una roca en primer término y una gota que cae hacia ella.",
+      "visual": {
+        "kind": "kit", "kitVersion": 1,
+        "palette": { "background": "#BCE6F3", "preset": "daylight" },
+        "sky": { "top": "#77BFE3", "bottom": "#DAF1E8", "sun": null, "clouds": [{ "position": [-2, 6, -2], "scale": 1.3 }, { "position": [2, 6.5, -3], "scale": 1 }] },
+        "environment": { "seed": 417, "terrain": { "type": "mountain", "color": "#6B9E78", "height": 4.8, "size": 10 }, "water": { "type": "river", "color": "#2AC9E0", "points": [[0, 0.12, 0], [0.5, 0.12, 2], [1.5, 0.12, 4]], "width": 0.8 } },
+        "objects": [
+          { "id": "source-rock", "type": "rock", "params": { "radius": 0.7 }, "seed": 73, "position": [-0.8, 0.65, 1.4], "rotation": [0, 0, 0], "scale": 1, "color": "#9B7D68", "animations": [] },
+          { "id": "rain-drop", "type": "drop", "params": { "radius": 0.3 }, "seed": 101, "position": [-0.8, 4.5, 1.4], "rotation": [0, 0, 0], "scale": 1, "color": "#6CE9FF", "animations": [{ "type": "fall", "startMs": 1200, "endMs": 6500, "easing": "ease-in", "params": { "from": [-0.8, 4.5, 1.4], "to": [-0.8, 1.3, 1.4] } }] }
+        ],
+        "particles": [{ "type": "rain", "seed": 24, "count": 100, "position": [0, 3, 1], "spread": [7, 6, 5], "color": "#5BD8FF", "speed": 2, "size": 0.075 }],
+        "labels": [{ "objectId": "source-rock", "text": "Todo empieza en tierra", "color": "#273E46" }],
+        "overlays": [],
+        "camera": { "move": "dolly-in", "from": [11, 8, 17], "to": [8.8, 6.8, 14.8], "target": [0, 2, 0.5], "easing": "ease-in-out" }
+      },
+      "audio": null, "words": [], "mediaBindings": { "audio": null, "words": null }
+    },
+    {
+      "sceneId": "scene_dissolve", "revision": 0, "title": "Sales de las rocas", "startMs": 9000, "durationMs": 9000,
+      "text": "El agua de lluvia disuelve pequeñas cantidades de sales minerales de las rocas. Son sustancias disueltas: no hace falta arrastrar rocas enteras.",
+      "visualIntent": "Detalle de la misma roca junto a una gota grande; puntos dorados simbólicos se separan de la roca hacia el agua.",
+      "visual": {
+        "kind": "kit", "kitVersion": 1,
+        "palette": { "background": "#C7EBD9", "preset": "daylight" },
+        "sky": { "top": "#A6D5D4", "bottom": "#E8F5D8", "sun": null, "clouds": [] },
+        "environment": { "seed": 418, "terrain": { "type": "plain", "color": "#9DB38A", "height": 0.5, "size": 8 }, "water": { "type": "river", "color": "#23BCD6", "points": [[-2, 0.1, 1], [0, 0.1, 1], [2.7, 0.1, 1]], "width": 1.5 } },
+        "objects": [
+          { "id": "source-rock", "type": "rock", "params": { "radius": 0.7 }, "seed": 73, "position": [-1, 0.65, 0.3], "rotation": [0, 0, 0], "scale": 1, "color": "#9B7D68", "animations": [] },
+          { "id": "diagram-note", "type": "label", "params": { "proportions": { "width": 2, "height": 0.25, "depth": 0.1 }, "text": "Símbolos ampliados", "color": "#273E46" }, "position": [0.5, 0.2, 2.8], "rotation": [0, 0, 0], "scale": 1, "color": "#273E46", "animations": [] },
+          { "id": "river-drop", "type": "drop", "params": { "radius": 0.42 }, "seed": 102, "position": [1.1, 0.7, 1.1], "rotation": [0, 0, 0], "scale": 1, "color": "#53E1FF", "animations": [{ "type": "pulse", "startMs": 0, "endMs": 9000, "easing": "linear", "params": { "amplitude": 0.08, "cycles": 3 } }] },
+          { "id": "mineral-grain", "type": "sphere", "params": { "radius": 0.1 }, "position": [-0.6, 1, 0.65], "rotation": [0, 0, 0], "scale": 1, "color": "#FFE48C", "animations": [{ "type": "move", "startMs": 1700, "endMs": 6000, "easing": "ease-in-out", "params": { "from": [-0.6, 1, 0.65], "to": [1.15, 0.8, 1.15] } }] },
+          { "id": "mineral-grain-2", "type": "sphere", "params": { "radius": 0.1 }, "position": [-0.8, 1.25, 0.6], "rotation": [0, 0, 0], "scale": 1, "color": "#FFE48C", "animations": [{ "type": "move", "startMs": 2400, "endMs": 7300, "easing": "ease-in-out", "params": { "from": [-0.8, 1.25, 0.6], "to": [0.95, 0.65, 1.2] } }] }
+        ],
+        "particles": [{ "type": "sparkle", "seed": 42, "count": 20, "position": [1.1, 0.8, 1.1], "spread": [0.8, 0.8, 0.7], "color": "#FFF3B3", "speed": 0.7, "size": 0.04 }],
+        "labels": [{ "objectId": "source-rock", "text": "Roca", "color": "#533D32" }, { "objectId": "river-drop", "text": "Sales disueltas", "color": "#185C72" }],
+        "overlays": [],
+        "camera": { "move": "orbit", "from": [1, 4.3, 9], "to": [3.3, 4.1, 8.8], "target": [0, 0.7, 0.8], "easing": "ease-in-out" }
+      },
+      "audio": null, "words": [], "mediaBindings": { "audio": null, "words": null }
+    },
+    {
+      "sceneId": "scene_river", "revision": 0, "title": "El viaje por el río", "startMs": 18000, "durationMs": 9000,
+      "text": "Los ríos transportan esas sales hasta el océano. Aunque su agua parece dulce, lleva minerales disueltos que llegan al mar durante muchísimo tiempo.",
+      "visualIntent": "Seguimiento elevado de una gota que recorre un río sinuoso entre dos orillas, con flecha indicando el viaje corriente abajo.",
+      "visual": {
+        "kind": "kit", "kitVersion": 1,
+        "palette": { "background": "#BCE5DD", "preset": "daylight" },
+        "sky": { "top": "#69CFEC", "bottom": "#DDF5DF", "sun": null, "clouds": [{ "position": [-3, 6, -4], "scale": 0.6 }] },
+        "environment": { "seed": 419, "terrain": { "type": "plain", "color": "#78B875", "height": 0.4, "size": 12 }, "water": { "type": "river", "color": "#1CBAD8", "points": [[-1.3, 0.12, -4], [-1, 0.12, -2], [0.7, 0.12, 0], [0.7, 0.12, 2], [-0.4, 0.12, 4.7]], "width": 1.4 } },
+        "objects": [
+          { "id": "river-drop", "type": "drop", "params": { "radius": 0.42 }, "seed": 102, "position": [0.7, 0.7, 0], "rotation": [0, 0, 0], "scale": 1, "color": "#53E1FF", "animations": [{ "type": "move", "startMs": 0, "endMs": 9000, "easing": "linear", "params": { "from": [0.7, 0.7, 0], "to": [0.7, 0.7, 2] } }] },
+          { "id": "bank-west", "type": "rock", "params": { "radius": 0.6 }, "seed": 81, "position": [-2, 0.5, -0.3], "rotation": [0, 0, 0], "scale": 1, "color": "#B6A084", "animations": [] },
+          { "id": "bank-east", "type": "rock", "params": { "radius": 0.85 }, "seed": 82, "position": [2.8, 0.6, 2.1], "rotation": [0, 0, 0], "scale": 1, "color": "#B6A084", "animations": [] },
+          { "id": "flow-arrow", "type": "arrow", "params": { "proportions": { "width": 0.3, "height": 0.45, "depth": 1.8 }, "direction": [0, 0, 1], "color": "#FFF0A0" }, "position": [-1, 0.6, 2.2], "rotation": [0, 0, 0], "scale": 1, "color": "#FFF0A0", "animations": [] }
+        ],
+        "particles": [{ "type": "sparkle", "seed": 43, "count": 35, "position": [0, 0.45, 1], "spread": [2, 0.5, 6], "color": "#D1FDFF", "speed": 1, "size": 0.055 }],
+        "labels": [{ "objectId": "river-drop", "text": "Rumbo al océano", "color": "#185C72" }],
+        "overlays": [],
+        "camera": { "move": "follow", "from": [7.5, 11, 9], "to": [6.5, 10, 8], "targetObjectId": "river-drop", "easing": "ease-in-out" }
+      },
+      "audio": null, "words": [], "mediaBindings": { "audio": null, "words": null }
+    },
+    {
+      "sceneId": "scene_sea", "revision": 0, "title": "El agua se va; las sales quedan", "startMs": 27000, "durationMs": 9000,
+      "text": "En el mar, el sol evapora agua, pero las sales quedan. La evaporación no fabrica sal: las rocas aportan parte de esas sales.",
+      "visualIntent": "Plano abierto del mar: dos flechas de vapor suben sobre el agua y símbolos dorados de sales permanecen abajo. Sol lateral y cámara en paneo.",
+      "visual": {
+        "kind": "kit", "kitVersion": 1,
+        "palette": { "background": "#BEE6F1", "preset": "daylight" },
+        "sky": { "top": "#5CC8F3", "bottom": "#E7F5DB", "sun": { "position": [-3.3, 5.1, -2], "radius": 0.9, "color": "#FFE075" }, "clouds": [] },
+        "environment": { "seed": 420, "terrain": null, "water": { "type": "sea", "color": "#198FC5", "level": 0, "size": 13 } },
+        "objects": [
+          { "id": "salt-symbol", "type": "sphere", "params": { "radius": 0.14 }, "position": [0.8, 0.25, 1.5], "rotation": [0, 0, 0], "scale": 1, "color": "#FFE48C", "animations": [] },
+          { "id": "salt-symbol-2", "type": "sphere", "params": { "radius": 0.12 }, "position": [1.4, 0.25, 0.9], "rotation": [0, 0, 0], "scale": 1, "color": "#FFE48C", "animations": [] },
+          { "id": "salt-symbol-3", "type": "sphere", "params": { "radius": 0.13 }, "position": [0.1, 0.25, 1], "rotation": [0, 0, 0], "scale": 1, "color": "#FFE48C", "animations": [] },
+          { "id": "diagram-note", "type": "label", "params": { "proportions": { "width": 2, "height": 0.25, "depth": 0.1 }, "text": "Símbolos ampliados", "color": "#273E46" }, "position": [0, 0.2, 4], "rotation": [0, 0, 0], "scale": 1, "color": "#273E46", "animations": [] },
+          { "id": "vapor-arrow", "type": "arrow", "params": { "proportions": { "width": 0.3, "height": 0.45, "depth": 1.8 }, "direction": [0, 1, 0], "color": "#DCF9FF" }, "position": [-1.5, 0.7, 0], "rotation": [0, 0, 0], "scale": 1, "color": "#DCF9FF", "animations": [{ "type": "move", "startMs": 0, "endMs": 9000, "easing": "ease-out", "params": { "from": [-1.5, 0.7, 0], "to": [-1.5, 1.7, 0] } }] },
+          { "id": "vapor-arrow-2", "type": "arrow", "params": { "proportions": { "width": 0.25, "height": 0.35, "depth": 1.3 }, "direction": [0, 1, 0], "color": "#DCF9FF" }, "position": [0.3, 0.9, -1.7], "rotation": [0, 0, 0], "scale": 1, "color": "#DCF9FF", "animations": [{ "type": "move", "startMs": 0, "endMs": 9000, "easing": "ease-out", "params": { "from": [0.3, 0.9, -1.7], "to": [0.3, 1.9, -1.7] } }] }
+        ],
+        "particles": [{ "type": "bubbles", "seed": 44, "count": 30, "position": [-1.3, 2, -0.2], "spread": [3, 3, 2], "color": "#C8F8FF", "speed": 0.7, "size": 0.055 }],
+        "labels": [{ "objectId": "vapor-arrow", "text": "El agua se evapora", "color": "#185C72" }, { "objectId": "salt-symbol", "text": "Las sales quedan", "color": "#6E5527" }],
+        "overlays": [],
+        "camera": { "move": "pan", "from": [6, 7, 15], "to": [2.5, 7, 15], "target": [0, 1.3, 0], "easing": "ease-in-out" }
+      },
+      "audio": null, "words": [], "mediaBindings": { "audio": null, "words": null }
+    }
+  ],
+  "assets": [],
+  "approval": null,
+  "sources": [{ "title": "USGS: Why is the ocean salty?", "url": "https://www.usgs.gov/special-topics/water-science-school/science/why-ocean-salty" }],
+  "cover": { "headline": "¿De dónde sale la sal del mar?" },
+  "postText": "Una parte de las sales del océano llega desde las rocas, disuelta en el agua de los ríos. La evaporación retira agua, no crea sal. También existen aportes del fondo oceánico y procesos que retiran sales: esta es una explicación simplificada de una de las rutas. Los puntos dorados y las gotas son símbolos ampliados, no cristales visibles ni una escala molecular."
+}

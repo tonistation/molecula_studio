@@ -2,7 +2,7 @@
 
 Plan de una aplicación local para crear videos animados verticales a partir de guiones, escenas, voz y subtítulos. La visión contempla varios estilos; la primera entrega propone un único estilo 3D.
 
-**Estado: ROADMAP implementado hasta 4.4.** Existen schema 2, `ProjectStore`, companion HTTP y estudio React con renderer 3D, subtítulos, vista previa y exportación MP4 silenciosa por CLI/UI. Guion y dibujo ofrecen modos manual/automático con Codex CLI; voz permite subir WAV/MP3 o generar con Vibi TTS/STT, con consentimiento previo de consumo. Los proveedores se verificaron con dobles locales, no con cuentas reales. Exportar MP4 con voz sigue pendiente de 4.5. El [ROADMAP](ROADMAP.md) es el plan activo; el [backlog anterior](docs/plan/implementation-tasks.md) está congelado. Véanse el [contexto](PROJECT_CONTEXT.md) y la [evidencia histórica](docs/plan/delivery.md).
+**Estado: ROADMAP implementado hasta 5.4, con selector de voces y demo de planos distintos.** Existen schema 2, `ProjectStore`, companion HTTP y estudio React con renderer 3D, subtítulos, vista previa y exportación MP4 silenciosa o con voz por CLI/UI. Guion y dibujo ofrecen modos manual/automático con Codex CLI; voz permite subir WAV/MP3 o generar con Vibi TTS/STT, con consentimiento previo de consumo. Los proveedores se verificaron con dobles locales, no con cuentas reales. El [ROADMAP](ROADMAP.md) es el plan activo; el [backlog anterior](docs/plan/implementation-tasks.md) está congelado. Véanse el [contexto](PROJECT_CONTEXT.md) y la [evidencia histórica](docs/plan/delivery.md).
 
 ## Ejecutar localmente
 
@@ -22,7 +22,17 @@ npm run test:e2e        # navegador real (Lightpanda) contra el companion
 npm run render -- workspace/<projectId>/project.json [salida.mp4]
 ```
 
-El render lee la revisión guardada, no modifica el JSON y no exige aprobación editorial. Por defecto publica en `<workspace>/.renders/<projectId>/<revision>-<fecha-UTC>.mp4`; el workspace es el padre de la carpeta del documento. Una salida explícita es relativa al directorio actual; debe ser `.mp4` y no existir. Solo admite modo silencioso por ahora. Ejemplo externo: `npm run render -- docs/plan/examples/storyboard-project.json workspace/storyboard.mp4`.
+El render lee la revisión guardada, no modifica el JSON y no exige aprobación editorial. Por defecto publica en `<workspace>/.renders/<projectId>/<revision>-<fecha-UTC>.mp4`; el workspace es el padre de la carpeta del documento. Una salida explícita es relativa al directorio actual; debe ser `.mp4` y no existir. Admite modo silencioso o voz desde los activos guardados. Ejemplo externo: `npm run render -- docs/plan/examples/storyboard-project.json workspace/storyboard.mp4`.
+
+### Demo con planos distintos
+
+El [storyboard de la sal del mar](docs/plan/examples/kit/sal-del-mar-storyboard.json) es un proyecto portátil de 36 s, sin archivos externos: montaña con lluvia → detalle de disolución → seguimiento del río → mar con evaporación. Se puede importar en el estudio o renderizar en silencio:
+
+```sh
+npm run render -- docs/plan/examples/kit/sal-del-mar-storyboard.json workspace/sal-del-mar-planos.mp4
+```
+
+Usar una salida nueva al repetir. La [demo local con voz](ROADMAP.md#ampliación-autorizada--demo-con-planos-distintos) dura 35,8 s y usa Paulina de macOS, sin proveedor ni gasto. Sus binarios no se versionan; no se afirma permiso de redistribución de esa voz. Los puntos dorados son símbolos ampliados, no cristales visibles en el agua.
 
 ## Por dónde empezar
 
@@ -58,6 +68,6 @@ El HTML es una propuesta visual estática, no la aplicación ni una prueba de pe
 
 **Continuidad visual requerida:** el JSON conserva entidades reutilizables y el kit tiene renderer determinista con pruebas de seek y objetos compartidos. Las variantes deben ser intencionales, sin editor avanzado en el MVP. La aprobación estética final sigue siendo humana. Véase [continuidad visual](docs/plan/visual-continuity.md).
 
-Guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. El primer MP4 silencioso del storyboard está exportado y verificado (H.264, 1080×1920, 30 fps, 12 s). Hay voz manual/automática con reproducción en vista previa; exportar con voz, verificar proveedores reales y pulir el flujo guiado siguen pendientes en el [ROADMAP](ROADMAP.md). No se afirma rendimiento garantizado ni aprobación estética humana. Riesgos históricos de save/retención están documentados en [API](docs/plan/api-contracts.md).
+Guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. Hay exportación H.264/AAC 1080×1920 a 30 fps, voz manual/automática y flujo guiado. Verificar proveedores reales, escucha humana y sincronía fonética fina siguen pendientes en el [ROADMAP](ROADMAP.md). No se afirma rendimiento garantizado ni aprobación estética humana. Riesgos históricos de save/retención están documentados en [API](docs/plan/api-contracts.md).
 
 Repositorio de referencia: [tonistation/molecula_studio](https://github.com/tonistation/molecula_studio).
