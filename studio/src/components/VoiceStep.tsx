@@ -17,6 +17,7 @@ export function VoiceStep({ draft, dirty, disabled, missingAssets, onUpload, onG
   const [busy, setBusy] = useState(false);
   const [autoBusy, setAutoBusy] = useState(false);
   const [vibi, setVibi] = useState(false);
+  const [defaultVoiceConfigured, setDefaultVoiceConfigured] = useState(false);
   const [alignVibi, setAlignVibi] = useState(false);
   const [pending, setPending] = useState<{ project: Project; sceneId: string; bytes: Uint8Array;
     mimeType: 'audio/wav' | 'audio/mpeg'; license: string; seconds: number } | null>(null);
@@ -24,7 +25,7 @@ export function VoiceStep({ draft, dirty, disabled, missingAssets, onUpload, onG
   useEffect(() => { setError(''); }, [draft.projectId, draft.revision]);
   useEffect(() => {
     const controller = new AbortController();
-    void api.capabilities(controller.signal).then(result => { if (!controller.signal.aborted) setVibi(result.vibi); }).catch(() => {});
+    void api.capabilities(controller.signal).then(result => { if (!controller.signal.aborted) { setVibi(result.vibi); setDefaultVoiceConfigured(result.vibiVoiceConfigured); } }).catch(() => {});
     return () => controller.abort();
   }, []);
   useEffect(() => { setPending(null); }, [draft]);
@@ -105,7 +106,7 @@ export function VoiceStep({ draft, dirty, disabled, missingAssets, onUpload, onG
     {busy && <p role="status">Subiendo audio…</p>}
     {notice && <p role="status">{notice}</p>}
     {error && <p role="alert">{error}</p>}
-    <AutoVoiceStep draft={draft} dirty={dirty} disabled={disabled || busy || Boolean(pending)} configured={vibi} onGenerate={onGenerate} onBusy={setAutoBusy}
+    <AutoVoiceStep draft={draft} dirty={dirty} disabled={disabled || busy || Boolean(pending)} configured={vibi} defaultVoiceConfigured={defaultVoiceConfigured} onGenerate={onGenerate} onBusy={setAutoBusy}
       statuses={statuses?.project === draft ? statuses.values : {}} />
     <p className="muted small">La vista previa reproduce la voz guardada. Si está desactualizada, puede regenerarla con Vibi o subir un audio nuevo con permiso de uso. Exportar no regenera audio.</p>
   </section>;

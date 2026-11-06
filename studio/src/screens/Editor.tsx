@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { Asset, Project, ProjectMode, Scene } from '../../../src/shared/schema/types.ts';
+import type { VoiceSelection } from '../../../src/shared/voice/selection.ts';
 import { serializeProject } from '../../../src/shared/schema/serialize.ts';
 import { AssetManifest } from './AssetManifest.tsx';
 import { PreviewPlayer } from '../components/PreviewPlayer.tsx';
@@ -215,7 +216,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
     } finally { relinkLock.current = false; setRelinking(false); }
   };
 
-  const attachAudio = async (sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, alignVibi = false, generationSignal?: AbortSignal) => {
+  const attachAudio = async (sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, alignVibi = false, generationSignal?: AbortSignal, selection?: VoiceSelection) => {
     const current = live.current;
     if (current.dirty || operationLock.current || current.saving || readOnly || relinkLock.current || pendingSave.current) {
       throw new Error('Guarde o verifique los cambios antes de subir audio.');
@@ -225,7 +226,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
     setRelinking(true); setError(null); setNotice(null);
     try {
       const result = generationSignal
-        ? await api.generateVoice(current.draft.projectId, sceneId, current.confirmedRevision, current.digest, generationSignal)
+        ? await api.generateVoice(current.draft.projectId, sceneId, current.confirmedRevision, current.digest, generationSignal, selection)
         : await api.attachAudio(current.draft.projectId, sceneId, bytes, mimeType, license, current.confirmedRevision, current.digest, alignVibi);
       generationSignal?.throwIfAborted();
       if (result.receipt.sync === 'uncertain') {
@@ -545,7 +546,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
         <div id="workflow-voice" className="workflow-target" role="group" tabIndex={-1} aria-label="Voz">
         <VoiceStep draft={draft} dirty={dirty} disabled={readOnly || saving || needsVerification || relinking}
            missingAssets={missingAssets} onUpload={attachAudio}
-            onGenerate={(sceneId, signal) => attachAudio(sceneId, new Uint8Array(), 'audio/mpeg', '', false, signal)} />
+            onGenerate={(sceneId, signal, selection) => attachAudio(sceneId, new Uint8Array(), 'audio/mpeg', '', false, signal, selection)} />
         </div>
         </div>
 

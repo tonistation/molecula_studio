@@ -9,7 +9,7 @@ import { capabilities } from '../providers/capabilities.ts';
 import { generateScript, generateDrawing, GenerationError, type CodexOptions } from '../providers/codex-cli.ts';
 import { estimateWords } from '../../shared/voice/estimate.ts';
 import { sttWordsToWords } from '../../shared/voice/alignment.ts';
-import { transcribeAudio, synthesizeSpeech, voiceConfiguration, vibiCredits, VibiError, type VibiOptions } from '../providers/vibi.ts';
+import { transcribeAudio, synthesizeSpeech, voiceConfiguration, vibiCredits, vibiVoices, VibiError, type VibiOptions } from '../providers/vibi.ts';
 import { inspectMediaBounded } from '../store/inspection-runner.ts';
 import { InspectionError } from '../store/media-inspect.ts';
 
@@ -99,7 +99,7 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
   const token = options.token ?? randomBytes(32).toString('hex');
   const state = { port: 0, origin: '' };
   const renders = createRenderJobs(store, await realpath(options.workspaceRoot), options.renderer);
-  const generation = { options: options.codexOptions ?? {}, active: new Set<AbortController>(), closing: false, voiceBusy: false };
+  const generation = { options: options.codexOptions ?? {}, active: new Set<AbortController>(), closing: false, voiceBusy: false, voices: new Set<string>() };
   const env = options.codexOptions?.env ?? process.env;
   const vibi = { apiKey: env.VIBI_API_KEY ?? '', voiceId: env.VIBI_VOICE_ID ?? '', provider: env.VIBI_PROVIDER ?? 'elevenlabs',
     modelId: env.VIBI_MODEL_ID ?? (env.VIBI_PROVIDER === 'minimax' ? '' : env.VIBI_PROVIDER === 'capcut' ? 'capcut' : 'eleven_multilingual_v2'), ...options.vibiOptions };
@@ -146,7 +146,7 @@ interface HandlerContext {
   studioDir: string | undefined;
   extraOrigins: string[] | undefined;
   renders: ReturnType<typeof createRenderJobs>;
-  generation: { options: CodexOptions; active: Set<AbortController>; closing: boolean; voiceBusy: boolean };
+  generation: { options: CodexOptions; active: Set<AbortController>; closing: boolean; voiceBusy: boolean; voices: Set<string> };
   vibi: VibiOptions;
 }
 
@@ -251,7 +251,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   const method = req.method ?? 'GET';
 
   const voiceRoute = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})\/scenes\/([a-z][a-z0-9_-]{0,63})\/voice$/.exec(pathname);
-  if (voiceRoute || pathname === '/api/vibi/credits') {
+  if (voiceRoute || pathname === '/api/vibi/credits' || pathname === '/api/vibi/voices') {
     const credits = !voiceRoute;
     if (method !== (credits ? 'GET' : 'POST')) throw methodNotAllowed(credits ? 'GET' : 'POST');
     if (context.generation.closing) throw new HttpError(503, 'companion-closing', 'El companion se está cerrando.');
@@ -261,15 +261,28 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     context.generation.active.add(controller); res.once('close', cancel);
     if (!credits) context.generation.voiceBusy = true;
     try {
+      if (pathname === '/api/vibi/voices') {
+        const catalog = await vibiVoices(context.vibi, controller.signal);
+        controller.signal.throwIfAborted();
+        context.generation.voices.clear();
+        for (const voice of catalog.voices) context.generation.voices.add(`${catalog.provider}/${voice.voiceId}`);
+        sendJson(res, 200, catalog); return;
+      }
       if (credits) { sendJson(res, 200, await vibiCredits(context.vibi, controller.signal)); return; }
       const body = await readJsonBody(req) as Record<string, unknown>;
-      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['expectedRevision', 'expectedDigest', 'consent'].includes(key))
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['expectedRevision', 'expectedDigest', 'consent', 'provider', 'voiceId'].includes(key))
         || !Number.isSafeInteger(body.expectedRevision) || Number(body.expectedRevision) < 0
         || typeof body.expectedDigest !== 'string' || !/^[a-f0-9]{64}$/.test(body.expectedDigest)) {
         throw new HttpError(400, 'invalid-argument', 'Se requieren revisión y digest válidos del proyecto guardado.');
       }
       if (body.consent !== true) throw new HttpError(400, 'consent-required', 'Confirme el envío de texto/audio y el consumo TTS y STT.');
-      voiceConfiguration(context.vibi);
+      const selected = 'voiceId' in body || 'provider' in body;
+      if (selected && (typeof body.voiceId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.voiceId)
+        || body.provider !== context.vibi.provider || !context.generation.voices.has(`${body.provider}/${body.voiceId}`))) {
+        throw new HttpError(400, 'invalid-voice', 'Seleccione una voz del catálogo del proveedor configurado antes de confirmar.');
+      }
+      const voiceOptions = selected ? { ...context.vibi, voiceId: body.voiceId as string } : context.vibi;
+      voiceConfiguration(voiceOptions);
       const projectId = voiceRoute![1]!; const sceneId = voiceRoute![2]!;
       const current = await store.readProject(projectId);
       if (current.revision !== body.expectedRevision || current.digest !== body.expectedDigest) {
@@ -288,7 +301,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       if (!scene) throw new HttpError(404, 'scene-not-found', 'La escena ya no existe.');
       if (!scene.text.trim()) throw new HttpError(422, 'empty-narration', 'La escena no tiene narración.');
       estimateWords(scene.text, scene.durationMs);
-      const generated = await synthesizeSpeech(scene.text, context.vibi, controller.signal);
+      const generated = await synthesizeSpeech(scene.text, voiceOptions, controller.signal);
       controller.signal.throwIfAborted();
       const inspection = await inspectMediaBounded(generated.bytes, 'audio/mpeg');
       const audioMs = inspection.durationMs;
@@ -420,7 +433,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     const cancel = () => controller.abort();
     res.once('close', cancel);
     try {
-      const result = capability ? { ...await capabilities(context.generation.options, controller.signal), vibi: Boolean(context.vibi.apiKey?.trim()) }
+      let vibiVoiceConfigured = false;
+      if (capability) { try { voiceConfiguration(context.vibi); vibiVoiceConfigured = true; } catch { /* Local configuration only; no network. */ } }
+      const result = capability ? { ...await capabilities(context.generation.options, controller.signal), vibi: Boolean(context.vibi.apiKey?.trim()), vibiVoiceConfigured }
         : await (pathname === '/api/script/generate' ? generateScript : generateDrawing)(body, context.generation.options, controller.signal);
       sendJson(res, 200, result);
     } catch (error) {

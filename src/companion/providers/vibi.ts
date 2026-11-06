@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { LIMITS } from '../../shared/schema/limits.ts';
+import type { VoiceCatalog } from '../../shared/voice/selection.ts';
 
 export interface VibiOptions {
   apiKey?: string;
@@ -53,6 +54,31 @@ export async function vibiCredits(options: VibiOptions = {}, signal?: AbortSigna
       throw new VibiError('vibi-response', 'Vibi no devolvió un saldo válido.');
     }
     return { credits: result.credit_balance };
+  });
+}
+
+/** Explicit user action only. Expose labels/IDs, never profiles or remote preview URLs. */
+export async function vibiVoices(options: VibiOptions = {}, signal?: AbortSignal): Promise<VoiceCatalog> {
+  const { provider } = voiceConfiguration({ ...options, voiceId: 'catalog-check' });
+  const path = provider === 'elevenlabs' ? '/v1/default-voices?page_size=30'
+    : `/v1/${provider}/system-voices?page=1&page_size=30&language=${provider === 'capcut' ? 'es' : 'Spanish'}`;
+  return withVibi(options, signal, async request => {
+    const result = await boundedJson(await request(path));
+    const rows = provider === 'elevenlabs' ? result.voices : result.voice_list;
+    if (!Array.isArray(rows) || rows.length > 30 || typeof result.has_more !== 'boolean') {
+      throw new VibiError('vibi-response', 'Vibi no devolvió un catálogo válido. La voz predeterminada sigue disponible.');
+    }
+    const voices: VoiceCatalog['voices'] = [];
+    for (const row of rows) {
+      const name = provider === 'minimax' ? row?.voice_name : row?.name;
+      if (!row || typeof row.voice_id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(row.voice_id)
+        || typeof name !== 'string' || !name.trim() || [...name].length > 120 || /[\u0000-\u001f\u007f]/u.test(name)
+        || voices.some(voice => voice.voiceId === row.voice_id)) {
+        throw new VibiError('vibi-response', 'Vibi devolvió una voz no válida. No se actualizó el catálogo.');
+      }
+      voices.push({ voiceId: row.voice_id, name });
+    }
+    return { provider, voices, hasMore: result.has_more };
   });
 }
 

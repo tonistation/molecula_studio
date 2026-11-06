@@ -164,6 +164,8 @@ code {
 .scene-adjustments legend { font-weight: 600; margin: 12px 0; }
 .scene-adjustments p, .scene-adjustments option { overflow-wrap: anywhere; }
 .scene-adjustments button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.auto-voice p { overflow-wrap: anywhere; }
+.auto-voice select { min-width: 0; max-width: 100%; }
 .camera-vector { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; border: 0; padding: 0; margin: 0; min-width: 0; }
 
 .field {

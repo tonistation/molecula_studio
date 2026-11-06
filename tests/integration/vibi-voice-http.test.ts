@@ -11,16 +11,20 @@ import { bindingDigests } from '../../src/shared/digests.ts';
 
 test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth, stale revision and duplicates never spend', async t => {
   const root = await mkdtemp(join(tmpdir(), 'vibi-voice-'));
-  let posts = 0; let stts = 0; let accounts = 0; let fail = false; let words: string[] = [];
+  let posts = 0; let stts = 0; let accounts = 0; let catalogs = 0; let fail = false; let words: string[] = [];
+  let chosenUrl = '';
   let hook: ((stage: 'tts' | 'stt') => Promise<void>) | undefined;
   let bytes = mp3Bytes(80);
   const fake = createServer(async (req, res) => {
     assert.equal(req.headers['xi-api-key'], 'fake-only-key');
+    if (req.url === '/v1/default-voices?page_size=30') {
+      catalogs++; res.end(JSON.stringify({ voices: [{ voice_id: 'alternate', name: 'Narradora', preview_url: 'https://private.test', api_key: 'PRIVATE' }], has_more: true })); return;
+    }
     if (req.url === '/v1/auth/me') { accounts++; res.end(JSON.stringify({ credit_balance: 50, email: 'PRIVATE', api_key: 'fake-only-key' })); return; }
     if (req.method === 'POST') {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
       if (req.url?.includes('text-to-speech')) {
-        posts++; words = JSON.parse(Buffer.concat(chunks).toString()).text.match(/\S+/gu);
+        posts++; chosenUrl = req.url!; words = JSON.parse(Buffer.concat(chunks).toString()).text.match(/\S+/gu);
         res.writeHead(202).end(JSON.stringify({ id: 'tts' }));
       } else {
         stts++;
@@ -60,6 +64,20 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
     body: JSON.stringify({ expectedRevision: current.revision, expectedDigest: current.digest, consent: true }) });
   assert.equal(missing.status, 404);
   assert.equal(posts, 0); assert.equal(accounts, 0);
+  const selection = { provider: 'elevenlabs', voiceId: 'alternate' };
+  assert.equal((await generate(selection)).status, 400, 'unknown IDs rejected before catalog load');
+  const catalogUrl = `${companion.origin}/api/vibi/voices`;
+  assert.equal((await fetch(catalogUrl)).status, 401);
+  assert.equal(catalogs, 0);
+  const catalog = await fetch(catalogUrl, { headers });
+  assert.equal(catalog.status, 200);
+  assert.deepEqual(await catalog.json(), { provider: 'elevenlabs', voices: [{ voiceId: 'alternate', name: 'Narradora' }], hasMore: true });
+  assert.equal(catalogs, 1);
+  for (const patch of [{ provider: 'capcut', voiceId: 'alternate' }, { voiceId: 'alternate' }, { provider: 'elevenlabs' },
+    { ...selection, voiceId: '../alternate' }, { ...selection, voiceId: 'unknown' }, { ...selection, modelId: 'override' }]) {
+    assert.equal((await generate(patch)).status, 400);
+  }
+  assert.equal(posts, 0);
   const balance = await fetch(`${companion.origin}/api/vibi/credits`, { headers });
   assert.deepEqual(await balance.json(), { credits: 50 }); assert.equal(accounts, 1);
   let release!: () => void; let notify!: () => void;
@@ -79,9 +97,17 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
   assert.equal(saved.mediaBindings.words!.inputDigest, digests.wordsInputDigest);
   assert.equal(saved.mediaBindings.audio!.inputDigest, digests.audioInputDigest);
   const asset = current.project.assets.find(item => item.assetId === saved.audio!.assetId)!;
+  assert.equal(chosenUrl, '/v1/text-to-speech/test-voice');
   assert.deepEqual(asset.source, { origin: 'provider', license: 'Vibi – según plan', attribution: 'elevenlabs/test-voice' });
   assert.deepEqual((await companion.store.readAsset(projectId, asset.assetId)).bytes, bytes);
   assert.doesNotMatch(await readFile(file, 'utf8'), /fake-only-key|PRIVATE/);
+  hook = undefined;
+  const chosen = await generate(selection);
+  assert.equal(chosen.status, 200, await chosen.clone().text());
+  current = await companion.store.readProject(projectId);
+  assert.equal(chosenUrl, '/v1/text-to-speech/alternate');
+  const chosenAsset = current.project.assets.find(item => item.assetId === current.project.scenes[0]!.audio!.assetId)!;
+  assert.equal(chosenAsset.source.attribution, 'elevenlabs/alternate');
   const before = await readFile(file);
   fail = true; hook = undefined;
   const failed = await generate(); assert.equal(failed.status, 502); assert.doesNotMatch(await failed.text(), /fake-only-key|PRIVATE/);
