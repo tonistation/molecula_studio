@@ -9,7 +9,7 @@ import { capabilities } from '../providers/capabilities.ts';
 import { generateScript, generateDrawing, GenerationError, type CodexOptions } from '../providers/codex-cli.ts';
 import { estimateWords } from '../../shared/voice/estimate.ts';
 import { sttWordsToWords } from '../../shared/voice/alignment.ts';
-import { transcribeAudio, VibiError, type VibiOptions } from '../providers/vibi.ts';
+import { transcribeAudio, synthesizeSpeech, voiceConfiguration, vibiCredits, VibiError, type VibiOptions } from '../providers/vibi.ts';
 import { inspectMediaBounded } from '../store/inspection-runner.ts';
 import { InspectionError } from '../store/media-inspect.ts';
 
@@ -58,7 +58,7 @@ export interface CompanionServerOptions {
   renderer?: typeof renderProject;
   /** Test-only fake executable environment/deadlines. */
   codexOptions?: CodexOptions;
-  /** Test-only local STT transport, key and deadlines. No production URL env override. */
+  /** Test-only local Vibi transport/configuration. No production URL env override. */
   vibiOptions?: VibiOptions;
 }
 
@@ -99,8 +99,10 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
   const token = options.token ?? randomBytes(32).toString('hex');
   const state = { port: 0, origin: '' };
   const renders = createRenderJobs(store, await realpath(options.workspaceRoot), options.renderer);
-  const generation = { options: options.codexOptions ?? {}, active: new Set<AbortController>(), closing: false };
-  const vibi = { apiKey: (options.codexOptions?.env ?? process.env).VIBI_API_KEY ?? '', ...options.vibiOptions };
+  const generation = { options: options.codexOptions ?? {}, active: new Set<AbortController>(), closing: false, voiceBusy: false };
+  const env = options.codexOptions?.env ?? process.env;
+  const vibi = { apiKey: env.VIBI_API_KEY ?? '', voiceId: env.VIBI_VOICE_ID ?? '', provider: env.VIBI_PROVIDER ?? 'elevenlabs',
+    modelId: env.VIBI_MODEL_ID ?? (env.VIBI_PROVIDER === 'minimax' ? '' : env.VIBI_PROVIDER === 'capcut' ? 'capcut' : 'eleven_multilingual_v2'), ...options.vibiOptions };
 
   const server = createServer((req, res) => {
     void handleRequest(req, res, { store, token, state, renders, generation, vibi, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
@@ -144,7 +146,7 @@ interface HandlerContext {
   studioDir: string | undefined;
   extraOrigins: string[] | undefined;
   renders: ReturnType<typeof createRenderJobs>;
-  generation: { options: CodexOptions; active: Set<AbortController>; closing: boolean };
+  generation: { options: CodexOptions; active: Set<AbortController>; closing: boolean; voiceBusy: boolean };
   vibi: VibiOptions;
 }
 
@@ -247,6 +249,78 @@ const PROJECT_ROUTE = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})(?:\/(copy|asset
 async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string, context: HandlerContext): Promise<void> {
   const { store } = context;
   const method = req.method ?? 'GET';
+
+  const voiceRoute = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})\/scenes\/([a-z][a-z0-9_-]{0,63})\/voice$/.exec(pathname);
+  if (voiceRoute || pathname === '/api/vibi/credits') {
+    const credits = !voiceRoute;
+    if (method !== (credits ? 'GET' : 'POST')) throw methodNotAllowed(credits ? 'GET' : 'POST');
+    if (context.generation.closing) throw new HttpError(503, 'companion-closing', 'El companion se está cerrando.');
+    if (!credits && context.generation.voiceBusy) throw new HttpError(409, 'voice-busy', 'Ya hay una generación de voz en curso.');
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    context.generation.active.add(controller); res.once('close', cancel);
+    if (!credits) context.generation.voiceBusy = true;
+    try {
+      if (credits) { sendJson(res, 200, await vibiCredits(context.vibi, controller.signal)); return; }
+      const body = await readJsonBody(req) as Record<string, unknown>;
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['expectedRevision', 'expectedDigest', 'consent'].includes(key))
+        || !Number.isSafeInteger(body.expectedRevision) || Number(body.expectedRevision) < 0
+        || typeof body.expectedDigest !== 'string' || !/^[a-f0-9]{64}$/.test(body.expectedDigest)) {
+        throw new HttpError(400, 'invalid-argument', 'Se requieren revisión y digest válidos del proyecto guardado.');
+      }
+      if (body.consent !== true) throw new HttpError(400, 'consent-required', 'Confirme el envío de texto/audio y el consumo TTS y STT.');
+      voiceConfiguration(context.vibi);
+      const projectId = voiceRoute![1]!; const sceneId = voiceRoute![2]!;
+      const current = await store.readProject(projectId);
+      if (current.revision !== body.expectedRevision || current.digest !== body.expectedDigest) {
+        throw new ConflictError({ projectId, reason: 'digest', expectedDigest: body.expectedDigest, actualDigest: current.digest });
+      }
+      const checkCurrent = async () => {
+        const opened = await store.readProject(projectId);
+        if (opened.revision !== body.expectedRevision || opened.digest !== body.expectedDigest) {
+          throw new ConflictError({ projectId, reason: 'digest', expectedDigest: body.expectedDigest as string, actualDigest: opened.digest });
+        }
+      };
+      await checkCurrent();
+      if (current.mode === 'read-only') throw new HttpError(422, 'read-only-project', 'El proyecto es de solo lectura.');
+      if (current.project.locale !== 'es') throw new HttpError(422, 'voice-locale', 'La voz automática de este paso admite solo narración en español.');
+      const scene = current.project.scenes.find(item => item.sceneId === sceneId);
+      if (!scene) throw new HttpError(404, 'scene-not-found', 'La escena ya no existe.');
+      if (!scene.text.trim()) throw new HttpError(422, 'empty-narration', 'La escena no tiene narración.');
+      estimateWords(scene.text, scene.durationMs);
+      const generated = await synthesizeSpeech(scene.text, context.vibi, controller.signal);
+      controller.signal.throwIfAborted();
+      const inspection = await inspectMediaBounded(generated.bytes, 'audio/mpeg');
+      const audioMs = inspection.durationMs;
+      if (audioMs === null || audioMs + 300 > LIMITS.maxSceneMs) throw new AssetRejectedError('audio-too-long', 'El audio generado supera el límite de escena o no tiene duración válida. No se envió STT.');
+      const duration = Math.max(1000, Math.ceil((audioMs + 300) / 100) * 100);
+      if (current.project.output.durationMs - scene.durationMs + duration > LIMITS.maxDurationMs) throw new AssetRejectedError('audio-too-long', 'El audio generado supera los 60 s del proyecto. No se envió STT.');
+      estimateWords(scene.text, audioMs);
+      await checkCurrent();
+      controller.signal.throwIfAborted();
+      const stt = await transcribeAudio(generated.bytes, 'audio/mpeg', context.vibi, controller.signal);
+      const warnings: string[] = [];
+      const words = sttWordsToWords(stt, scene.text, audioMs, warning => warnings.push(warning));
+      controller.signal.throwIfAborted();
+      if (res.destroyed) return;
+      const result = await store.attachSceneAudio({ projectId, sceneId, bytes: generated.bytes, mimeType: 'audio/mpeg',
+        expectedRevision: body.expectedRevision as number, expectedDigest: body.expectedDigest,
+        source: { origin: 'provider', license: 'Vibi – según plan', attribution: generated.attribution }, words });
+      const opened = await store.readProject(projectId);
+      if (opened.digest !== result.digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: result.digest, actualDigest: opened.digest });
+      sendJson(res, 200, { ...result, opened, alignment: warnings.length ? 'estimated' : 'vibi', warnings });
+    } catch (error) {
+      if (error instanceof VibiError) throw new HttpError(error.code === 'vibi-timeout' ? 504 : error.code === 'vibi-config' || error.code === 'vibi-unavailable' ? 503 : 502, error.code, error.message);
+      if (controller.signal.aborted) throw new HttpError(502, 'vibi-cancelled', 'Se canceló la espera. Las tareas Vibi enviadas pueden continuar consumiendo créditos.');
+      if (error instanceof InspectionError) throw new HttpError(502, 'vibi-audio-invalid', 'Vibi devolvió un MP3 no válido. No se envió STT ni se guardó.');
+      if (error instanceof RangeError) throw new HttpError(422, 'invalid-alignment', 'La narración no admite tiempos de subtítulos válidos para esta duración.');
+      throw error;
+    } finally {
+      res.removeListener('close', cancel); context.generation.active.delete(controller);
+      if (!credits) context.generation.voiceBusy = false;
+    }
+    return;
+  }
 
   const audioRoute = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})\/scenes\/([a-z][a-z0-9_-]{0,63})\/audio$/.exec(pathname);
   if (audioRoute) {

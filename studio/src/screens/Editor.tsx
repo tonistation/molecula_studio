@@ -213,7 +213,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
     } finally { relinkLock.current = false; setRelinking(false); }
   };
 
-  const attachAudio = async (sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, alignVibi = false) => {
+  const attachAudio = async (sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, alignVibi = false, generationSignal?: AbortSignal) => {
     const current = live.current;
     if (current.dirty || operationLock.current || current.saving || readOnly || relinkLock.current || pendingSave.current) {
       throw new Error('Guarde o verifique los cambios antes de subir audio.');
@@ -222,7 +222,10 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
     relinkLock.current = true;
     setRelinking(true); setError(null); setNotice(null);
     try {
-      const result = await api.attachAudio(current.draft.projectId, sceneId, bytes, mimeType, license, current.confirmedRevision, current.digest, alignVibi);
+      const result = generationSignal
+        ? await api.generateVoice(current.draft.projectId, sceneId, current.confirmedRevision, current.digest, generationSignal)
+        : await api.attachAudio(current.draft.projectId, sceneId, bytes, mimeType, license, current.confirmedRevision, current.digest, alignVibi);
+      generationSignal?.throwIfAborted();
       if (result.receipt.sync === 'uncertain') {
         throw new ApiError(409, 'audio-unconfirmed', 'La persistencia del audio es incierta; los bytes pueden estar publicados. Verifique el disco antes de continuar.');
       }
@@ -234,7 +237,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
       setNotice(`Audio guardado · rev. ${fresh.revision}`);
       return { alignment: result.alignment, warnings: result.warnings };
     } catch (caught) {
-      setConflict(caught instanceof ApiError && (caught.code === 'conflict' || caught.code === 'audio-unconfirmed' || caught.status === 0 || caught.status >= 500));
+      setConflict(Boolean(generationSignal?.aborted) || (caught instanceof ApiError && (caught.code === 'conflict' || caught.code === 'audio-unconfirmed' || caught.status === 0 || caught.status >= 500)));
       setError(`${describeError(caught)} El borrador se conserva. Recargue desde disco para comprobar si el audio llegó a guardarse antes de reintentar.`);
       throw caught;
     } finally { relinkLock.current = false; setRelinking(false); }
@@ -344,6 +347,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
 
   return (
     <main className="screen screen-editor">
+      <div id="voice-cancel-controls" aria-live="polite" />
       <fieldset className="editor-fields" disabled={relinking}>
       <header className="editor-header">
         <div className="editor-title">
@@ -530,7 +534,8 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
         </section>
         <ScriptStep draft={draft} disabled={readOnly || relinking} onEdit={edit} codexCapability={codexCapability} />
         <VoiceStep draft={draft} dirty={dirty} disabled={readOnly || saving || needsVerification || relinking}
-          missingAssets={missingAssets} onUpload={attachAudio} />
+           missingAssets={missingAssets} onUpload={attachAudio}
+           onGenerate={(sceneId, signal) => attachAudio(sceneId, new Uint8Array(), 'audio/mpeg', '', false, signal)} />
         </div>
 
         <section className="panel">

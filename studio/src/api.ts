@@ -229,6 +229,11 @@ export async function fetchAssetBlobUrl(projectId: string, assetId: string, sign
 }
 
 export const api = {
+  generateVoice: (projectId: string, sceneId: string, revision: number, digest: string, signal?: AbortSignal) =>
+    call<{ opened: ReadResult; receipt: SaveReceipt; alignment: 'vibi' | 'estimated'; warnings: string[] }>('POST',
+      `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/voice`,
+      { expectedRevision: revision, expectedDigest: digest, consent: true }, signal),
+  vibiCredits: (signal?: AbortSignal) => call<{ credits: number }>('GET', '/api/vibi/credits', undefined, signal),
   attachAudio: (projectId: string, sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, revision: number, digest: string, alignVibi = false) =>
     callBytes<{ opened: ReadResult; receipt: SaveReceipt; revision: number; digest: string; alignment: 'vibi' | 'estimated'; warnings: string[] }>(
       `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/audio${alignVibi ? '?align=vibi' : ''}`, bytes, mimeType,

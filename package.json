@@ -17,7 +17,7 @@
     "render": "node scripts/render-project.ts",
     "build:studio": "vite build --config studio/vite.config.ts",
     "start": "npm run build:studio && npm run dev:companion",
-    "test:e2e": "npm run build:studio && node --test \"tests/e2e/**/*.e2e.ts\""
+    "test:e2e": "npm run build:studio && node --test --test-concurrency=2 \"tests/e2e/**/*.e2e.ts\""
   },
   "devDependencies": {
     "@types/node": "26.6.6",

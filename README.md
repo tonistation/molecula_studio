@@ -2,7 +2,7 @@
 
 Plan de una aplicación local para crear videos animados verticales a partir de guiones, escenas, voz y subtítulos. La visión contempla varios estilos; la primera entrega propone un único estilo 3D.
 
-**Estado: Fase 1 del ROADMAP implementada.** Existen schema 2, `ProjectStore`, companion HTTP y estudio React para crear/editar/guardar/reabrir borradores, además del renderer 3D, subtítulos, Remotion Studio y exportación MP4 silenciosa por CLI. Todavía no hay vista previa/exportación integradas en el editor, voz sintética ni proveedores. El [ROADMAP](ROADMAP.md) es el plan activo; el [backlog anterior](docs/plan/implementation-tasks.md) está congelado. Véanse el [contexto](PROJECT_CONTEXT.md) y la [evidencia histórica](docs/plan/delivery.md).
+**Estado: ROADMAP implementado hasta 4.4.** Existen schema 2, `ProjectStore`, companion HTTP y estudio React con renderer 3D, subtítulos, vista previa y exportación MP4 silenciosa por CLI/UI. Guion y dibujo ofrecen modos manual/automático con Codex CLI; voz permite subir WAV/MP3 o generar con Vibi TTS/STT, con consentimiento previo de consumo. Los proveedores se verificaron con dobles locales, no con cuentas reales. Exportar MP4 con voz sigue pendiente de 4.5. El [ROADMAP](ROADMAP.md) es el plan activo; el [backlog anterior](docs/plan/implementation-tasks.md) está congelado. Véanse el [contexto](PROJECT_CONTEXT.md) y la [evidencia histórica](docs/plan/delivery.md).
 
 ## Ejecutar localmente
 
@@ -58,6 +58,6 @@ El HTML es una propuesta visual estática, no la aplicación ni una prueba de pe
 
 **Continuidad visual requerida:** el JSON conserva entidades reutilizables y el kit tiene renderer determinista con pruebas de seek y objetos compartidos. Las variantes deben ser intencionales, sin editor avanzado en el MVP. La aprobación estética final sigue siendo humana. Véase [continuidad visual](docs/plan/visual-continuity.md).
 
-Guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. El primer MP4 silencioso del storyboard está exportado y verificado (H.264, 1080×1920, 30 fps, 12 s). Voz, proveedores y flujo integrado siguen pendientes en el [ROADMAP](ROADMAP.md). No se afirma rendimiento garantizado ni aprobación estética humana. Riesgos históricos de save/retención están documentados en [API](docs/plan/api-contracts.md).
+Guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. El primer MP4 silencioso del storyboard está exportado y verificado (H.264, 1080×1920, 30 fps, 12 s). Hay voz manual/automática con reproducción en vista previa; exportar con voz, verificar proveedores reales y pulir el flujo guiado siguen pendientes en el [ROADMAP](ROADMAP.md). No se afirma rendimiento garantizado ni aprobación estética humana. Riesgos históricos de save/retención están documentados en [API](docs/plan/api-contracts.md).
 
 Repositorio de referencia: [tonistation/molecula_studio](https://github.com/tonistation/molecula_studio).

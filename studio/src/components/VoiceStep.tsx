@@ -3,16 +3,19 @@ import type { Project } from '../../../src/shared/schema/types.ts';
 import { LIMITS } from '../../../src/shared/schema/limits.ts';
 import { api, describeError } from '../api.ts';
 import { narrationScript, voiceStatuses } from '../voice-model.ts';
+import { AutoVoiceStep, type GenerateVoice } from './AutoVoiceStep.tsx';
 
-export function VoiceStep({ draft, dirty, disabled, missingAssets, onUpload }: {
+export function VoiceStep({ draft, dirty, disabled, missingAssets, onUpload, onGenerate }: {
   draft: Project; dirty: boolean; disabled: boolean; missingAssets: string[];
   onUpload: (sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, alignVibi?: boolean) => Promise<{ alignment: 'vibi' | 'estimated'; warnings: string[] }>;
+  onGenerate: GenerateVoice;
 }) {
   const [license, setLicense] = useState('');
   const [fallback, setFallback] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
   const [vibi, setVibi] = useState(false);
   const [alignVibi, setAlignVibi] = useState(false);
   const [pending, setPending] = useState<{ project: Project; sceneId: string; bytes: Uint8Array;
@@ -38,7 +41,7 @@ export function VoiceStep({ draft, dirty, disabled, missingAssets, onUpload }: {
     catch { setFallback(text); setNotice('Seleccione y copie el guion de abajo.'); }
   };
   const upload = async (sceneId: string, file: File) => {
-    if (disabled || dirty || busy) return;
+    if (disabled || dirty || busy || autoBusy) return;
     setBusy(true); setError(''); setNotice('');
     try {
       if (file.size > LIMITS.maxAssetBytes) throw new Error('El archivo supera el máximo de 50 MiB.');
@@ -60,7 +63,7 @@ export function VoiceStep({ draft, dirty, disabled, missingAssets, onUpload }: {
     finally { setBusy(false); }
   };
   const confirmAlignment = async () => {
-    if (!pending || pending.project !== draft || disabled || dirty || busy) return;
+    if (!pending || pending.project !== draft || disabled || dirty || busy || autoBusy) return;
     setBusy(true); setError(''); setNotice('');
     try {
       const result = await onUpload(pending.sceneId, pending.bytes, pending.mimeType, pending.license, true);
@@ -95,13 +98,14 @@ export function VoiceStep({ draft, dirty, disabled, missingAssets, onUpload }: {
     <ol className="scene-list">{draft.scenes.map((scene, index) => <li className="voice-scene" key={scene.sceneId}>
       <p>{index + 1}. {scene.title} · <span>{statuses?.project === draft ? statuses.values[scene.sceneId] : 'Comprobando voz…'}</span></p>
       <label className="field"><span>Subir audio · escena {index + 1}</span>
-        <input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" disabled={disabled || dirty || busy || Boolean(pending) || !license.trim()}
+        <input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" disabled={disabled || dirty || busy || autoBusy || Boolean(pending) || !license.trim()}
           onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void upload(scene.sceneId, file); }} />
       </label>
     </li>)}</ol>
     {busy && <p role="status">Subiendo audio…</p>}
     {notice && <p role="status">{notice}</p>}
     {error && <p role="alert">{error}</p>}
+    <AutoVoiceStep draft={draft} dirty={dirty} disabled={disabled || busy || Boolean(pending)} configured={vibi} onGenerate={onGenerate} onBusy={setAutoBusy} />
     <p className="muted small">La vista previa reproduce voz; exportar con voz sigue pendiente del paso 4.5.</p>
   </section>;
 }
