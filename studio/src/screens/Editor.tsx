@@ -213,7 +213,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
     } finally { relinkLock.current = false; setRelinking(false); }
   };
 
-  const attachAudio = async (sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string) => {
+  const attachAudio = async (sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, alignVibi = false) => {
     const current = live.current;
     if (current.dirty || operationLock.current || current.saving || readOnly || relinkLock.current || pendingSave.current) {
       throw new Error('Guarde o verifique los cambios antes de subir audio.');
@@ -222,7 +222,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
     relinkLock.current = true;
     setRelinking(true); setError(null); setNotice(null);
     try {
-      const result = await api.attachAudio(current.draft.projectId, sceneId, bytes, mimeType, license, current.confirmedRevision, current.digest);
+      const result = await api.attachAudio(current.draft.projectId, sceneId, bytes, mimeType, license, current.confirmedRevision, current.digest, alignVibi);
       if (result.receipt.sync === 'uncertain') {
         throw new ApiError(409, 'audio-unconfirmed', 'La persistencia del audio es incierta; los bytes pueden estar publicados. Verifique el disco antes de continuar.');
       }
@@ -232,6 +232,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
       live.current = { draft: fresh.project, dirty: false, saving: false, confirmedRevision: fresh.revision, digest: fresh.digest };
       setDirty(false); setConflict(false);
       setNotice(`Audio guardado · rev. ${fresh.revision}`);
+      return { alignment: result.alignment, warnings: result.warnings };
     } catch (caught) {
       setConflict(caught instanceof ApiError && (caught.code === 'conflict' || caught.code === 'audio-unconfirmed' || caught.status === 0 || caught.status >= 500));
       setError(`${describeError(caught)} El borrador se conserva. Recargue desde disco para comprobar si el audio llegó a guardarse antes de reintentar.`);

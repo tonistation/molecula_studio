@@ -8,6 +8,8 @@ import type { renderProject } from '../render/render-service.ts';
 import { capabilities } from '../providers/capabilities.ts';
 import { generateScript, generateDrawing, GenerationError, type CodexOptions } from '../providers/codex-cli.ts';
 import { estimateWords } from '../../shared/voice/estimate.ts';
+import { sttWordsToWords } from '../../shared/voice/alignment.ts';
+import { transcribeAudio, VibiError, type VibiOptions } from '../providers/vibi.ts';
 import { inspectMediaBounded } from '../store/inspection-runner.ts';
 import { InspectionError } from '../store/media-inspect.ts';
 
@@ -56,6 +58,8 @@ export interface CompanionServerOptions {
   renderer?: typeof renderProject;
   /** Test-only fake executable environment/deadlines. */
   codexOptions?: CodexOptions;
+  /** Test-only local STT transport, key and deadlines. No production URL env override. */
+  vibiOptions?: VibiOptions;
 }
 
 export interface CompanionServer {
@@ -96,9 +100,10 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
   const state = { port: 0, origin: '' };
   const renders = createRenderJobs(store, await realpath(options.workspaceRoot), options.renderer);
   const generation = { options: options.codexOptions ?? {}, active: new Set<AbortController>(), closing: false };
+  const vibi = { apiKey: (options.codexOptions?.env ?? process.env).VIBI_API_KEY ?? '', ...options.vibiOptions };
 
   const server = createServer((req, res) => {
-    void handleRequest(req, res, { store, token, state, renders, generation, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
+    void handleRequest(req, res, { store, token, state, renders, generation, vibi, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -140,6 +145,7 @@ interface HandlerContext {
   extraOrigins: string[] | undefined;
   renders: ReturnType<typeof createRenderJobs>;
   generation: { options: CodexOptions; active: Set<AbortController>; closing: boolean };
+  vibi: VibiOptions;
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, context: HandlerContext): Promise<void> {
@@ -246,8 +252,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   if (audioRoute) {
     if (method !== 'PUT') throw methodNotAllowed('PUT');
     const align = new URL(req.url!, context.state.origin).searchParams.get('align');
-    if (align === 'vibi') throw new HttpError(501, 'alignment-unavailable', 'La alineación Vibi estará disponible tras el paso 4.3. No se contactó al proveedor ni se generó costo.');
-    if (align !== null) throw new HttpError(400, 'invalid-argument', 'Alineación no compatible. Omita align para usar tiempos estimados gratuitos.');
+    if (align !== null && align !== 'vibi') throw new HttpError(400, 'invalid-argument', 'Alineación no compatible. Omita align para usar tiempos estimados gratuitos.');
+    if (align === 'vibi' && req.headers['x-vibi-consent'] !== '1') throw new HttpError(400, 'consent-required', 'Confirme el envío del audio y el consumo de créditos Vibi antes de alinear.');
+    if (align === 'vibi' && !context.vibi.apiKey?.trim()) throw new HttpError(503, 'alignment-unavailable', 'Vibi no está configurado. Use subtítulos estimados gratuitos.');
     const mimeType = req.headers['content-type'];
     if (mimeType !== 'audio/wav' && mimeType !== 'audio/mpeg') throw new HttpError(415, 'unsupported-media-type', 'Suba un archivo WAV o MP3.');
     const revision = req.headers['x-expected-revision'];
@@ -269,6 +276,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     if (current.revision !== Number(revision) || current.digest !== digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: digest, actualDigest: current.digest });
     const scene = current.project.scenes.find(item => item.sceneId === sceneId);
     if (!scene) throw new HttpError(404, 'scene-not-found', 'La escena ya no existe.');
+    if (current.mode === 'read-only') throw new HttpError(422, 'read-only-project', 'El proyecto es de solo lectura. No se envió audio a Vibi.');
     const bytes = await readRawBody(req, ASSET_LIMIT);
     let audioMs: number;
     try {
@@ -280,16 +288,37 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       throw error;
     }
     if (audioMs + 300 > LIMITS.maxSceneMs) throw new AssetRejectedError('audio-too-long', 'El audio más 300 ms de margen supera los 15 s por escena.');
+    const nextDuration = Math.max(1000, Math.ceil((audioMs + 300) / 100) * 100);
+    if (current.project.output.durationMs - scene.durationMs + nextDuration > LIMITS.maxDurationMs) {
+      throw new AssetRejectedError('audio-too-long', 'El audio haría que el proyecto supere los 60 s. No se envió a Vibi.');
+    }
     let words;
     try { words = estimateWords(scene.text, audioMs); }
     catch (error) { throw new HttpError(422, 'invalid-alignment', error instanceof RangeError ? error.message : 'No se pudieron estimar los tiempos.'); }
+    const warnings: string[] = [];
+    if (align === 'vibi') {
+      if (context.generation.closing) throw new HttpError(503, 'companion-closing', 'El companion se está cerrando.');
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      context.generation.active.add(controller);
+      res.once('close', cancel);
+      try {
+        const stt = await transcribeAudio(bytes, mimeType, context.vibi, controller.signal);
+        controller.signal.throwIfAborted();
+        words = sttWordsToWords(stt, scene.text, audioMs, warning => warnings.push(warning));
+      } catch (error) {
+        if (error instanceof VibiError) throw new HttpError(error.code === 'vibi-timeout' ? 504 : 502, error.code, error.message);
+        throw new HttpError(502, 'vibi-cancelled', 'Se canceló la alineación. La tarea enviada puede continuar en Vibi.');
+      } finally { res.removeListener('close', cancel); context.generation.active.delete(controller); }
+    }
+    if (res.destroyed) return;
     const result = await store.attachSceneAudio({ projectId, sceneId, bytes, mimeType,
       expectedRevision: Number(revision), expectedDigest: digest,
       source: { origin: 'user', license, attribution: '' }, words });
     // Re-reading returns the canonical disk digest, not a recomputed content digest.
     const opened = await store.readProject(projectId);
     if (opened.digest !== result.digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: result.digest, actualDigest: opened.digest });
-    sendJson(res, 200, { ...result, opened });
+    sendJson(res, 200, { ...result, opened, alignment: align === 'vibi' && !warnings.length ? 'vibi' : 'estimated', warnings });
     return;
   }
 
@@ -303,7 +332,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     const cancel = () => controller.abort();
     res.once('close', cancel);
     try {
-      const result = capability ? await capabilities(context.generation.options, controller.signal)
+      const result = capability ? { ...await capabilities(context.generation.options, controller.signal), vibi: Boolean(context.vibi.apiKey?.trim()) }
         : await (pathname === '/api/script/generate' ? generateScript : generateDrawing)(body, context.generation.options, controller.signal);
       sendJson(res, 200, result);
     } catch (error) {

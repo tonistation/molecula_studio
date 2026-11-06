@@ -229,10 +229,10 @@ export async function fetchAssetBlobUrl(projectId: string, assetId: string, sign
 }
 
 export const api = {
-  attachAudio: (projectId: string, sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, revision: number, digest: string) =>
-    callBytes<{ opened: ReadResult; receipt: SaveReceipt; revision: number; digest: string }>(
-      `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/audio`, bytes, mimeType,
-      { 'x-expected-revision': String(revision), 'x-expected-digest': digest, 'x-asset-license': encodeURIComponent(license) }),
+  attachAudio: (projectId: string, sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, revision: number, digest: string, alignVibi = false) =>
+    callBytes<{ opened: ReadResult; receipt: SaveReceipt; revision: number; digest: string; alignment: 'vibi' | 'estimated'; warnings: string[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/audio${alignVibi ? '?align=vibi' : ''}`, bytes, mimeType,
+      { 'x-expected-revision': String(revision), 'x-expected-digest': digest, 'x-asset-license': encodeURIComponent(license), ...(alignVibi ? { 'x-vibi-consent': '1' } : {}) }),
   capabilities: (signal?: AbortSignal) => call<{ codex: boolean; vibi: boolean }>('GET', '/api/capabilities', undefined, signal),
   generateScript: (input: import('../../src/shared/script/prompt.ts').ScriptPromptInput, signal?: AbortSignal) =>
     call<import('../../src/shared/script/schema.ts').ScriptProposal>('POST', '/api/script/generate', input, signal),

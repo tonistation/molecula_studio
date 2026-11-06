@@ -12,7 +12,7 @@ import { wavBytes, mp3Bytes } from '../helpers/media.ts';
 
 test('manual voice HTTP: authenticated raw upload saves inspected duration, estimates, provenance and current bindings', async t => {
   const root = await mkdtemp(join(tmpdir(), 'manual-voice-'));
-  const server = await startCompanionServer({ workspaceRoot: root });
+  const server = await startCompanionServer({ workspaceRoot: root, vibiOptions: { apiKey: '' } });
   t.after(async () => { await server.close(); await rm(root, { recursive: true, force: true }); });
   const { projectId } = await server.store.importProject({ text: fixtureText('storyboard') });
   let current = await server.store.readProject(projectId);
@@ -34,7 +34,8 @@ test('manual voice HTTP: authenticated raw upload saves inspected duration, esti
     [{ 'x-expected-revision': String(current.revision + 1) }, 409],
     [{ 'x-expected-digest': '0'.repeat(64) }, 409],
   ] as const) assert.equal((await upload(undefined, extra)).status, expected, JSON.stringify(extra));
-  assert.equal((await upload(undefined, {}, '?align=vibi')).status, 501);
+  assert.equal((await upload(undefined, {}, '?align=vibi')).status, 400, 'explicit spending consent required even with align query');
+  assert.equal((await upload(undefined, { 'x-vibi-consent': '1' }, '?align=vibi')).status, 503);
   assert.equal((await upload(undefined, {}, '?align=other')).status, 400);
   assert.equal((await upload(new Uint8Array([1, 2, 3]))).status, 415);
   assert.equal((await upload(wavBytes({ durationMs: 14800 }))).status, 422);

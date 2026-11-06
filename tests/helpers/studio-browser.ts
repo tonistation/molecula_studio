@@ -11,6 +11,7 @@ import { startCompanionServer } from '../../src/companion/server/http.ts';
 import { ProjectStore } from '../../src/companion/store/project-store.ts';
 import { createNodeFsOps } from '../../src/companion/store/fs-ops.ts';
 import type { CodexOptions } from '../../src/companion/providers/codex-cli.ts';
+import type { VibiOptions } from '../../src/companion/providers/vibi.ts';
 
 /** DOM/logic only. Faults wrap real filesystem operations; no fake save receipts. */
 export async function withStudio(t: TestContext, run: (args: {
@@ -18,7 +19,7 @@ export async function withStudio(t: TestContext, run: (args: {
   consoleErrors: string[];
   resourceErrors: string[];
   restartCompanion: () => Promise<ProjectStore>;
-}) => Promise<void>, engine: 'lightpanda' | 'chromium' = 'lightpanda', codexOptions?: CodexOptions): Promise<void> {
+}) => Promise<void>, engine: 'lightpanda' | 'chromium' = 'lightpanda', codexOptions?: CodexOptions, vibiOptions?: VibiOptions): Promise<void> {
   if (engine === 'lightpanda') {
     try { execFileSync('lightpanda', ['version'], { stdio: 'ignore', env: { ...process.env, LIGHTPANDA_DISABLE_TELEMETRY: 'true' } }); }
     catch { t.skip('Lightpanda unavailable; not a pass'); return; }
@@ -46,7 +47,7 @@ export async function withStudio(t: TestContext, run: (args: {
   await store.init();
   let handle = await startCompanionServer({ workspaceRoot: root, store,
     studioDir: fileURLToPath(new URL('../../dist/studio', import.meta.url)), token: 'f06-token',
-    codexOptions: codexOptions ?? { env: { PATH: '' } } });
+    codexOptions: codexOptions ?? { env: { PATH: '' } }, vibiOptions });
   const restartCompanion = async () => {
     const port = handle.port;
     await handle.close();
@@ -54,7 +55,7 @@ export async function withStudio(t: TestContext, run: (args: {
     // explicitly configured test token isolates retry safety from token rotation.
     handle = await startCompanionServer({ workspaceRoot: root, port,
       studioDir: fileURLToPath(new URL('../../dist/studio', import.meta.url)), token: 'f06-token',
-      codexOptions: codexOptions ?? { env: { PATH: '' } } });
+      codexOptions: codexOptions ?? { env: { PATH: '' } }, vibiOptions });
     return handle.store;
   };
   const port = await new Promise<number>((resolve, reject) => {
