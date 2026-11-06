@@ -86,7 +86,7 @@ test('workflow: keyboard navigation, silent readiness, desktop/mobile and saved 
     await voice.getByText(/1\..*desactualizada/).waitFor();
     await voice.getByText(/2\..*lista/).waitFor();
     await nav.getByText('Estado del proyecto guardado.', { exact: false }).waitFor();
-    // No new gating or export confirmation from the future step 5.2.
+    // Stale voice keeps the export entry point enabled; confirmation follows on click.
     assert.ok(await page.getByRole('button', { name: 'Exportar MP4', exact: true }).isEnabled());
     assert.deepEqual(consoleErrors, []);
     assert.deepEqual(resourceErrors, []);

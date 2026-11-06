@@ -445,7 +445,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
         <div>
         <div id="workflow-preview" className="workflow-target" role="group" tabIndex={-1} aria-label="Vista previa y exportar">
         <PreviewPlayer draft={draft} seek={previewSeek} missingAssets={missingAssets} />
-        <ExportPanel projectId={draft.projectId} revision={confirmedRevision} dirty={dirty}
+        <ExportPanel draft={draft} revision={confirmedRevision} dirty={dirty} missingAssets={missingAssets}
           disabled={readOnly || saving || needsVerification || relinking} />
         </div>
         <section className="panel workflow-target" id="workflow-idea" tabIndex={-1} aria-label="Configuración inicial">

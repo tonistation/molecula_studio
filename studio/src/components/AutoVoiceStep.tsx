@@ -5,8 +5,9 @@ import { api, describeError } from '../api.ts';
 
 export type GenerateVoice = (sceneId: string, signal: AbortSignal) => Promise<{ alignment: 'vibi' | 'estimated'; warnings: string[] }>;
 
-export function AutoVoiceStep({ draft, dirty, disabled, configured, onGenerate, onBusy }: {
+export function AutoVoiceStep({ draft, dirty, disabled, configured, onGenerate, onBusy, statuses }: {
   draft: Project; dirty: boolean; disabled: boolean; configured: boolean; onGenerate: GenerateVoice; onBusy: (busy: boolean) => void;
+  statuses: Record<string, string>;
 }) {
   const [pending, setPending] = useState<{ project: Project; ids: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,7 +71,7 @@ export function AutoVoiceStep({ draft, dirty, disabled, configured, onGenerate, 
     <button type="button" disabled={blocked || !draft.scenes.length || draft.scenes.some(scene => !scene.text.trim())}
       onClick={() => setPending({ project: draft, ids: draft.scenes.map(scene => scene.sceneId) })}>Generar todas las voces</button>
     {draft.scenes.map((scene, index) => <button type="button" key={scene.sceneId} disabled={blocked || !scene.text.trim()}
-      onClick={() => setPending({ project: draft, ids: [scene.sceneId] })}>Generar voz · escena {index + 1}</button>)}
+      onClick={() => setPending({ project: draft, ids: [scene.sceneId] })}>{statuses[scene.sceneId] === 'desactualizada' ? `Regenerar esta escena · escena ${index + 1}` : `Generar voz · escena ${index + 1}`}</button>)}
     {pending && pending.project === draft && <section aria-label="Confirmar generación Vibi">
       <p>Se enviarán {characters} caracteres de {selected.length} escenas a TTS y luego sus audios a STT. Se reemplazará la voz de esas escenas y se guardará el proyecto.</p>
       <p>TTS cobra por caracteres y STT por duración del audio generado, todavía desconocida. Duración actual de referencia: {(selected.reduce((sum, scene) => sum + scene.durationMs, 0) / 1000).toFixed(1)} s; no es una cotización. Tarifa exacta no disponible: consulte su plan Vibi.</p>

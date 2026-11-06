@@ -96,7 +96,7 @@ export function VoiceStep({ draft, dirty, disabled, missingAssets, onUpload, onG
       <input value={license} maxLength={200} disabled={disabled || busy} placeholder="Indique el permiso real; no se presupone ningún derecho" onChange={event => setLicense(event.target.value)} />
     </label>
     <ol className="scene-list">{draft.scenes.map((scene, index) => <li className="voice-scene" key={scene.sceneId}>
-      <p>{index + 1}. {scene.title} · <span>{statuses?.project === draft ? statuses.values[scene.sceneId] : 'Comprobando voz…'}</span></p>
+      <p>{index + 1}. {scene.title} · <span>{statuses?.project === draft ? statuses.values[scene.sceneId] === 'desactualizada' ? 'Voz desactualizada' : statuses.values[scene.sceneId] : 'Comprobando voz…'}</span></p>
       <label className="field"><span>Subir audio · escena {index + 1}</span>
         <input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" disabled={disabled || dirty || busy || autoBusy || Boolean(pending) || !license.trim()}
           onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void upload(scene.sceneId, file); }} />
@@ -105,7 +105,8 @@ export function VoiceStep({ draft, dirty, disabled, missingAssets, onUpload, onG
     {busy && <p role="status">Subiendo audio…</p>}
     {notice && <p role="status">{notice}</p>}
     {error && <p role="alert">{error}</p>}
-    <AutoVoiceStep draft={draft} dirty={dirty} disabled={disabled || busy || Boolean(pending)} configured={vibi} onGenerate={onGenerate} onBusy={setAutoBusy} />
-    <p className="muted small">La vista previa reproduce voz; exportar con voz sigue pendiente del paso 4.5.</p>
+    <AutoVoiceStep draft={draft} dirty={dirty} disabled={disabled || busy || Boolean(pending)} configured={vibi} onGenerate={onGenerate} onBusy={setAutoBusy}
+      statuses={statuses?.project === draft ? statuses.values : {}} />
+    <p className="muted small">La vista previa reproduce la voz guardada. Si está desactualizada, puede regenerarla con Vibi o subir un audio nuevo con permiso de uso. Exportar no regenera audio.</p>
   </section>;
 }

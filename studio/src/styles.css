@@ -15,6 +15,21 @@
   --info-line: #a9cbbd;
 }
 
+.export-confirmation {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  border: 1px solid var(--warn-line);
+  border-radius: 12px;
+  padding: 24px;
+  background: var(--warn-bg);
+  color: var(--ink);
+}
+.export-confirmation::backdrop { background: rgb(29 28 26 / 50%); }
+.export-confirmation h3 { margin-top: 0; }
+.export-confirmation li { overflow-wrap: anywhere; }
+.export-confirmation button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
 * {
   box-sizing: border-box;
 }

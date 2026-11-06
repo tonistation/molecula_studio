@@ -130,6 +130,9 @@ test('voiced UI export downloads synchronized AAC and matches the CLI decoded au
     const original = await readFile(input);
     const panel = page.getByRole('region', { name: 'Exportar video', exact: true });
     await panel.getByRole('button', { name: 'Exportar MP4', exact: true }).click();
+    // This fixture deliberately has no historical bindings for its attached audio.
+    await page.getByRole('dialog', { name: 'Exportar con voz desactualizada' })
+      .getByRole('button', { name: 'Exportar con los audios guardados', exact: true }).click();
     await panel.getByText('Exportación completada', { exact: true }).waitFor();
     const output = await panel.locator('.export-path').innerText();
     await assertRenderedAudio(output);
