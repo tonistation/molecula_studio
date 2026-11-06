@@ -7,6 +7,7 @@ import { PreviewPlayer } from '../components/PreviewPlayer.tsx';
 import { ExportPanel } from '../components/ExportPanel.tsx';
 import { ScriptStep } from '../components/ScriptStep.tsx';
 import { DrawingStep } from '../components/DrawingStep.tsx';
+import { SceneAdjustments } from '../components/SceneAdjustments.tsx';
 import { VoiceStep } from '../components/VoiceStep.tsx';
 import { Stepper } from '../components/Stepper.tsx';
 import { useCodexCapability } from '../components/GenerationMode.tsx';
@@ -633,6 +634,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
                       Eliminar
                     </button>
                   </div>
+                  <SceneAdjustments draft={draft} sceneId={scene.sceneId} disabled={readOnly || relinking} onEdit={edit} />
                   <DrawingStep draft={draft} sceneId={scene.sceneId} disabled={readOnly || relinking} onEdit={edit} codexCapability={codexCapability} />
                 </li>
               ))}
