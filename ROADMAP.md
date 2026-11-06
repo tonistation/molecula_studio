@@ -407,6 +407,7 @@ Referencia: <https://vibi.pro/docs> (página con JavaScript; abrir en navegador)
   - Polling de `GET /v1/history/{id}` hasta `completed`. Descargar `result.audio_url` (MP3) con la misma clave.
   - Pasar ese MP3 por el STT de 4.3 → `words`. Guardar vía `attachSceneAudio` con `source: { origin: 'provider', license: 'Vibi – según plan', attribution: '<provider>/<voice_id>' }`.
   - Configuración por env: `VIBI_API_KEY`, `VIBI_VOICE_ID`, `VIBI_PROVIDER` (por defecto `elevenlabs`), `VIBI_MODEL_ID` (por defecto `eleven_multilingual_v2`).
+  - **Excepción de idioma aprobada:** usar el formato documentado por proveedor: `es` en ElevenLabs/CapCut y nombre de idioma en MiniMax. Para MiniMax se confirma `Spanish` contra `GET /v1/languages?provider=minimax` antes del envío de pago; si no está disponible, se rechaza sin adivinar. MiniMax requiere modelo explícito; el modelo predeterminado anterior corresponde a ElevenLabs, y CapCut usa `capcut` según su documentación. No cambia el schema. El panel oficial «Languages» aclara además que el backend normaliza códigos y nombres; el bloqueo inicial por incompatibilidad absoluta fue demasiado estricto.
   - UI: confirmación con caracteres a enviar antes de gastar (TTS cobra por carácter y STT por duración; `GET` de la cuenta en «Auth» devuelve créditos disponibles); «Generar todas» secuencial con progreso; un fallo no deshace las escenas ya generadas.
 - **Aceptación:** [ ] con el servidor falso: audio, palabras y bindings guardados; clave ausente en logs y en `project.json`.
 
