@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { Worker } from 'node:worker_threads';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startCompanionServer } from '../../src/companion/server/http.ts';
@@ -9,6 +10,84 @@ import { fixtureText } from '../helpers/fixtures.ts';
 import { wavBytes } from '../helpers/media.ts';
 import { bindingDigests } from '../../src/shared/digests.ts';
 import { estimateWords } from '../../src/shared/voice/estimate.ts';
+
+for (const action of ['disconnect', 'save'] as const) {
+  test(`manual alignment never submits STT after ${action} during worker inspection`, { timeout: 15000 }, async t => {
+    const root = await mkdtemp(join(tmpdir(), 'vibi-pre-submit-'));
+    let posts = 0;
+    const provider = createServer((req, res) => {
+      req.resume();
+      if (req.method === 'POST') posts++;
+      res.writeHead(500).end();
+    });
+    await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve));
+    const companion = await startCompanionServer({ workspaceRoot: root, vibiOptions: {
+      apiKey: 'fake-only-key', baseUrl: `http://127.0.0.1:${(provider.address() as { port: number }).port}`,
+    } });
+    t.after(async () => { await companion.close(); await new Promise<void>(resolve => provider.close(() => resolve())); await rm(root, { recursive: true, force: true }); });
+    const { projectId } = await companion.store.importProject({ text: fixtureText('storyboard') });
+    const current = await companion.store.readProject(projectId);
+    const projectDir = join(root, projectId);
+    const snapshot = async () => {
+      const entries = await readdir(projectDir, { recursive: true, withFileTypes: true });
+      return Promise.all(entries.filter(entry => entry.isFile()).sort((a, b) => join(a.parentPath, a.name).localeCompare(join(b.parentPath, b.name))).map(async entry => {
+        const path = join(entry.parentPath, entry.name);
+        return [path, await readFile(path)] as const;
+      }));
+    };
+    let release!: () => void; let inspected!: () => void; let closed!: () => void; let cleaned!: () => void;
+    const inspection = new Promise<void>(resolve => { inspected = resolve; });
+    const disconnected = new Promise<void>(resolve => { closed = resolve; });
+    const cleanup = new Promise<void>(resolve => { cleaned = resolve; });
+    const once = Worker.prototype.once;
+    let released = false;
+    let exit: (() => void) | undefined;
+    // Hold inspection callbacks, not native worker shutdown, until the race is committed.
+    t.mock.method(Worker.prototype, 'once', function (this: Worker, event: string | symbol, listener: (...args: unknown[]) => void) {
+      if (event === 'message') return once.call(this, event, (...args: unknown[]) => {
+        release = () => { released = true; listener(...args); exit?.(); };
+        inspected();
+      });
+      if (event === 'exit' && !released) return once.call(this, event, (...args: unknown[]) => {
+        if (released) listener(...args);
+        else exit = () => listener(...args);
+      });
+      return once.call(this, event, listener);
+    });
+    companion.server.on('request', (_req, res) => {
+      res.once('close', closed);
+      const removeListener = res.removeListener;
+      t.mock.method(res, 'removeListener', function (this: typeof res, event: string | symbol, listener: (...args: unknown[]) => void) {
+        const result = removeListener.call(this, event, listener);
+        if (event === 'close' && listener.name === 'cancel') cleaned();
+        return result;
+      });
+    });
+    const controller = new AbortController();
+    const response = fetch(`${companion.origin}/api/projects/${projectId}/scenes/${current.project.scenes[0]!.sceneId}/audio?align=vibi`, {
+      method: 'PUT', signal: controller.signal, headers: { authorization: `Bearer ${companion.token}`, origin: companion.origin,
+        'content-type': 'audio/wav', 'x-expected-revision': String(current.revision), 'x-expected-digest': current.digest,
+        'x-asset-license': 'Own test', 'x-vibi-consent': '1' }, body: new Uint8Array(wavBytes({ durationMs: 2000 })).buffer,
+    });
+    await inspection;
+    if (action === 'disconnect') {
+      controller.abort(); await assert.rejects(response); await disconnected;
+    } else {
+      await companion.store.saveProject({ projectId, project: { ...current.project, revision: current.revision + 1, idea: 'Concurrent winner' },
+        expectedRevision: current.revision, expectedDigest: current.digest, operationId: 'inspection-winner' });
+    }
+    const winner = await snapshot();
+    release();
+    if (action === 'save') {
+      const result = await response;
+      assert.equal(result.status, 409, await result.text());
+    }
+    await cleanup;
+    assert.equal(posts, 0);
+    assert.deepEqual(await snapshot(), winner);
+    if (action === 'disconnect') assert.equal((await companion.store.readProject(projectId)).digest, current.digest);
+  });
+}
 
 test('manual Vibi alignment requires consent, saves authoritative words/bindings, warns on mismatch and preserves disk on failure', async t => {
   const root = await mkdtemp(join(tmpdir(), 'vibi-http-'));

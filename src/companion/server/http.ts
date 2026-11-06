@@ -346,54 +346,68 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     }
     const projectId = audioRoute[1]!;
     const sceneId = audioRoute[2]!;
-    const current = await store.readProject(projectId);
-    if (current.revision !== Number(revision) || current.digest !== digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: digest, actualDigest: current.digest });
-    const scene = current.project.scenes.find(item => item.sceneId === sceneId);
-    if (!scene) throw new HttpError(404, 'scene-not-found', 'La escena ya no existe.');
-    if (current.mode === 'read-only') throw new HttpError(422, 'read-only-project', 'El proyecto es de solo lectura. No se envió audio a Vibi.');
-    const bytes = await readRawBody(req, ASSET_LIMIT);
-    let audioMs: number;
-    try {
-      const inspection = await inspectMediaBounded(bytes, mimeType);
-      if (inspection.durationMs === null) throw new AssetRejectedError('unreadable', 'No se pudo determinar la duración del audio.');
-      audioMs = inspection.durationMs;
-    } catch (error) {
-      if (error instanceof InspectionError) throw new AssetRejectedError(error.reason, error.message);
-      throw error;
-    }
-    if (audioMs + 300 > LIMITS.maxSceneMs) throw new AssetRejectedError('audio-too-long', 'El audio más 300 ms de margen supera los 15 s por escena.');
-    const nextDuration = Math.max(1000, Math.ceil((audioMs + 300) / 100) * 100);
-    if (current.project.output.durationMs - scene.durationMs + nextDuration > LIMITS.maxDurationMs) {
-      throw new AssetRejectedError('audio-too-long', 'El audio haría que el proyecto supere los 60 s. No se envió a Vibi.');
-    }
-    let words;
-    try { words = estimateWords(scene.text, audioMs); }
-    catch (error) { throw new HttpError(422, 'invalid-alignment', error instanceof RangeError ? error.message : 'No se pudieron estimar los tiempos.'); }
-    const warnings: string[] = [];
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
     if (align === 'vibi') {
       if (context.generation.closing) throw new HttpError(503, 'companion-closing', 'El companion se está cerrando.');
-      const controller = new AbortController();
-      const cancel = () => controller.abort();
       context.generation.active.add(controller);
       res.once('close', cancel);
-      try {
-        const stt = await transcribeAudio(bytes, mimeType, context.vibi, controller.signal);
-        controller.signal.throwIfAborted();
-        words = sttWordsToWords(stt, scene.text, audioMs, warning => warnings.push(warning));
-      } catch (error) {
-        if (error instanceof VibiError) throw new HttpError(error.code === 'vibi-timeout' ? 504 : 502, error.code, error.message);
-        throw new HttpError(502, 'vibi-cancelled', 'Se canceló la alineación. La tarea enviada puede continuar en Vibi.');
-      } finally { res.removeListener('close', cancel); context.generation.active.delete(controller); }
+      if (res.destroyed || req.aborted) cancel();
     }
-    if (res.destroyed) return;
-    const result = await store.attachSceneAudio({ projectId, sceneId, bytes, mimeType,
-      expectedRevision: Number(revision), expectedDigest: digest,
-      source: { origin: 'user', license, attribution: '' }, words });
-    // Re-reading returns the canonical disk digest, not a recomputed content digest.
-    const opened = await store.readProject(projectId);
-    if (opened.digest !== result.digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: result.digest, actualDigest: opened.digest });
-    sendJson(res, 200, { ...result, opened, alignment: align === 'vibi' && !warnings.length ? 'vibi' : 'estimated', warnings });
-    return;
+    try {
+      controller.signal.throwIfAborted();
+      const current = await store.readProject(projectId);
+      if (current.revision !== Number(revision) || current.digest !== digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: digest, actualDigest: current.digest });
+      const scene = current.project.scenes.find(item => item.sceneId === sceneId);
+      if (!scene) throw new HttpError(404, 'scene-not-found', 'La escena ya no existe.');
+      if (current.mode === 'read-only') throw new HttpError(422, 'read-only-project', 'El proyecto es de solo lectura. No se envió audio a Vibi.');
+      const bytes = await readRawBody(req, ASSET_LIMIT);
+      let audioMs: number;
+      try {
+        const inspection = await inspectMediaBounded(bytes, mimeType);
+        if (inspection.durationMs === null) throw new AssetRejectedError('unreadable', 'No se pudo determinar la duración del audio.');
+        audioMs = inspection.durationMs;
+      } catch (error) {
+        if (error instanceof InspectionError) throw new AssetRejectedError(error.reason, error.message);
+        throw error;
+      }
+      if (audioMs + 300 > LIMITS.maxSceneMs) throw new AssetRejectedError('audio-too-long', 'El audio más 300 ms de margen supera los 15 s por escena.');
+      const nextDuration = Math.max(1000, Math.ceil((audioMs + 300) / 100) * 100);
+      if (current.project.output.durationMs - scene.durationMs + nextDuration > LIMITS.maxDurationMs) {
+        throw new AssetRejectedError('audio-too-long', 'El audio haría que el proyecto supere los 60 s. No se envió a Vibi.');
+      }
+      let words;
+      try { words = estimateWords(scene.text, audioMs); }
+      catch (error) { throw new HttpError(422, 'invalid-alignment', error instanceof RangeError ? error.message : 'No se pudieron estimar los tiempos.'); }
+      const warnings: string[] = [];
+      if (align === 'vibi') {
+        const latest = await store.readProject(projectId);
+        if (latest.revision !== Number(revision) || latest.digest !== digest) {
+          throw new ConflictError({ projectId, reason: 'digest', expectedDigest: digest, actualDigest: latest.digest });
+        }
+        controller.signal.throwIfAborted();
+        try {
+          const stt = await transcribeAudio(bytes, mimeType, context.vibi, controller.signal);
+          controller.signal.throwIfAborted();
+          words = sttWordsToWords(stt, scene.text, audioMs, warning => warnings.push(warning));
+        } catch (error) {
+          if (error instanceof VibiError) throw new HttpError(error.code === 'vibi-timeout' ? 504 : 502, error.code, error.message);
+          throw new HttpError(502, 'vibi-cancelled', 'Se canceló la alineación. La tarea enviada puede continuar en Vibi.');
+        }
+      }
+      if (res.destroyed) return;
+      const result = await store.attachSceneAudio({ projectId, sceneId, bytes, mimeType,
+        expectedRevision: Number(revision), expectedDigest: digest,
+        source: { origin: 'user', license, attribution: '' }, words });
+      // Re-reading returns the canonical disk digest, not a recomputed content digest.
+      const opened = await store.readProject(projectId);
+      if (opened.digest !== result.digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: result.digest, actualDigest: opened.digest });
+      sendJson(res, 200, { ...result, opened, alignment: align === 'vibi' && !warnings.length ? 'vibi' : 'estimated', warnings });
+      return;
+    } finally {
+      res.removeListener('close', cancel);
+      context.generation.active.delete(controller);
+    }
   }
 
   if (['/api/capabilities', '/api/script/generate', '/api/drawing/generate'].includes(pathname)) {
