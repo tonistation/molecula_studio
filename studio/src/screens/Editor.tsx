@@ -8,6 +8,7 @@ import { ExportPanel } from '../components/ExportPanel.tsx';
 import { ScriptStep } from '../components/ScriptStep.tsx';
 import { DrawingStep } from '../components/DrawingStep.tsx';
 import { VoiceStep } from '../components/VoiceStep.tsx';
+import { Stepper } from '../components/Stepper.tsx';
 import { useCodexCapability } from '../components/GenerationMode.tsx';
 import { ApiError, api, describeError, type ReadResult, type SaveResult } from '../api.ts';
 import {
@@ -382,6 +383,8 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
         </div>
       </header>
 
+      <Stepper draft={draft} missingAssets={missingAssets} dirty={dirty} />
+
       {transition !== null && (
         <section className="banner banner-warn" aria-label="Salida con cambios sin guardar">
           <p>Hay cambios sin guardar. Guardar y continuar solo avanza si se confirma el borrador actual. Descartar abandona cambios solo cuando se abre el destino válido.</p>
@@ -440,10 +443,12 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
       <AssetManifest assets={draft.assets} missingAssets={missingAssets} disabled={readOnly || dirty || saving || relinking} onRelink={relink} />
       <div className="editor-grid">
         <div>
+        <div id="workflow-preview" className="workflow-target" role="group" tabIndex={-1} aria-label="Vista previa y exportar">
         <PreviewPlayer draft={draft} seek={previewSeek} missingAssets={missingAssets} />
         <ExportPanel projectId={draft.projectId} revision={confirmedRevision} dirty={dirty}
           disabled={readOnly || saving || needsVerification || relinking} />
-        <section className="panel">
+        </div>
+        <section className="panel workflow-target" id="workflow-idea" tabIndex={-1} aria-label="Configuración inicial">
           <h2>Idea y estilo</h2>
           <label className="field">
             <span>Idea</span>
@@ -532,13 +537,18 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
             </label>
           </fieldset>
         </section>
+        <div id="workflow-script" className="workflow-target" role="group" tabIndex={-1} aria-label="Guion">
         <ScriptStep draft={draft} disabled={readOnly || relinking} onEdit={edit} codexCapability={codexCapability} />
+        <a href="#workflow-storyboard">Editar escenas y dibujos del guion</a>
+        </div>
+        <div id="workflow-voice" className="workflow-target" role="group" tabIndex={-1} aria-label="Voz">
         <VoiceStep draft={draft} dirty={dirty} disabled={readOnly || saving || needsVerification || relinking}
            missingAssets={missingAssets} onUpload={attachAudio}
-           onGenerate={(sceneId, signal) => attachAudio(sceneId, new Uint8Array(), 'audio/mpeg', '', false, signal)} />
+            onGenerate={(sceneId, signal) => attachAudio(sceneId, new Uint8Array(), 'audio/mpeg', '', false, signal)} />
+        </div>
         </div>
 
-        <section className="panel">
+        <section className="panel workflow-target" id="workflow-storyboard" tabIndex={-1}>
           <div className="panel-heading">
             <h2>Guion y storyboard</h2>
             <button type="button" className="ghost" onClick={addScene} disabled={readOnly}>

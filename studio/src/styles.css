@@ -479,3 +479,17 @@ button.ghost.danger {
 .export-path {
   overflow-wrap: anywhere;
 }
+
+.workflow { margin-bottom: 20px; }
+.workflow-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; list-style: none; padding: 0; margin: 0; }
+.workflow-step { width: 100%; height: 100%; text-align: left; background: var(--panel); border-color: var(--line); color: var(--ink); }
+.workflow-step[aria-current="step"] { border-color: var(--accent); background: var(--info-bg); }
+.workflow-step strong, .workflow-state { display: block; overflow-wrap: anywhere; }
+.workflow-state { margin-top: 6px; font-size: 0.85rem; color: var(--muted); }
+.workflow-state.ready { color: var(--accent); }
+.workflow-state.outdated { color: #8a5a00; }
+.workflow-target { scroll-margin-top: 16px; }
+.workflow-step:focus-visible, .workflow-target:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 650px) {
+  .workflow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
