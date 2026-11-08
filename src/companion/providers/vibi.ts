@@ -1,6 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { LIMITS } from '../../shared/schema/limits.ts';
 import type { VoiceCatalog } from '../../shared/voice/selection.ts';
+import { publicPreviewUrl, voiceDetails } from './voice-catalog.ts';
 
 export interface VibiOptions {
   apiKey?: string;
@@ -57,8 +58,8 @@ export async function vibiCredits(options: VibiOptions = {}, signal?: AbortSigna
   });
 }
 
-/** Explicit user action only. Expose labels/IDs, never profiles or remote preview URLs. */
-export async function vibiVoices(options: VibiOptions = {}, signal?: AbortSignal): Promise<VoiceCatalog> {
+/** Explicit user action only. Remote sample URLs remain server-side. */
+export async function vibiVoices(options: VibiOptions = {}, signal?: AbortSignal, samples?: Map<string, string>): Promise<VoiceCatalog> {
   const { provider } = voiceConfiguration({ ...options, voiceId: 'catalog-check' });
   const path = provider === 'elevenlabs' ? '/v1/default-voices?page_size=30'
     : `/v1/${provider}/system-voices?page=1&page_size=30&language=${provider === 'capcut' ? 'es' : 'Spanish'}`;
@@ -76,9 +77,36 @@ export async function vibiVoices(options: VibiOptions = {}, signal?: AbortSignal
         || voices.some(voice => voice.voiceId === row.voice_id)) {
         throw new VibiError('vibi-response', 'Vibi devolvió una voz no válida. No se actualizó el catálogo.');
       }
-      voices.push({ voiceId: row.voice_id, name });
+      const preview = publicPreviewUrl(provider, row.voice_id, provider === 'minimax' ? row.sample_audio : row.preview_url, endpoint(options));
+      if (preview) samples?.set(`${provider}/${row.voice_id}`, preview);
+      voices.push({ voiceId: row.voice_id, name, ...voiceDetails(provider, row), ...(preview ? { previewAvailable: true as const } : {}) });
     }
     return { provider, voices, hasMore: result.has_more };
+  });
+}
+
+/** Retrieve an existing catalog sample only; this never submits TTS/STT. */
+export async function vibiVoicePreview(provider: string, voiceId: string, url: string, options: VibiOptions = {}, signal?: AbortSignal) {
+  const base = endpoint(options);
+  if (!publicPreviewUrl(provider, voiceId, url, base)) throw new VibiError('vibi-preview', 'Muestra no disponible para esta voz.');
+  return withVibi({ ...options, timeoutMs: options.timeoutMs ?? 15_000 }, signal, async (request, _, combined) => {
+    // Only the exact Vibi CapCut route can receive the Vibi credential. CDNs never do.
+    const response = new URL(url).origin === base ? await request(new URL(url).pathname)
+      : await fetch(url, { signal: combined, redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer' });
+    const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+    if (!response.ok || !['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/mp4'].includes(mimeType ?? '')) {
+      await response.body?.cancel(); throw new VibiError('vibi-preview', 'La muestra no devolvió un audio compatible.');
+    }
+    const bytes = await boundedBytes(response, 5 * 1024 * 1024);
+    const mp3 = bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0 || Buffer.from(bytes.subarray(0, 3)).toString() === 'ID3';
+    const signature = Buffer.from(bytes.subarray(0, 12));
+    const valid = mimeType === 'audio/mpeg' ? mp3 : mimeType?.includes('wav') ? signature.subarray(0, 4).toString() === 'RIFF' && signature.subarray(8, 12).toString() === 'WAVE'
+      : mimeType === 'audio/ogg' ? signature.subarray(0, 4).toString() === 'OggS' : signature.subarray(4, 8).toString() === 'ftyp';
+    if (!valid) throw new VibiError('vibi-preview', 'La muestra no contiene un audio compatible.');
+    return { bytes, mimeType: mimeType! };
+  }).catch(error => {
+    if (error instanceof VibiError) throw new VibiError(error.code, error.code === 'vibi-timeout' ? 'Se agotó el plazo para descargar la muestra.' : 'No se pudo descargar una muestra de audio compatible. No se generó audio nuevo.');
+    throw error;
   });
 }
 

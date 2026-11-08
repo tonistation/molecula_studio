@@ -175,6 +175,19 @@ export interface AssetBlobUrl {
   revoke(): void;
 }
 
+export async function fetchVoiceSample(provider: string, voiceId: string, signal: AbortSignal): Promise<AssetBlobUrl> {
+  signal.throwIfAborted();
+  const response = await fetch(`/api/vibi/voices/${encodeURIComponent(provider)}/${encodeURIComponent(voiceId)}/preview`, {
+    headers: { authorization: `Bearer ${companionToken()}` }, signal,
+  });
+  if (!response.ok) await parseResponse<never>(response);
+  const blob = await response.blob();
+  signal.throwIfAborted();
+  const url = URL.createObjectURL(blob);
+  let revoked = false;
+  return { url, revoke: () => { if (!revoked) { revoked = true; URL.revokeObjectURL(url); } } };
+}
+
 export interface RenderStatus {
   status: 'rendering' | 'completed' | 'failed';
   progress: number;

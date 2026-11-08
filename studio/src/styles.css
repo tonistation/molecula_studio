@@ -516,3 +516,11 @@ button.ghost.danger {
 @media (max-width: 650px) {
   .workflow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* Catalog details stay compact without hiding the sample's native keyboard controls. */
+.voice-details { padding: 1rem; margin-block: .75rem; border: 1px solid var(--line); border-radius: .5rem; overflow-wrap: anywhere; }
+.voice-details h4 { margin: 0 0 .5rem; }
+.voice-details dl { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: .5rem 0; }
+.voice-details dt { font-size: .8rem; opacity: .75; }
+.voice-details dd { margin: .15rem 0 0; }
+.voice-details audio { max-width: 100%; margin-top: .5rem; }
+.voice-details button:active:not(:disabled) { transform: scale(.97); }

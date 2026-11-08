@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { ApiError, fetchAssetBlobUrl } from '../../studio/src/api.ts';
+import { ApiError, fetchAssetBlobUrl, fetchVoiceSample } from '../../studio/src/api.ts';
 
 function mockDocument(t: TestContext): void {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'document');
@@ -61,5 +61,43 @@ test('asset client cannot allocate a late URL after caller cleanup aborts a pend
   });
   const create = t.mock.method(URL, 'createObjectURL', () => 'unused');
   await assert.rejects(fetchAssetBlobUrl('p-preview', 'voz', controller.signal), { name: 'AbortError' });
+  assert.equal(create.mock.callCount(), 0);
+});
+
+test('sample client authenticates only the same-origin ID route and releases its blob once', async t => {
+  mockDocument(t);
+  const controller = new AbortController();
+  t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
+    assert.equal(path, '/api/vibi/voices/capcut/123/preview');
+    assert.equal(init.signal, controller.signal);
+    assert.equal(new Headers(init.headers).get('authorization'), 'Bearer local-token');
+    return new Response('fixture', { headers: { 'content-type': 'audio/wav' } });
+  });
+  t.mock.method(URL, 'createObjectURL', () => 'blob:sample');
+  const revoke = t.mock.method(URL, 'revokeObjectURL', () => {});
+  const sample = await fetchVoiceSample('capcut', '123', controller.signal);
+  assert.equal(sample.url, 'blob:sample'); sample.revoke(); sample.revoke();
+  assert.equal(revoke.mock.callCount(), 1);
+});
+
+test('sample cancellation cannot allocate a late blob, including an already aborted click', async t => {
+  mockDocument(t);
+  const controller = new AbortController();
+  const request = t.mock.method(globalThis, 'fetch', async () => {
+    const response = new Response('fixture');
+    t.mock.method(response, 'blob', async () => { controller.abort(); return new Blob(['late']); });
+    return response;
+  });
+  const create = t.mock.method(URL, 'createObjectURL', () => 'unused');
+  await assert.rejects(fetchVoiceSample('capcut', '123', controller.signal), { name: 'AbortError' });
+  await assert.rejects(fetchVoiceSample('capcut', '123', controller.signal), { name: 'AbortError' });
+  assert.equal(create.mock.callCount(), 0); assert.equal(request.mock.callCount(), 1);
+});
+
+test('unavailable sample preserves the safe HTTP feedback and allocates no URL', async t => {
+  mockDocument(t);
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ error: { code: 'voice-preview-unavailable', message: 'Muestra no disponible.' } }), { status: 404 }));
+  const create = t.mock.method(URL, 'createObjectURL', () => 'unused');
+  await assert.rejects(fetchVoiceSample('capcut', '123', new AbortController().signal), { code: 'voice-preview-unavailable', status: 404 });
   assert.equal(create.mock.callCount(), 0);
 });

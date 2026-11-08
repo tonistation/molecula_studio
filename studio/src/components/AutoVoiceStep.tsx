@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Project } from '../../../src/shared/schema/types.ts';
 import type { VoiceCatalog, VoiceSelection } from '../../../src/shared/voice/selection.ts';
 import { api, describeError } from '../api.ts';
+import { VoiceDetails } from './VoiceDetails.tsx';
 
 export type GenerateVoice = (sceneId: string, signal: AbortSignal, selection?: VoiceSelection) => Promise<{ alignment: 'vibi' | 'estimated'; warnings: string[] }>;
 
@@ -81,6 +82,7 @@ export function AutoVoiceStep({ draft, dirty, disabled, configured, defaultVoice
   const selected = pending ? draft.scenes.filter(scene => pending.ids.includes(scene.sceneId)) : [];
   const characters = selected.reduce((sum, scene) => sum + [...scene.text].length, 0);
   const cancelTarget = busy ? document.getElementById('voice-cancel-controls') : null;
+  const selectedVoice = catalog?.voices.find(voice => voice.voiceId === voiceId);
   return <section className="auto-voice" aria-label="Voz automática">
     <h3>Voz automática · Vibi</h3>
     <p>Elija una voz del proveedor configurado o use la predeterminada del companion. La clave y el modelo permanecen en el servidor.</p>
@@ -89,9 +91,10 @@ export function AutoVoiceStep({ draft, dirty, disabled, configured, defaultVoice
     <label className="field"><span>Voz para generar</span>
       <select aria-label="Voz para generar" value={voiceId} disabled={disabled || busy || loadingVoices || !configured} onChange={event => { setVoiceId(event.target.value); setPending(null); }}>
         <option value="" disabled={!defaultVoiceConfigured}>{defaultVoiceConfigured ? 'Predeterminada del companion' : 'Seleccione una voz del catálogo'}</option>
-        {catalog?.voices.map(voice => <option key={voice.voiceId} value={voice.voiceId}>{voice.name} · {catalog.provider} / {voice.voiceId}</option>)}
+        {catalog?.voices.map(voice => <option key={voice.voiceId} value={voice.voiceId}>{[voice.name, voice.language, voice.accent].filter(Boolean).join(' · ')}</option>)}
       </select>
     </label>
+    {selectedVoice && catalog && <VoiceDetails key={`${catalog.provider}/${selectedVoice.voiceId}`} voice={selectedVoice} provider={catalog.provider} disabled={disabled || busy || loadingVoices} />}
     {configured && !defaultVoiceConfigured && <p>No hay voz predeterminada válida. Cargue el catálogo y seleccione una voz; el proveedor y el modelo deben estar configurados en el companion.</p>}
     <p className="muted small">La selección se aplica a la próxima generación, por escena o a todas; no se guarda como preferencia. Cambiarla no reemplaza audios existentes. Cargar voces consulta Vibi, sin enviar narración ni generar audio. La disponibilidad y el acento dependen del proveedor.</p>
     {catalog && <p role="status">{catalog.voices.length} voces disponibles en esta consulta{catalog.hasMore ? ' (primeros 30 resultados; el catálogo puede tener más)' : ''}.{!catalog.voices.length ? ' Puede usar la voz predeterminada si está configurada.' : ''}</p>}

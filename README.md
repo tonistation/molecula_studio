@@ -34,6 +34,12 @@ npm run render -- docs/plan/examples/kit/sal-del-mar-storyboard.json workspace/s
 
 Usar una salida nueva al repetir. La [demo local con voz](ROADMAP.md#ampliación-autorizada--demo-con-planos-distintos) dura 35,8 s y usa Paulina de macOS, sin proveedor ni gasto. Sus binarios no se versionan; no se afirma permiso de redistribución de esa voz. Los puntos dorados son símbolos ampliados, no cristales visibles en el agua.
 
+## Elegir y escuchar una voz
+
+En un proyecto abierto: «Voz automática» → «Cargar voces Vibi» → elegir voz. El selector muestra nombre e idioma/acento cuando el catálogo los informa; la ficha amplía género, estilo y descripción disponibles. No se deduce «español mexicano» del nombre ni del idioma español. Si faltan datos, aparece «Idioma/acento no informado»; no hay filtro por país.
+
+«Escuchar muestra» reproduce una muestra existente del proveedor, sin crear tareas TTS/STT ni enviar narración. Solo se habilita si hay una URL de muestra compatible y validada; «Detener», cambiar de voz o salir cancela la descarga y detiene el audio. La muestra puede estar en otro idioma. Generar la narración sigue requiriendo confirmar el consumo TTS + STT por separado. Esta mejora se verificó con documentación pública, HTTP falso y tonos locales, **sin nuevas consultas a cuentas/proveedores reales**; disponibilidad y acentos reales no comprobados. [Soporte y límites](ROADMAP.md#ampliación-autorizada--detalles-y-muestras-de-voces).
+
 ## Por dónde empezar
 
 1. Revisar el [ROADMAP activo](ROADMAP.md) y el [contexto](PROJECT_CONTEXT.md).
