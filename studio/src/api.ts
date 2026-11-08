@@ -1,5 +1,6 @@
 import type { Asset, AssetMimeType, Project, ProjectMode } from '../../src/shared/schema/types.ts';
 import type { VoiceCatalog, VoiceSelection } from '../../src/shared/voice/selection.ts';
+import type { AlignmentDiagnostic } from '../../src/shared/voice/alignment.ts';
 
 /** Shapes mirror the companion HTTP API (src/companion/server/http.ts). */
 
@@ -245,12 +246,12 @@ export async function fetchAssetBlobUrl(projectId: string, assetId: string, sign
 export const api = {
   vibiVoices: (signal?: AbortSignal) => call<VoiceCatalog>('GET', '/api/vibi/voices', undefined, signal),
   generateVoice: (projectId: string, sceneId: string, revision: number, digest: string, signal?: AbortSignal, selection?: VoiceSelection) =>
-    call<{ opened: ReadResult; receipt: SaveReceipt; alignment: 'vibi' | 'estimated'; warnings: string[] }>('POST',
+    call<{ opened: ReadResult; receipt: SaveReceipt; alignment: 'vibi' | 'estimated'; warnings: string[]; alignmentDiagnostic?: AlignmentDiagnostic }>('POST',
       `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/voice`,
       { expectedRevision: revision, expectedDigest: digest, consent: true, ...selection }, signal),
   vibiCredits: (signal?: AbortSignal) => call<{ credits: number }>('GET', '/api/vibi/credits', undefined, signal),
   attachAudio: (projectId: string, sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, revision: number, digest: string, alignVibi = false) =>
-    callBytes<{ opened: ReadResult; receipt: SaveReceipt; revision: number; digest: string; alignment: 'vibi' | 'estimated'; warnings: string[] }>(
+    callBytes<{ opened: ReadResult; receipt: SaveReceipt; revision: number; digest: string; alignment: 'vibi' | 'estimated'; warnings: string[]; alignmentDiagnostic?: AlignmentDiagnostic }>(
       `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/audio${alignVibi ? '?align=vibi' : ''}`, bytes, mimeType,
       { 'x-expected-revision': String(revision), 'x-expected-digest': digest, 'x-asset-license': encodeURIComponent(license), ...(alignVibi ? { 'x-vibi-consent': '1' } : {}) }),
   capabilities: (signal?: AbortSignal) => call<{ codex: boolean; vibi: boolean; vibiVoiceConfigured: boolean }>('GET', '/api/capabilities', undefined, signal),

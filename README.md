@@ -2,7 +2,7 @@
 
 Plan de una aplicación local para crear videos animados verticales a partir de guiones, escenas, voz y subtítulos. La visión contempla varios estilos; la primera entrega propone un único estilo 3D.
 
-**Estado: ROADMAP implementado hasta 5.4, con selector de voces y demo de planos distintos.** Existen schema 2, `ProjectStore`, companion HTTP y estudio React con renderer 3D, subtítulos, vista previa y exportación MP4 silenciosa o con voz por CLI/UI. Guion y dibujo ofrecen modos manual/automático con Codex CLI; voz permite subir WAV/MP3 o generar con Vibi TTS/STT, con consentimiento previo de consumo. Los proveedores se verificaron con dobles locales, no con cuentas reales. El [ROADMAP](ROADMAP.md) es el plan activo; el [backlog anterior](docs/plan/implementation-tasks.md) está congelado. Véanse el [contexto](PROJECT_CONTEXT.md) y la [evidencia histórica](docs/plan/delivery.md).
+**Estado: ROADMAP implementado hasta 5.4, con selector de voces y demo de planos distintos.** Existen schema 2, `ProjectStore`, companion HTTP y estudio React con renderer 3D, subtítulos, vista previa y exportación MP4 silenciosa o con voz por CLI/UI. Guion y dibujo ofrecen modos manual/automático con Codex CLI; voz permite subir WAV/MP3 o generar con Vibi TTS/STT, con consentimiento previo de consumo. Las suites usan dobles locales; después se realizó una prueba real limitada de Vibi con Alice (una TTS y una STT), con voz valorada positivamente por el usuario pero subtítulos estimados, no alineación real. Codex real y el recorrido completo con proveedores siguen pendientes. El [ROADMAP](ROADMAP.md) es el plan activo; el [backlog anterior](docs/plan/implementation-tasks.md) está congelado. Véanse el [contexto](PROJECT_CONTEXT.md) y la [evidencia histórica](docs/plan/delivery.md).
 
 ## Ejecutar localmente
 
@@ -40,6 +40,14 @@ En un proyecto abierto: «Voz automática» → «Cargar voces Vibi» → elegir
 
 «Escuchar muestra» reproduce una muestra existente del proveedor, sin crear tareas TTS/STT ni enviar narración. Solo se habilita si hay una URL de muestra compatible y validada; «Detener», cambiar de voz o salir cancela la descarga y detiene el audio. La muestra puede estar en otro idioma. Generar la narración sigue requiriendo confirmar el consumo TTS + STT por separado. Esta mejora se verificó con documentación pública, HTTP falso y tonos locales, **sin nuevas consultas a cuentas/proveedores reales**; disponibilidad y acentos reales no comprobados. [Soporte y límites](ROADMAP.md#ampliación-autorizada--detalles-y-muestras-de-voces).
 
+## Diagnóstico de subtítulos estimados
+
+Si STT termina pero sus palabras o tiempos no son utilizables, se guarda el audio con subtítulos estimados y un aviso específico en Voz manual/automática: por ejemplo `[word-count-mismatch]`, `[text-mismatch]` o `[rounding-collapse]`. No se recortan tiempos ni se flexibiliza la coincidencia para aparentar alineación real. Los errores de proveedor siguen siendo errores, sin guardado.
+
+La respuesta HTTP puede incluir `alignmentDiagnostic`: solo motivo, conteos acotados, duración del audio e índice de palabra, sin transcripción ni texto enviado. Es efímero: no se guarda en el proyecto ni se registra en logs. Al reabrir no se recupera ese diagnóstico. [Códigos y límites](ROADMAP.md#ampliación-autorizada--diagnóstico-de-alineación).
+
+La prueba real anterior usó 76 caracteres y produjo 4963 ms de audio con 14 palabras estimadas. La respuesta STT cruda no se conservó: su causa exacta es desconocida y esta mejora **no demuestra corregir ese caso**. No se hicieron nuevas llamadas reales ni reintentos.
+
 ## Por dónde empezar
 
 1. Revisar el [ROADMAP activo](ROADMAP.md) y el [contexto](PROJECT_CONTEXT.md).
@@ -74,6 +82,6 @@ El HTML es una propuesta visual estática, no la aplicación ni una prueba de pe
 
 **Continuidad visual requerida:** el JSON conserva entidades reutilizables y el kit tiene renderer determinista con pruebas de seek y objetos compartidos. Las variantes deben ser intencionales, sin editor avanzado en el MVP. La aprobación estética final sigue siendo humana. Véase [continuidad visual](docs/plan/visual-continuity.md).
 
-Guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. Hay exportación H.264/AAC 1080×1920 a 30 fps, voz manual/automática y flujo guiado. Verificar proveedores reales, escucha humana y sincronía fonética fina siguen pendientes en el [ROADMAP](ROADMAP.md). No se afirma rendimiento garantizado ni aprobación estética humana. Riesgos históricos de save/retención están documentados en [API](docs/plan/api-contracts.md).
+Guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. Hay exportación H.264/AAC 1080×1920 a 30 fps, voz manual/automática y flujo guiado. Siguen pendientes Codex real, recorrido completo con proveedores, validación humana del video completo y sincronía fonética fina; la escucha positiva de Alice corresponde solo a la prueba corta. Metadatos/muestras de voces siguen sin verificarse contra una cuenta real. Véase el [ROADMAP](ROADMAP.md). No se afirma rendimiento garantizado ni aprobación estética humana. Riesgos históricos de save/retención están documentados en [API](docs/plan/api-contracts.md).
 
 Repositorio de referencia: [tonistation/molecula_studio](https://github.com/tonistation/molecula_studio).

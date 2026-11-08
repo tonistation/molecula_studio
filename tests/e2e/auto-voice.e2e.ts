@@ -37,7 +37,7 @@ test('automatic voice shows cost consent, queries credits only on demand, genera
         : { status: 'completed', result: { audio_url: `${base}/audio/test.mp3` } }));
     }
     else if (req.url === '/audio/test.mp3') res.end(audio);
-    else res.end(JSON.stringify({ status: 'completed', result: { words: tokens.map((text, i) => ({ text, type: 'word', start: i * 0.1, end: (i + 1) * 0.1 })) } }));
+    else res.end(JSON.stringify({ status: 'completed', result: { words: tokens.map((text, i) => ({ text, type: 'word', start: i * 0.1, end: posts === 3 && i === 0 ? 0.0001 : (i + 1) * 0.1 })) } }));
   });
   await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${(fake.address() as { port: number }).port}`;
@@ -101,6 +101,8 @@ test('automatic voice shows cost consent, queries credits only on demand, genera
     await voice.getByRole('button', { name: 'Generar voz · escena 2', exact: true }).click();
     await confirmation.getByRole('button', { name: 'Confirmar generación y consumo TTS + STT' }).click();
     await voice.getByText(/1 escenas con audio guardado/).waitFor();
+    await voice.getByText(/\[rounding-collapse\].*estimados, no alineación real/).waitFor();
+    assert.equal(await voice.getByText(/Subtítulos alineados con Vibi/).count(), 0);
     const saved = JSON.parse(await readFile(file, 'utf8'));
     assert.deepEqual(saved.scenes[0], previous.scenes[0]); assert.ok(saved.scenes[1].audio);
     assert.equal(saved.scenes[1].words[0].text, source.scenes[1].text.split(/\s+/)[0]);

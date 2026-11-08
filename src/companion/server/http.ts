@@ -9,6 +9,7 @@ import { capabilities } from '../providers/capabilities.ts';
 import { generateScript, generateDrawing, GenerationError, type CodexOptions } from '../providers/codex-cli.ts';
 import { estimateWords } from '../../shared/voice/estimate.ts';
 import { sttWordsToWords } from '../../shared/voice/alignment.ts';
+import type { AlignmentDiagnostic } from '../../shared/voice/alignment.ts';
 import { transcribeAudio, synthesizeSpeech, voiceConfiguration, vibiCredits, vibiVoices, vibiVoicePreview, VibiError, type VibiOptions } from '../providers/vibi.ts';
 import { inspectMediaBounded } from '../store/inspection-runner.ts';
 import { InspectionError } from '../store/media-inspect.ts';
@@ -326,7 +327,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       controller.signal.throwIfAborted();
       const stt = await transcribeAudio(generated.bytes, 'audio/mpeg', context.vibi, controller.signal);
       const warnings: string[] = [];
-      const words = sttWordsToWords(stt, scene.text, audioMs, warning => warnings.push(warning));
+      let alignmentDiagnostic: AlignmentDiagnostic | undefined;
+      const words = sttWordsToWords(stt, scene.text, audioMs, warning => warnings.push(warning), diagnostic => { alignmentDiagnostic = diagnostic; });
       controller.signal.throwIfAborted();
       if (res.destroyed) return;
       const result = await store.attachSceneAudio({ projectId, sceneId, bytes: generated.bytes, mimeType: 'audio/mpeg',
@@ -334,7 +336,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         source: { origin: 'provider', license: 'Vibi – según plan', attribution: generated.attribution }, words });
       const opened = await store.readProject(projectId);
       if (opened.digest !== result.digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: result.digest, actualDigest: opened.digest });
-      sendJson(res, 200, { ...result, opened, alignment: warnings.length ? 'estimated' : 'vibi', warnings });
+      sendJson(res, 200, { ...result, opened, alignment: warnings.length ? 'estimated' : 'vibi', warnings,
+        ...(alignmentDiagnostic ? { alignmentDiagnostic } : {}) });
     } catch (error) {
       if (error instanceof VibiError) throw new HttpError(error.code === 'vibi-timeout' ? 504 : error.code === 'vibi-config' || error.code === 'vibi-unavailable' ? 503 : 502, error.code, error.message);
       if (controller.signal.aborted) throw new HttpError(502, 'vibi-cancelled', 'Se canceló la espera. Las tareas Vibi enviadas pueden continuar consumiendo créditos.');
@@ -406,6 +409,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       try { words = estimateWords(scene.text, audioMs); }
       catch (error) { throw new HttpError(422, 'invalid-alignment', error instanceof RangeError ? error.message : 'No se pudieron estimar los tiempos.'); }
       const warnings: string[] = [];
+      let alignmentDiagnostic: AlignmentDiagnostic | undefined;
       if (align === 'vibi') {
         const latest = await store.readProject(projectId);
         if (latest.revision !== Number(revision) || latest.digest !== digest) {
@@ -415,7 +419,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         try {
           const stt = await transcribeAudio(bytes, mimeType, context.vibi, controller.signal);
           controller.signal.throwIfAborted();
-          words = sttWordsToWords(stt, scene.text, audioMs, warning => warnings.push(warning));
+          words = sttWordsToWords(stt, scene.text, audioMs, warning => warnings.push(warning), diagnostic => { alignmentDiagnostic = diagnostic; });
         } catch (error) {
           if (error instanceof VibiError) throw new HttpError(error.code === 'vibi-timeout' ? 504 : 502, error.code, error.message);
           throw new HttpError(502, 'vibi-cancelled', 'Se canceló la alineación. La tarea enviada puede continuar en Vibi.');
@@ -428,7 +432,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       // Re-reading returns the canonical disk digest, not a recomputed content digest.
       const opened = await store.readProject(projectId);
       if (opened.digest !== result.digest) throw new ConflictError({ projectId, reason: 'digest', expectedDigest: result.digest, actualDigest: opened.digest });
-      sendJson(res, 200, { ...result, opened, alignment: align === 'vibi' && !warnings.length ? 'vibi' : 'estimated', warnings });
+      sendJson(res, 200, { ...result, opened, alignment: align === 'vibi' && !warnings.length ? 'vibi' : 'estimated', warnings,
+        ...(alignmentDiagnostic ? { alignmentDiagnostic } : {}) });
       return;
     } finally {
       res.removeListener('close', cancel);

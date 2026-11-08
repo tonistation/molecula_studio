@@ -507,6 +507,28 @@ Referencia: <https://vibi.pro/docs> (página con JavaScript; abrir en navegador)
 - **Abrir o repetir localmente:** desde la raíz del repo, `open workspace/distinct-shot-demo-local/.renders/project_salt_journey/6-20261106-073703.mp4`. Para una nueva exportación con voz, repetir el comando del CLI anterior; para abrir el proyecto en el editor, `MOLECULA_WORKSPACE=workspace/distinct-shot-demo-local npm start` y «Abrir». El JSON fuente versionado siempre sigue siendo silencioso y autocontenido; no depende de que exista este workspace local.
 - **Pruebas:** tres pruebas nuevas con parser/validador real y `projectToVideoProps`: proyecto autocontenido, conversión pura, narración/subtítulos, timeline contiguo, diferencias físicas de composición, identidades recurrentes, cámaras móviles y proyección de rótulos/notas/flechas dentro del cuadro seguro. Rojo inicial por fixture ausente; regresiones de autoría rojas/verdes al detectar punta de vapor próxima al karaoke y nota ampliada recortada. `npm test`: 483/483; typecheck y build en verde; E2E completas: 48/48, sin omitidas, concurrencia 2. Dos intentos previos reprodujeron el lock obsoleto histórico F08/rotación de token (47/48); repetición completa verde sin tocar harness ni relajar pruebas. Context7 sin cuota; se consultaron documentación oficial Remotion y renderer/tipos instalados. Se mantienen avisos conocidos de bundle y `THREE.Clock`.
 
+## Ampliación autorizada — Diagnóstico de alineación
+
+- **Entrega:** se mantiene el emparejamiento estricto de 4.3 y la estimación completa ante discrepancias. Voz manual/automática muestran el motivo específico y su código, junto a «Se guardaron subtítulos estimados, no alineación real». No se corrigen, recortan ni ordenan silenciosamente tiempos inválidos. La narración sigue siendo autoritativa y los vínculos de medios conservan su contrato.
+- **API efímera:** `sttWordsToWords` conserva su resultado `Word[]` y callback de aviso; añade un quinto callback opcional para `AlignmentDiagnostic`. Las respuestas exitosas de `audio?align=vibi` y `voice` añaden `alignmentDiagnostic` solo al caer en estimación: `{ reason, expectedWordCount, durationMs, receivedEntryCount?, spokenWordCount?, wordIndex? }`. `wordIndex` empieza en cero dentro de las palabras filtradas, no de todas las entradas del proveedor. Los conteos recibidos/filtrados solo aparecen si se aceptó la lista de hasta 5000 entradas; duración de audio validada entre 1 y 15000 ms. Se informa únicamente el primer rechazo, con prioridad de estructura/conteo, luego texto y tiempos por palabra.
+
+| Código | Motivo |
+|---|---|
+| `invalid-response` / `entry-limit` | Entrada del alineador no es lista / supera 5000 entradas; no se recorre una lista excesiva |
+| `word-count-mismatch` | Cantidad distinta tras filtrar solo `type: 'word'` |
+| `text-mismatch` | Texto de una palabra inválido o distinto, conservando normalización estricta anterior |
+| `invalid-time` / `negative-time` | Tiempo ausente, no numérico, no finito / negativo |
+| `invalid-interval` | Final anterior o igual al inicio |
+| `overlap` | Solapamiento o desorden respecto de la palabra anterior |
+| `out-of-range` | Final posterior a la duración inspeccionada del audio |
+| `rounding-collapse` | Intervalo no representable tras convertir y redondear a ms |
+
+- **Privacidad y límites:** diagnóstico de tamaño constante, sin palabras, transcripciones, narración, timestamps crudos, URL, ID de tarea, cabeceras, clave ni datos de cuenta. No se persiste en `project.json`, archivos de depuración ni logs; desaparece al cerrar/reabrir. El proyecto conserva narración y palabras de subtítulo habituales, sin nuevos campos ni procedencia persistida de alineación. El cliente Vibi conserva su rechazo previo de respuestas malformadas/excesivas como `vibi-response` sin publicación: los códigos de estructura del alineador puro no convierten errores del proveedor en éxito. Sin dependencias ni cambio de schema.
+- **Prueba real anterior, no repetida:** autorización limitada consumida en una TTS + una STT con Alice, 76 caracteres, audio MP3 de 4963 ms; ambas tareas terminaron y el usuario valoró positivamente la voz. Hubo fallback a 14 palabras estimadas. No se retuvo la respuesta STT cruda, por lo que la causa exacta es desconocida y no se afirma corregir aquel caso. La evidencia anterior con HTTP falso se mantiene como histórica. Esta ampliación solo usa pruebas deterministas locales, sin nuevas consultas reales a cuentas, claves ni gasto.
+- **Pruebas:** TDD rojo inicial: 14 casos de diagnóstico fallaron por callback ausente y las dos rutas HTTP fallaron por campo inexistente. Verde con códigos de todos los motivos, contadores/índices, números no finitos, entrada sin mutar, filtrado de eventos, límite exacto/excesivo sin recorrerlo y ausencia de texto/URL/logs. HTTP falso verifica alineación válida sin diagnóstico, fallback manual/automático con bindings vigentes y ningún diagnóstico persistido; proveedor malformado/excesivo sigue fallando de forma segura. E2E existentes comprueban avisos concretos de cantidad de palabras y colapso de redondeo en las dos superficies reales, sin modificar el layout ni el flujo de consentimiento. Demo sin red externa: `node --test tests/unit/voice-alignment.test.ts`.
+- **Suites completas:** `npm test`: 507/507, `npm run typecheck` y build del estudio en verde. E2E completas con concurrencia 2: 50/50, sin omitidas. Primer intento: 49/50 por el lock obsoleto histórico de F08/rotación de token; repetición completa verde, sin cambiar harness ni relajar assertions. Se mantienen los renders reales y los avisos conocidos de tamaño del bundle/Three.js. Una unidad de commit reúne comportamiento, pruebas y documentación.
+- **Pendientes:** Codex real y aceptación efectiva de sus schemas, recorrido completo idea → MP4 con proveedores reales, metadatos/muestras del catálogo con cuenta real y sincronía fonética fina. La escucha positiva de una muestra corta no cierra la revisión humana completa del video ni autoriza otro consumo.
+
 ## Fase 6 — Después del primer video
 
 En orden sugerido; cada ítem se planifica cuando llegue su turno:
@@ -610,3 +632,4 @@ archivo:línea y cómo reproducirlo. No modifiques archivos.
 - [x] Ampliación autorizada: selector de voces Vibi por catálogo a demanda, sin cambios de schema ni llamadas reales al proveedor
 - [x] Ampliación autorizada: detalles documentados y reproducción de muestras existentes, sin generación ni consultas reales durante la implementación
 - [x] Ampliación autorizada: muestra de sal del mar con cuatro planos distintos, fuente portátil y locución local sin gasto
+- [x] Ampliación autorizada: diagnóstico efímero de alineación con códigos seguros, estimación explícita y pruebas locales sin nuevo consumo

@@ -12,7 +12,7 @@ import { bindingDigests } from '../../src/shared/digests.ts';
 test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth, stale revision and duplicates never spend', async t => {
   const root = await mkdtemp(join(tmpdir(), 'vibi-voice-'));
   let posts = 0; let stts = 0; let accounts = 0; let catalogs = 0; let fail = false; let words: string[] = [];
-  let chosenUrl = '';
+  let chosenUrl = ''; let mismatch = false;
   let hook: ((stage: 'tts' | 'stt') => Promise<void>) | undefined;
   let bytes = mp3Bytes(80);
   const fake = createServer(async (req, res) => {
@@ -38,7 +38,7 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
       res.end(JSON.stringify(fail ? { status: 'failed', error: 'fake-only-key PRIVATE' } : { status: 'completed', result: { audio_url: `${base}/audio/tts.mp3` } }));
     } else {
       await hook?.('stt');
-      res.end(JSON.stringify({ status: 'completed', result: { words: words.map((text, i) => ({ text, type: 'word', start: i * 0.1, end: (i + 1) * 0.1 })) } }));
+      res.end(JSON.stringify({ status: 'completed', result: { words: words.map((text, i) => ({ text: mismatch && i === 0 ? 'PRIVATE fake-only-key https://secret.test' : text, type: 'word', start: i * 0.1, end: (i + 1) * 0.1 })) } }));
     }
   });
   await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', resolve));
@@ -89,6 +89,7 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
   release();
   const good = await first; assert.equal(good.status, 200, await good.clone().text());
   const body = await good.json() as any; assert.equal(body.alignment, 'vibi'); assert.deepEqual(body.warnings, []);
+  assert.equal(body.alignmentDiagnostic, undefined);
   current = await companion.store.readProject(projectId);
   const saved = current.project.scenes[0]!;
   assert.equal(saved.words[0]!.endMs, 100);
@@ -108,6 +109,19 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
   assert.equal(chosenUrl, '/v1/text-to-speech/alternate');
   const chosenAsset = current.project.assets.find(item => item.assetId === current.project.scenes[0]!.audio!.assetId)!;
   assert.equal(chosenAsset.source.attribution, 'elevenlabs/alternate');
+  mismatch = true;
+  const estimated = await generate(); assert.equal(estimated.status, 200);
+  const fallback = await estimated.json() as any;
+  assert.equal(fallback.alignment, 'estimated');
+  assert.deepEqual(fallback.alignmentDiagnostic, { reason: 'text-mismatch', expectedWordCount: words.length,
+    receivedEntryCount: words.length, spokenWordCount: words.length, durationMs: asset.durationMs, wordIndex: 0 });
+  assert.match(fallback.warnings[0], /\[text-mismatch\]/);
+  assert.doesNotMatch(JSON.stringify(fallback), /fake-only-key|PRIVATE|secret.test/);
+  current = await companion.store.readProject(projectId);
+  const fallbackDigests = (await bindingDigests(current.project)).scenes[0]!;
+  assert.equal(current.project.scenes[0]!.mediaBindings.words!.inputDigest, fallbackDigests.wordsInputDigest);
+  assert.doesNotMatch(await readFile(file, 'utf8'), /alignmentDiagnostic|text-mismatch|fake-only-key|PRIVATE/);
+  mismatch = false;
   const before = await readFile(file);
   fail = true; hook = undefined;
   const failed = await generate(); assert.equal(failed.status, 502); assert.doesNotMatch(await failed.text(), /fake-only-key|PRIVATE/);

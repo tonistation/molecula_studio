@@ -57,7 +57,7 @@ test('Vibi alignment UI: duration and unknown tariff before explicit spend, canc
     mismatch = true;
     await select(); await confirmation.waitFor();
     await confirmation.getByRole('button', { name: 'Confirmar envío y consumo de créditos' }).click();
-    await voice.getByText(/Audio guardado\. La transcripción o sus tiempos no coinciden/).waitFor();
+    await voice.getByText(/Audio guardado\. La cantidad de palabras transcritas no coincide.*\[word-count-mismatch\].*estimados, no alineación real/).waitFor();
     assert.equal(posts, 2);
     assert.deepEqual(consoleErrors, []); assert.deepEqual(resourceErrors, []);
   }, 'chromium', undefined, { apiKey: 'e2e-fake-only-key', baseUrl: `http://127.0.0.1:${(fake.address() as { port: number }).port}`, pollIntervalMs: 2 });

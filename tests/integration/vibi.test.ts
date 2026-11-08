@@ -33,6 +33,27 @@ test('Vibi multipart 202 → pending → processing → completed uses auth on e
   assert.deepEqual(seen, ['POST', 'GET', 'GET', 'GET']);
 });
 
+test('completed STT with malformed or excessive words remains a safe provider error, never partial alignment', async t => {
+  let words: unknown; let posts = 0;
+  const logs: unknown[][] = [];
+  for (const method of ['log', 'warn', 'error'] as const) t.mock.method(console, method, (...args: unknown[]) => { logs.push(args); });
+  const server = createServer((req, res) => {
+    req.resume();
+    if (req.method === 'POST') { posts++; res.writeHead(202).end(JSON.stringify({ task_id: 'bounded' })); }
+    else res.end(JSON.stringify({ status: 'completed', result: { words, text: 'PRIVATE https://secret.test test-only-key' } }));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
+  const options = { apiKey: 'test-only-key', baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}`, pollIntervalMs: 1 };
+  for (words of [undefined, null, {}, 'PRIVATE', new Array(5001).fill({ type: 'word', text: 'PRIVATE' })]) {
+    await assert.rejects(transcribeAudio(new Uint8Array([1]), 'audio/wav', options), (error: unknown) => {
+      assert.ok(error instanceof VibiError); assert.equal(error.code, 'vibi-response');
+      assert.doesNotMatch(String(error), /PRIVATE|https|test-only-key/); return true;
+    });
+  }
+  assert.equal(posts, 5); assert.deepEqual(logs, []);
+});
+
 test('Vibi bounds time/body, rejects malformed statuses, redirects and errors; never exposes raw detail_error/key/transcript', async t => {
   let mode = 'failed'; let posts = 0;
   let onPoll: (() => void) | undefined;

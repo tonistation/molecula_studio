@@ -120,6 +120,7 @@ test('manual Vibi alignment requires consent, saves authoritative words/bindings
   assert.deepEqual(await capability.json(), { codex: false, vibi: true, vibiVoiceConfigured: false }); assert.equal(posts, 0);
   const good = await upload(); assert.equal(good.status, 200, await good.clone().text());
   const body = await good.json() as any; assert.equal(body.alignment, 'vibi'); assert.deepEqual(body.warnings, []);
+  assert.equal(body.alignmentDiagnostic, undefined);
   current = await companion.store.readProject(projectId);
   assert.equal(current.project.scenes[0]!.words[0]!.endMs, 100);
   assert.equal(current.project.scenes[0]!.words[0]!.text, tokens[0]);
@@ -127,9 +128,13 @@ test('manual Vibi alignment requires consent, saves authoritative words/bindings
   mode = 'mismatch';
   const fallback = await upload(); assert.equal(fallback.status, 200);
   const fallbackBody = await fallback.json() as any; assert.equal(fallbackBody.alignment, 'estimated'); assert.equal(fallbackBody.warnings.length, 1);
+  assert.deepEqual(fallbackBody.alignmentDiagnostic, { reason: 'word-count-mismatch', expectedWordCount: tokens.length,
+    receivedEntryCount: tokens.length + 1, spokenWordCount: tokens.length + 1, durationMs: 2000 });
+  assert.match(fallbackBody.warnings[0], /\[word-count-mismatch\]/);
   current = await companion.store.readProject(projectId);
   assert.deepEqual(current.project.scenes[0]!.words, estimateWords(scene.text, 2000));
   const before = await readFile(join(root, projectId, 'project.json'));
+  assert.doesNotMatch(before.toString(), /alignmentDiagnostic|spokenWordCount|word-count-mismatch/);
   mode = 'fail'; const failure = await upload(); assert.equal(failure.status, 502);
   assert.doesNotMatch(await failure.text(), /fake-only-key|SECRET-TEXT/);
   assert.deepEqual(await readFile(join(root, projectId, 'project.json')), before);
