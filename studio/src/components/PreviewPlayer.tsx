@@ -36,7 +36,7 @@ export function PreviewPlayer({ draft, seek, missingAssets }: {
 
   return <section className="panel preview-panel" aria-label="Vista previa del borrador">
     <h2>Vista previa</h2>
-    <p className="muted small">Borrador en vivo · 9:16 · {draft.output.voiceMode === 'silent' ? 'sin voz' : 'con voz · tiempos estimados para audio manual'}</p>
+    <p className="muted small">Borrador en vivo · 9:16 · {draft.output.voiceMode === 'silent' ? 'sin voz' : 'con voz · subtítulos según los tiempos disponibles'}</p>
     {prepared.error ? <p role="status">{prepared.error}</p> : !props || props.durationInFrames === 0 ?
       <p className="muted">Añada una escena para ver la vista previa.</p> :
       <Player ref={player} className="preview-transport" component={VerticalVideo} inputProps={props}

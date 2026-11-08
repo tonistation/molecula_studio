@@ -8,14 +8,14 @@ import { fixtureText } from '../helpers/fixtures.ts';
 import { toneWav } from '../helpers/playable-audio.ts';
 
 test('Vibi alignment UI: duration and unknown tariff before explicit spend, cancel/stale protection, aligned and estimated feedback', async t => {
-  let posts = 0; let mismatch = false;
+  let posts = 0; let mismatch = false; let partial = false;
   const source = JSON.parse(fixtureText('storyboard'));
   const tokens = source.scenes[0].text.match(/\S+/gu) as string[];
   const fake = createServer((req, res) => {
     req.resume(); assert.equal(req.headers['xi-api-key'], 'e2e-fake-only-key');
     if (req.method === 'POST') { posts++; res.writeHead(202).end(JSON.stringify({ task_id: 'e2e-stt' })); }
     else res.end(JSON.stringify({ status: 'completed', result: { words: (mismatch ? [...tokens, 'extra'] : tokens)
-      .map((text, index) => ({ text, start: index * 0.1, end: (index + 1) * 0.1, type: 'word' })) } }));
+      .map((text, index) => ({ text, start: index * 0.1, end: partial && index >= tokens.length - 2 ? index * 0.1 : (index + 1) * 0.1, type: 'word' })) } }));
   });
   await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise<void>(resolve => fake.close(() => resolve())));
@@ -54,11 +54,31 @@ test('Vibi alignment UI: duration and unknown tariff before explicit spend, canc
     const saved = JSON.parse(await readFile(join(root, source.projectId, 'project.json'), 'utf8'));
     assert.equal(saved.scenes[0].words[0].endMs, 100);
     assert.doesNotMatch(JSON.stringify(saved), /e2e-fake-only-key/);
+    partial = true;
+    await select(); await confirmation.waitFor();
+    await confirmation.getByRole('button', { name: 'Confirmar envío y consumo de créditos' }).click();
+    await voice.getByText(/Audio guardado\. Alineación parcial:.*2 palabras con tiempos estimados/).waitFor();
+    assert.equal(posts, 2);
+    const mixed = JSON.parse(await readFile(join(root, source.projectId, 'project.json'), 'utf8'));
+    assert.deepEqual(mixed.scenes[0].words.slice(0, -2), saved.scenes[0].words.slice(0, -2));
+    assert.ok(mixed.scenes[0].words.at(-1).endMs <= 2000);
+    assert.doesNotMatch(JSON.stringify(mixed), /alignmentKind|repairedWordCount|alignmentDiagnostic/);
+    // Reopening retains mixed timing data, not the transient provenance notice.
+    await page.reload();
+    await page.getByRole('button', { name: 'Abrir', exact: true }).click();
+    await voice.getByLabel('Subir audio · escena 1').waitFor();
+    assert.equal(await voice.getByText(/Alineación parcial:/).count(), 0);
+    const reopened = JSON.parse(await readFile(join(root, source.projectId, 'project.json'), 'utf8'));
+    assert.deepEqual(reopened.scenes[0].words, mixed.scenes[0].words);
+    assert.equal(posts, 2);
+    await voice.getByLabel('Licencia o permiso de uso del audio').fill('Señal propia de prueba');
+    await voice.getByLabel('Alineación de subtítulos').selectOption('vibi');
+    partial = false;
     mismatch = true;
     await select(); await confirmation.waitFor();
     await confirmation.getByRole('button', { name: 'Confirmar envío y consumo de créditos' }).click();
     await voice.getByText(/Audio guardado\. La cantidad de palabras transcritas no coincide.*\[word-count-mismatch\].*estimados, no alineación real/).waitFor();
-    assert.equal(posts, 2);
+    assert.equal(posts, 3);
     assert.deepEqual(consoleErrors, []); assert.deepEqual(resourceErrors, []);
   }, 'chromium', undefined, { apiKey: 'e2e-fake-only-key', baseUrl: `http://127.0.0.1:${(fake.address() as { port: number }).port}`, pollIntervalMs: 2 });
 });

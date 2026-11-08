@@ -37,7 +37,8 @@ test('automatic voice shows cost consent, queries credits only on demand, genera
         : { status: 'completed', result: { audio_url: `${base}/audio/test.mp3` } }));
     }
     else if (req.url === '/audio/test.mp3') res.end(audio);
-    else res.end(JSON.stringify({ status: 'completed', result: { words: tokens.map((text, i) => ({ text, type: 'word', start: i * 0.1, end: posts === 3 && i === 0 ? 0.0001 : (i + 1) * 0.1 })) } }));
+    else res.end(JSON.stringify({ status: 'completed', result: { words: tokens.map((text, i) => ({ text, type: 'word', start: i * 0.1,
+      end: posts === 3 && i === 0 ? 0.0001 : posts === 4 && i >= tokens.length - 2 ? i * 0.1 : (i + 1) * 0.1 })) } }));
   });
   await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${(fake.address() as { port: number }).port}`;
@@ -110,6 +111,14 @@ test('automatic voice shows cost consent, queries credits only on demand, genera
     assert.equal(choices[2], '/v1/text-to-speech/narrator-b');
     const savedAsset = saved.assets.find((asset: { assetId: string }) => asset.assetId === saved.scenes[1].audio.assetId);
     assert.equal(savedAsset.source.attribution, 'elevenlabs/narrator-b');
+    await voice.getByRole('button', { name: 'Generar voz · escena 1', exact: true }).click();
+    await confirmation.getByRole('button', { name: 'Confirmar generación y consumo TTS + STT' }).click();
+    await voice.getByText(/1 escenas con audio guardado\. Alineación parcial:.*2 palabras con tiempos estimados/).waitFor();
+    assert.equal(await voice.getByText(/Subtítulos alineados con Vibi|no alineación real/).count(), 0);
+    const mixed = JSON.parse(await readFile(file, 'utf8'));
+    assert.deepEqual(mixed.scenes[0].words.slice(0, -2), previous.scenes[0].words.slice(0, -2));
+    assert.deepEqual(mixed.scenes[1], saved.scenes[1]);
+    assert.equal(posts, 4); assert.equal(accounts, 1);
     assert.deepEqual(consoleErrors, ['Failed to load resource: the server responded with a status of 502 (Bad Gateway)']);
     assert.deepEqual(resourceErrors, [`/api/projects/${source.projectId}/scenes/${source.scenes[1].sceneId}/voice`], 'only the deliberately failed TTS request');
   }, 'chromium', undefined, { apiKey: 'e2e-fake-only', voiceId: '', baseUrl: base, pollIntervalMs: 1 });

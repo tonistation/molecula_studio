@@ -12,7 +12,7 @@ import { bindingDigests } from '../../src/shared/digests.ts';
 test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth, stale revision and duplicates never spend', async t => {
   const root = await mkdtemp(join(tmpdir(), 'vibi-voice-'));
   let posts = 0; let stts = 0; let accounts = 0; let catalogs = 0; let fail = false; let words: string[] = [];
-  let chosenUrl = ''; let mismatch = false;
+  let chosenUrl = ''; let mismatch = false; let partial = false;
   let hook: ((stage: 'tts' | 'stt') => Promise<void>) | undefined;
   let bytes = mp3Bytes(80);
   const fake = createServer(async (req, res) => {
@@ -38,7 +38,7 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
       res.end(JSON.stringify(fail ? { status: 'failed', error: 'fake-only-key PRIVATE' } : { status: 'completed', result: { audio_url: `${base}/audio/tts.mp3` } }));
     } else {
       await hook?.('stt');
-      res.end(JSON.stringify({ status: 'completed', result: { words: words.map((text, i) => ({ text: mismatch && i === 0 ? 'PRIVATE fake-only-key https://secret.test' : text, type: 'word', start: i * 0.1, end: (i + 1) * 0.1 })) } }));
+      res.end(JSON.stringify({ status: 'completed', result: { words: words.map((text, i) => ({ text: mismatch && i === 0 ? 'PRIVATE fake-only-key https://secret.test' : text, type: 'word', start: i * 0.1, end: partial && i >= words.length - 2 ? i * 0.1 : (i + 1) * 0.1 })) } }));
     }
   });
   await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', resolve));
@@ -90,6 +90,7 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
   const good = await first; assert.equal(good.status, 200, await good.clone().text());
   const body = await good.json() as any; assert.equal(body.alignment, 'vibi'); assert.deepEqual(body.warnings, []);
   assert.equal(body.alignmentDiagnostic, undefined);
+  assert.equal(body.alignmentKind, 'aligned');
   current = await companion.store.readProject(projectId);
   const saved = current.project.scenes[0]!;
   assert.equal(saved.words[0]!.endMs, 100);
@@ -109,10 +110,31 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
   assert.equal(chosenUrl, '/v1/text-to-speech/alternate');
   const chosenAsset = current.project.assets.find(item => item.assetId === current.project.scenes[0]!.audio!.assetId)!;
   assert.equal(chosenAsset.source.attribution, 'elevenlabs/alternate');
+  const anchors = current.project.scenes[0]!.words.slice(0, -2);
+  const revision = current.revision;
+  partial = true;
+  const mixed = await generate(); assert.equal(mixed.status, 200, await mixed.clone().text());
+  const mixedBody = await mixed.json() as any;
+  assert.equal(mixedBody.alignment, 'estimated'); assert.equal(mixedBody.alignmentKind, 'partial');
+  assert.equal(mixedBody.alignmentDiagnostic.repairedWordCount, 2);
+  assert.match(mixedBody.warnings[0], /Alineación parcial:.*2 palabras con tiempos estimados/);
+  current = await companion.store.readProject(projectId);
+  assert.equal(current.revision, revision + 1);
+  const mixedScene = current.project.scenes[0]!;
+  assert.deepEqual(mixedScene.words.slice(0, -2), anchors);
+  assert.equal(mixedScene.words.at(-2)!.startMs, anchors.at(-1)!.endMs);
+  assert.ok(mixedScene.words.at(-1)!.endMs <= asset.durationMs!);
+  const mixedDigests = (await bindingDigests(current.project)).scenes[0]!;
+  assert.equal(mixedScene.mediaBindings.words!.inputDigest, mixedDigests.wordsInputDigest);
+  assert.equal(mixedScene.mediaBindings.audio!.inputDigest, mixedDigests.audioInputDigest);
+  assert.deepEqual(current.project.assets.find(item => item.assetId === mixedScene.audio!.assetId)!.source, asset.source);
+  assert.doesNotMatch(await readFile(file, 'utf8'), /alignmentKind|repairedWordCount|alignmentDiagnostic/);
+  partial = false;
   mismatch = true;
   const estimated = await generate(); assert.equal(estimated.status, 200);
   const fallback = await estimated.json() as any;
   assert.equal(fallback.alignment, 'estimated');
+  assert.equal(fallback.alignmentKind, 'estimated');
   assert.deepEqual(fallback.alignmentDiagnostic, { reason: 'text-mismatch', expectedWordCount: words.length,
     receivedEntryCount: words.length, spokenWordCount: words.length, durationMs: asset.durationMs, wordIndex: 0 });
   assert.match(fallback.warnings[0], /\[text-mismatch\]/);

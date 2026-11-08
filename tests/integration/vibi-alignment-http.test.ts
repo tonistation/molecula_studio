@@ -97,8 +97,8 @@ test('manual Vibi alignment requires consent, saves authoritative words/bindings
     req.resume();
     if (req.method === 'POST') { posts++; res.writeHead(202).end(JSON.stringify({ task_id: 'task-1' })); }
     else res.end(JSON.stringify(mode === 'fail' ? { status: 'failed', detail_error: 'fake-only-key SECRET-TEXT' } : {
-      status: 'completed', result: { words: (mode === 'match' ? tokens : [...tokens, 'extra']).map((text, i) => ({ text,
-        start: i * 0.1, end: (i + 1) * 0.1, type: 'word' })) },
+      status: 'completed', result: { words: (mode === 'mismatch' ? [...tokens, 'extra'] : tokens).map((text, i) => ({ text,
+        start: i * 0.1, end: mode === 'partial' && i >= tokens.length - 2 ? i * 0.1 : (i + 1) * 0.1, type: 'word' })) },
     }));
   });
   await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve));
@@ -121,13 +121,35 @@ test('manual Vibi alignment requires consent, saves authoritative words/bindings
   const good = await upload(); assert.equal(good.status, 200, await good.clone().text());
   const body = await good.json() as any; assert.equal(body.alignment, 'vibi'); assert.deepEqual(body.warnings, []);
   assert.equal(body.alignmentDiagnostic, undefined);
+  assert.equal(body.alignmentKind, 'aligned');
   current = await companion.store.readProject(projectId);
   assert.equal(current.project.scenes[0]!.words[0]!.endMs, 100);
   assert.equal(current.project.scenes[0]!.words[0]!.text, tokens[0]);
   assert.equal(current.project.scenes[0]!.mediaBindings.words!.inputDigest, (await bindingDigests(current.project)).scenes[0]!.wordsInputDigest);
+  const anchors = current.project.scenes[0]!.words.slice(0, -2);
+  const revision = current.revision;
+  mode = 'partial';
+  const partial = await upload(); assert.equal(partial.status, 200, await partial.clone().text());
+  const partialBody = await partial.json() as any;
+  assert.equal(partialBody.alignment, 'estimated'); assert.equal(partialBody.alignmentKind, 'partial');
+  assert.equal(partialBody.alignmentDiagnostic.repairedWordCount, 2);
+  assert.match(partialBody.warnings[0], /Alineación parcial:.*2 palabras con tiempos estimados/);
+  current = await companion.store.readProject(projectId);
+  assert.equal(current.revision, revision + 1);
+  assert.deepEqual(current.project.scenes[0]!.words.slice(0, -2), anchors);
+  const gapStart = anchors.at(-1)!.endMs;
+  assert.deepEqual(current.project.scenes[0]!.words.slice(-2), estimateWords(tokens.slice(-2).join(' '), 2000 - gapStart)
+    .map(word => ({ ...word, startMs: word.startMs + gapStart, endMs: word.endMs + gapStart })));
+  const partialDigests = (await bindingDigests(current.project)).scenes[0]!;
+  assert.equal(current.project.scenes[0]!.mediaBindings.words!.inputDigest, partialDigests.wordsInputDigest);
+  assert.equal(current.project.scenes[0]!.mediaBindings.audio!.inputDigest, partialDigests.audioInputDigest);
+  const audioAsset = current.project.assets.find(asset => asset.assetId === current.project.scenes[0]!.audio!.assetId)!;
+  assert.equal(audioAsset.source.license, 'Own test');
+  assert.doesNotMatch(await readFile(join(root, projectId, 'project.json'), 'utf8'), /alignmentKind|repairedWordCount|alignmentDiagnostic/);
   mode = 'mismatch';
   const fallback = await upload(); assert.equal(fallback.status, 200);
   const fallbackBody = await fallback.json() as any; assert.equal(fallbackBody.alignment, 'estimated'); assert.equal(fallbackBody.warnings.length, 1);
+  assert.equal(fallbackBody.alignmentKind, 'estimated');
   assert.deepEqual(fallbackBody.alignmentDiagnostic, { reason: 'word-count-mismatch', expectedWordCount: tokens.length,
     receivedEntryCount: tokens.length + 1, spokenWordCount: tokens.length + 1, durationMs: 2000 });
   assert.match(fallbackBody.warnings[0], /\[word-count-mismatch\]/);
@@ -138,7 +160,7 @@ test('manual Vibi alignment requires consent, saves authoritative words/bindings
   mode = 'fail'; const failure = await upload(); assert.equal(failure.status, 502);
   assert.doesNotMatch(await failure.text(), /fake-only-key|SECRET-TEXT/);
   assert.deepEqual(await readFile(join(root, projectId, 'project.json')), before);
-  assert.doesNotMatch(before.toString(), /fake-only-key/); assert.equal(posts, 3);
+  assert.doesNotMatch(before.toString(), /fake-only-key/); assert.equal(posts, 4);
 });
 
 test('disconnecting an accepted paid alignment aborts local polling and leaves the saved project unchanged', async t => {
