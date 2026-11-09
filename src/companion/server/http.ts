@@ -11,6 +11,7 @@ import { estimateWords } from '../../shared/voice/estimate.ts';
 import { alignmentKind, sttWordsToWords } from '../../shared/voice/alignment.ts';
 import type { AlignmentDiagnostic } from '../../shared/voice/alignment.ts';
 import { transcribeAudio, synthesizeSpeech, voiceConfiguration, vibiCredits, vibiVoices, vibiVoicePreview, VibiError, type VibiOptions } from '../providers/vibi.ts';
+import type { PreviewDiagnostic } from '../../shared/voice/preview-diagnostic.ts';
 import { inspectMediaBounded } from '../store/inspection-runner.ts';
 import { InspectionError } from '../store/media-inspect.ts';
 
@@ -339,7 +340,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       sendJson(res, 200, { ...result, opened, alignment: warnings.length ? 'estimated' : 'vibi', alignmentKind: alignmentKind(alignmentDiagnostic), warnings,
         ...(alignmentDiagnostic ? { alignmentDiagnostic } : {}) });
     } catch (error) {
-      if (error instanceof VibiError) throw new HttpError(error.code === 'vibi-timeout' ? 504 : error.code === 'vibi-config' || error.code === 'vibi-unavailable' ? 503 : 502, error.code, error.message);
+      if (error instanceof VibiError) throw new HttpError(error.code === 'vibi-timeout' ? 504 : error.code === 'vibi-config' || error.code === 'vibi-unavailable' ? 503 : 502, error.code, error.message,
+        undefined, previewRoute ? error.previewDiagnostic : undefined);
       if (controller.signal.aborted) throw new HttpError(502, 'vibi-cancelled', 'Se canceló la espera. Las tareas Vibi enviadas pueden continuar consumiendo créditos.');
       if (error instanceof InspectionError) throw new HttpError(502, 'vibi-audio-invalid', 'Vibi devolvió un MP3 no válido. No se envió STT ni se guardó.');
       if (error instanceof RangeError) throw new HttpError(422, 'invalid-alignment', 'La narración no admite tiempos de subtítulos válidos para esta duración.');
@@ -804,13 +806,15 @@ class HttpError extends Error {
   readonly status: number;
   readonly code: string;
   readonly allow: string | undefined;
+  readonly previewDiagnostic: PreviewDiagnostic | undefined;
 
-  constructor(status: number, code: string, message: string, allow?: string) {
+  constructor(status: number, code: string, message: string, allow?: string, previewDiagnostic?: PreviewDiagnostic) {
     super(message);
     this.name = 'HttpError';
     this.status = status;
     this.code = code;
     this.allow = allow;
+    this.previewDiagnostic = previewDiagnostic;
   }
 }
 
@@ -827,7 +831,8 @@ function mapError(error: unknown): { status: number; body: ErrorBody } {
     return { status: error.status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof HttpError) {
-    return { status: error.status, body: { error: { code: error.code, message: error.message } } };
+    return { status: error.status, body: { error: { code: error.code, message: error.message,
+      ...(error.previewDiagnostic ? { previewDiagnostic: error.previewDiagnostic } : {}) } } };
   }
   if (error instanceof ConflictError) {
     const message =

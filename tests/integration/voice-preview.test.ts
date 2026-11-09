@@ -50,6 +50,11 @@ test('sample proxy uses authenticated catalog IDs, preserves Host/Origin/token, 
     if (mode === 'timeout') return;
     if (mode === 'stalled-body') { res.writeHead(200, { 'content-type': 'audio/mpeg' }); res.write(bytes.subarray(0, 4)); return; }
     if (mode === 'redirect') { res.writeHead(302, { location: `${base}/v1/auth/me` }).end(); return; }
+    if (mode === 'http') { res.writeHead(404).end('PRIVATE provider body'); return; }
+    if (mode === 'mime' || mode === 'unknown-mime') { res.writeHead(200, { 'content-type': mode === 'mime' ? 'Text/HTML; charset=utf-8' : 'private/secret-value' }).end('PRIVATE provider body'); return; }
+    if (mode === 'signature') { res.writeHead(200, { 'content-type': 'audio/mpeg' }).end('PRIVATE invalid bytes'); return; }
+    if (mode === 'size') { res.writeHead(200, { 'content-type': 'audio/mpeg' }).end(Buffer.alloc(5 * 1024 * 1024 + 1)); return; }
+    if (mode === 'network') { res.destroy(new Error('PRIVATE upstream URL')); return; }
     res.writeHead(200, { 'content-type': 'audio/mpeg' }); res.end(bytes);
   });
   await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', resolve));
@@ -72,6 +77,20 @@ test('sample proxy uses authenticated catalog IDs, preserves Host/Origin/token, 
   assert.equal(result.status, 200); assert.equal(result.headers.get('content-type'), 'audio/mpeg');
   assert.equal(result.headers.get('cache-control'), 'no-store'); assert.equal(result.headers.get('x-content-type-options'), 'nosniff');
   assert.deepEqual(Buffer.from(await result.arrayBuffer()), Buffer.from(bytes));
+  for (const [failure, diagnostic] of [
+    ['http', { reason: 'http-rejection', status: 404 }],
+    ['mime', { reason: 'mime-rejection', mimeType: 'text/html' }],
+    ['unknown-mime', { reason: 'mime-rejection', mimeType: 'unknown' }],
+    ['signature', { reason: 'signature-rejection' }], ['size', { reason: 'size-limit' }],
+    ['network', { reason: 'network' }], ['timeout', { reason: 'timeout' }],
+  ] as const) {
+    mode = failure;
+    const response = await fetch(url, { headers });
+    assert.equal(response.status, failure === 'timeout' ? 504 : 502);
+    const body = await response.json() as { error: { previewDiagnostic?: unknown } };
+    assert.deepEqual(body.error.previewDiagnostic, diagnostic);
+    assert.doesNotMatch(JSON.stringify(body), /PRIVATE|secret-value|fake-sample-key|https?:|consumiendo/);
+  }
   mode = 'redirect'; assert.equal((await fetch(url, { headers })).status, 502);
   mode = 'timeout'; const timeout = await fetch(url, { headers }); assert.equal(timeout.status, 504);
   assert.doesNotMatch(await timeout.text(), /fake-sample-key|consumiendo/);

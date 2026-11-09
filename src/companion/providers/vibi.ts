@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { LIMITS } from '../../shared/schema/limits.ts';
 import type { VoiceCatalog } from '../../shared/voice/selection.ts';
 import { publicPreviewUrl, voiceDetails } from './voice-catalog.ts';
+import { safePreviewMime, type PreviewDiagnostic } from '../../shared/voice/preview-diagnostic.ts';
 
 export interface VibiOptions {
   apiKey?: string;
@@ -94,18 +95,23 @@ export async function vibiVoicePreview(provider: string, voiceId: string, url: s
     const response = new URL(url).origin === base ? await request(new URL(url).pathname)
       : await fetch(url, { signal: combined, redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer' });
     const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
-    if (!response.ok || !['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/mp4'].includes(mimeType ?? '')) {
-      await response.body?.cancel(); throw new VibiError('vibi-preview', 'La muestra no devolvió un audio compatible.');
+    if (!response.ok) {
+      await response.body?.cancel(); throw new VibiError('vibi-preview', 'Muestra no disponible.', { reason: 'http-rejection', status: response.status });
     }
-    const bytes = await boundedBytes(response, 5 * 1024 * 1024);
+    if (!['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/mp4'].includes(mimeType ?? '')) {
+      await response.body?.cancel(); throw new VibiError('vibi-preview', 'Muestra no compatible.', { reason: 'mime-rejection', mimeType: safePreviewMime(mimeType ?? null) });
+    }
+    const bytes = await boundedBytes(response, 5 * 1024 * 1024, { reason: 'size-limit' });
     const mp3 = bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0 || Buffer.from(bytes.subarray(0, 3)).toString() === 'ID3';
     const signature = Buffer.from(bytes.subarray(0, 12));
     const valid = mimeType === 'audio/mpeg' ? mp3 : mimeType?.includes('wav') ? signature.subarray(0, 4).toString() === 'RIFF' && signature.subarray(8, 12).toString() === 'WAVE'
       : mimeType === 'audio/ogg' ? signature.subarray(0, 4).toString() === 'OggS' : signature.subarray(4, 8).toString() === 'ftyp';
-    if (!valid) throw new VibiError('vibi-preview', 'La muestra no contiene un audio compatible.');
+    if (!valid) throw new VibiError('vibi-preview', 'La muestra no contiene un audio compatible.', { reason: 'signature-rejection' });
     return { bytes, mimeType: mimeType! };
   }).catch(error => {
-    if (error instanceof VibiError) throw new VibiError(error.code, error.code === 'vibi-timeout' ? 'Se agotó el plazo para descargar la muestra.' : 'No se pudo descargar una muestra de audio compatible. No se generó audio nuevo.');
+    if (error instanceof VibiError) throw new VibiError(error.code,
+      'No se pudo descargar una muestra de audio compatible. No se generó audio nuevo.',
+      error.previewDiagnostic ?? { reason: error.code === 'vibi-timeout' ? 'timeout' : error.code === 'vibi-response' ? 'signature-rejection' : 'network' });
     throw error;
   });
 }
@@ -159,7 +165,7 @@ export async function synthesizeSpeech(text: string, options: VibiOptions = {}, 
   });
 }
 
-async function boundedBytes(response: Response, limit: number): Promise<Uint8Array> {
+async function boundedBytes(response: Response, limit: number, sizeDiagnostic?: PreviewDiagnostic): Promise<Uint8Array> {
   const reader = response.body?.getReader();
   if (!reader) throw new VibiError('vibi-response', 'Vibi devolvió una respuesta vacía.');
   const chunks: Uint8Array[] = []; let size = 0;
@@ -167,7 +173,7 @@ async function boundedBytes(response: Response, limit: number): Promise<Uint8Arr
     while (true) {
       const { value, done } = await reader.read(); if (done) break;
       size += value.byteLength;
-      if (size > limit) throw new VibiError('vibi-response', 'La respuesta Vibi supera el límite permitido.');
+      if (size > limit) throw new VibiError('vibi-response', 'La respuesta Vibi supera el límite permitido.', sizeDiagnostic);
       chunks.push(value);
     }
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
@@ -177,7 +183,10 @@ async function boundedBytes(response: Response, limit: number): Promise<Uint8Arr
 
 export class VibiError extends Error {
   readonly code: string;
-  constructor(code: string, message: string) { super(message); this.name = 'VibiError'; this.code = code; }
+  readonly previewDiagnostic?: PreviewDiagnostic;
+  constructor(code: string, message: string, previewDiagnostic?: PreviewDiagnostic) {
+    super(message); this.name = 'VibiError'; this.code = code; this.previewDiagnostic = previewDiagnostic;
+  }
 }
 
 function endpoint(options: VibiOptions): string {

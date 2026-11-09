@@ -102,7 +102,7 @@ test('a failed existing sample shows recoverable feedback instead of generating 
     await voice.getByLabel('Voz para generar').selectOption('retry');
     const details = voice.getByRole('region', { name: 'Detalles de la voz' });
     await details.getByRole('button', { name: 'Escuchar muestra', exact: true }).click();
-    await details.getByText('No se pudo reproducir la muestra. Puede volver a intentarlo.', { exact: true }).waitFor();
+    await details.getByText('Muestra no disponible: formato no compatible (text/html). No se generó audio nuevo. Puede continuar con esta voz o volver a intentar la muestra.', { exact: true }).waitFor();
     assert.equal(await details.locator('audio').getAttribute('src'), null);
     assert.equal(samples, 1); assert.equal(posts, 0);
     fail = false; await details.getByRole('button', { name: 'Escuchar muestra', exact: true }).click();

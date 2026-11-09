@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CatalogVoice } from '../../../src/shared/voice/selection.ts';
-import { fetchVoiceSample, type AssetBlobUrl } from '../api.ts';
+import { fetchVoiceSample, ApiError, type AssetBlobUrl } from '../api.ts';
+import { previewFailureMessage } from '../../../src/shared/voice/preview-diagnostic.ts';
 
 /** The parent keys this component by voice identity, so changing selection stops its sample. */
 export function VoiceDetails({ voice, provider, disabled }: { voice: CatalogVoice; provider: string; disabled: boolean }) {
@@ -8,6 +9,7 @@ export function VoiceDetails({ voice, provider, disabled }: { voice: CatalogVoic
   const request = useRef<AbortController | null>(null);
   const blob = useRef<AssetBlobUrl | null>(null);
   const [state, setState] = useState<'idle' | 'loading' | 'playing' | 'ready' | 'failed'>('idle');
+  const [failure, setFailure] = useState(() => previewFailureMessage(null));
   const stop = (player = audio.current) => {
     request.current?.abort(); request.current = null;
     player?.pause();
@@ -28,7 +30,9 @@ export function VoiceDetails({ voice, provider, disabled }: { voice: CatalogVoic
       player.src = sample.url;
       setState('ready');
       try { await player.play(); } catch { if (!controller.signal.aborted) setState('ready'); }
-    } catch { if (!controller.signal.aborted) { stop(); setState('failed'); } }
+    } catch (error) { if (!controller.signal.aborted) {
+      stop(); setFailure(previewFailureMessage(error instanceof ApiError ? error.details.previewDiagnostic : null)); setState('failed');
+    } }
   };
   const details = [['Idioma', voice.language], ['Acento', voice.accent], ['Género', voice.gender], ['Estilo', voice.style]];
   return <section className="voice-details" aria-label="Detalles de la voz">
@@ -41,9 +45,9 @@ export function VoiceDetails({ voice, provider, disabled }: { voice: CatalogVoic
       {state === 'loading' || state === 'playing' || state === 'ready' ? 'Detener' : 'Escuchar muestra'}
     </button>
     <p className="muted small">{voice.previewAvailable ? 'Muestra existente del proveedor; no genera audio nuevo. El idioma de la muestra puede diferir de su narración.' : 'El proveedor no informó una muestra compatible para esta voz.'}</p>
-    <p role="status">{state === 'loading' ? 'Cargando muestra…' : state === 'failed' ? 'No se pudo reproducir la muestra. Puede volver a intentarlo.' : state === 'ready' ? 'Muestra lista. Use el control de reproducción si no se inicia.' : ''}</p>
+    <p role="status">{state === 'loading' ? 'Cargando muestra…' : state === 'failed' ? failure : state === 'ready' ? 'Muestra lista. Use el control de reproducción si no se inicia.' : ''}</p>
     <audio ref={audio} controls hidden={state !== 'ready' && state !== 'playing'} aria-label={`Muestra de ${voice.name}`}
       onPlaying={() => setState('playing')} onPause={() => { if (blob.current) setState('ready'); }}
-      onEnded={() => { stop(); setState('idle'); }} onError={() => { if (blob.current) { stop(); setState('failed'); } }} />
+      onEnded={() => { stop(); setState('idle'); }} onError={() => { if (blob.current) { stop(); setFailure(previewFailureMessage(null)); setState('failed'); } }} />
   </section>;
 }
