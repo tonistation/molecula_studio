@@ -12,16 +12,14 @@ const fixture = JSON.parse(readFileSync(new URL('../../docs/plan/examples/kit/sa
 
 test('anchored pills keep their complete bounds safe at every corner, including the actual Minerales projection', () => {
   for (const [width, height] of [[1080, 1920], [180, 240], [64, 48]]) {
-    for (const text of ['Minerales', 'W'.repeat(120), '礦🪨é'.repeat(40)]) {
+    for (const pillHeight of [70.8, 160, 299.297]) {
       for (const [x, y] of [[27.7485, 600], [0, 0], [width!, 0], [0, height!], [width!, height!]]) {
-        const layout = anchoredLabelLayout(x!, y!, width!, height!, text);
+        const layout = anchoredLabelLayout(x!, y!, width!, height!, pillHeight);
         assert.ok(layout.left >= layout.margin && layout.top >= layout.margin);
         assert.ok(layout.left + layout.width <= width! - layout.margin + 1e-8);
         assert.ok(layout.top + layout.height <= height! - layout.margin + 1e-8);
-        const columns = Math.max(1, Math.floor((layout.width - 2 * layout.paddingX) / (layout.fontSize * 1.1)));
-        assert.ok(Math.ceil([...text].length / columns) * layout.fontSize * 1.2 + 2 * layout.paddingY <= layout.height + 1e-8);
-        anchoredLabelLayout(500, 900, width!, height!, 'Other frame');
-        assert.deepEqual(anchoredLabelLayout(x!, y!, width!, height!, text), layout);
+        anchoredLabelLayout(500, 900, width!, height!, 50);
+        assert.deepEqual(anchoredLabelLayout(x!, y!, width!, height!, pillHeight), layout);
       }
     }
   }

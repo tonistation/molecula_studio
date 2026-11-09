@@ -4,7 +4,8 @@ import type { KitScene } from '../../../shared/kit/types.ts';
 import { animateObject, ease, mix, progress } from '../animate.ts';
 import { projectPoint } from '../camera.ts';
 import type { CameraState } from '../camera.ts';
-import { labelLayout, anchoredLabelLayout } from './layout.ts';
+import { labelLayout } from './layout.ts';
+import { AnchoredLabel } from './AnchoredLabel.tsx';
 
 const pill: CSSProperties = {
   position: 'absolute', borderRadius: 40, padding: '15px 28px', background: '#172D45',
@@ -19,15 +20,8 @@ export function Overlays({ spec, ms, camera, width, height }: { spec: KitScene; 
       const state = animateObject(object, ms);
       const point = projectPoint(state.position, camera, width, height);
       if (!point.visible || state.opacity <= 0) return null;
-      const layout = anchoredLabelLayout(point.x, point.y, width, height, label.text);
-      return <div key={i} data-anchored-label style={{
-        position: 'absolute', left: layout.left, top: layout.top, width: layout.width, height: layout.height,
-        display: 'flex', justifyContent: 'center', alignItems: 'flex-start', opacity: state.opacity,
-      }}><div style={{
-        ...pill, position: 'relative', background: label.color, maxWidth: '100%', width: 'max-content',
-        boxSizing: 'border-box', fontSize: layout.fontSize, lineHeight: 1.2,
-        padding: `${layout.paddingY}px ${layout.paddingX}px`, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-all', textAlign: 'center',
-      }}>{label.text}</div></div>;
+      return <AnchoredLabel key={JSON.stringify([i, label.text, width, height])} pill={pill}
+        text={label.text} color={label.color} opacity={state.opacity} x={point.x} y={point.y} width={width} height={height} />;
     })}
     {spec.objects.map(object => {
       if (object.type !== 'label') return null;
