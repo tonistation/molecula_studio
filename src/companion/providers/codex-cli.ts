@@ -19,19 +19,29 @@ export interface CodexOptions {
   tempRoot?: string;
 }
 
+export interface CodexDiagnostics {
+  stage: 'spawn' | 'running' | 'exit' | 'timeout';
+  elapsedMs: number;
+  processStarted: boolean;
+  exitCode?: number;
+  signal?: 'SIGTERM' | 'SIGKILL' | 'SIGINT' | 'SIGHUP';
+}
+
 export class GenerationError extends Error {
   readonly status: number;
   readonly code: string;
   readonly responseText: string | undefined;
-  constructor(status: number, code: string, message: string, responseText?: string) {
+  readonly diagnostics: CodexDiagnostics | undefined;
+  constructor(status: number, code: string, message: string, responseText?: string, diagnostics?: CodexDiagnostics) {
     super(message);
     this.status = status;
     this.code = code;
     this.responseText = responseText;
+    this.diagnostics = diagnostics;
   }
 }
 
-/** No subprocess diagnostics are returned or logged: they may contain credentials/prompts. */
+/** Only closed lifecycle metadata is returned; subprocess output is never captured. */
 export function runCodex(args: string[], options: CodexOptions & { cwd?: string; input?: string; signal?: AbortSignal } = {}): Promise<void> {
   return new Promise((resolve, reject) => {
     if (options.signal?.aborted) { reject(new GenerationError(499, 'generation-cancelled', 'Generación cancelada.')); return; }
@@ -39,27 +49,40 @@ export function runCodex(args: string[], options: CodexOptions & { cwd?: string;
     // or expose unrelated provider credentials to model-launched tools.
     const env = Object.fromEntries(Object.entries(options.env ?? process.env)
       .filter(([key]) => !/key|token|secret|password|credential/i.test(key) && !key.startsWith('VIBI_')));
+    const startedAt = performance.now();
+    let processStarted = false;
+    const diagnostics = (stage: CodexDiagnostics['stage']): CodexDiagnostics => ({ stage, processStarted,
+      elapsedMs: Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(performance.now() - startedAt) || 0)) });
     const child = spawn('codex', args, { cwd: options.cwd, env,
       shell: false, detached: true, stdio: ['pipe', 'ignore', 'ignore'] });
+    child.once('spawn', () => { processStarted = true; });
     let failure: GenerationError | undefined;
     const stop = (error: GenerationError) => {
       failure ??= error;
       // Kill the process group as well as the CLI (tools must not outlive a timeout).
       if (child.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); } }
     };
+    const timeoutMs = options.timeoutMs ?? 180000;
     const timer = setTimeout(() => stop(new GenerationError(504, 'generation-timeout',
-      'Codex superó el tiempo de espera. Reintenta o usa el modo manual.')), options.timeoutMs ?? 180000);
-    const abort = () => stop(new GenerationError(499, 'generation-cancelled', 'Generación cancelada.'));
+      `Codex no terminó en ${timeoutMs / 1000} s (tiempo de espera). Reintenta o usa el modo manual.`, undefined, diagnostics('timeout'))), timeoutMs);
+    const abort = () => stop(new GenerationError(499, 'generation-cancelled', 'Generación cancelada.', undefined,
+      diagnostics(processStarted ? 'running' : 'spawn')));
     options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) abort();
     child.stdin.on('error', () => { /* Early CLI exit; close reports a safe actionable error. */ });
-    child.once('error', () => { failure = new GenerationError(503, 'codex-unavailable',
-      'No se pudo iniciar Codex. Instala Codex CLI y ejecuta codex login; también puedes usar el modo manual.'); });
-    child.once('close', code => {
+    child.once('error', () => { failure ??= new GenerationError(503, 'codex-unavailable',
+      'No se pudo iniciar Codex. Instala Codex CLI y ejecuta codex login; también puedes usar el modo manual.', undefined, diagnostics('spawn')); });
+    child.once('close', (code, signal) => {
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', abort);
       if (failure) reject(failure);
-      else if (code !== 0) reject(new GenerationError(502, 'codex-failed',
-        'Codex no pudo generar la respuesta. Comprueba tu sesión con codex login y tus límites de uso, o usa el modo manual.'));
+      else if (code !== 0) {
+        const info = diagnostics('exit');
+        if (Number.isInteger(code) && code! >= 0 && code! <= 255) info.exitCode = code!;
+        if (signal === 'SIGTERM' || signal === 'SIGKILL' || signal === 'SIGINT' || signal === 'SIGHUP') info.signal = signal;
+        reject(new GenerationError(502, 'codex-failed',
+          'Codex no pudo generar la respuesta. Comprueba tu sesión con codex login y tus límites de uso, o usa el modo manual.', undefined, info));
+      }
       else resolve();
     });
     child.stdin.end(options.input ?? '');

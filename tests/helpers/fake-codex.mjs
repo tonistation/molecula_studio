@@ -39,6 +39,11 @@ if (args[0] === '--version') {
     || args[args.indexOf('--sandbox') + 1] !== 'read-only' || !args.includes('--skip-git-repo-check')) throw Error('unsafe flags');
   appendFileSync(process.env.FAKE_CODEX_RECORD, JSON.stringify({ args, cwd: process.cwd(), input, schema,
     inheritedProviderSecret: Boolean(process.env.VIBI_API_KEY || process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY) }) + '\n');
+  if (['hang', 'fail', 'signal'].includes(mode)) {
+    console.log('private-stub-output-4815');
+    console.error('private-stub-output-4815');
+  }
+  if (mode === 'signal') process.kill(process.pid, 'SIGTERM');
   if (mode === 'hang') {
     const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
     writeFileSync(process.env.FAKE_CODEX_CHILD, String(child.pid));

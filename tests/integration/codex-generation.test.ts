@@ -15,6 +15,42 @@ import { SCRIPT_PROPOSAL_SCHEMA } from '../../src/shared/script/schema.ts';
 
 const input = { idea: 'Una roca', styleId: 'stylized-3d', locale: 'es' as const, targetSeconds: 15 };
 
+test('HTTP Codex failures expose only bounded process lifecycle diagnostics', async () => {
+  const fake = await fakeCodex();
+  const root = await mkdtemp(join(tmpdir(), 'molecula-diagnostics-'));
+  try {
+    for (const [mode, status, code, stage, started] of [
+      ['missing', 503, 'codex-unavailable', 'spawn', false],
+      ['fail', 502, 'codex-failed', 'exit', true],
+      ['signal', 502, 'codex-failed', 'exit', true],
+      ['hang', 504, 'generation-timeout', 'timeout', true],
+    ] as const) {
+      const server = await startCompanionServer({ workspaceRoot: root, codexOptions: {
+        env: { ...fake.env, FAKE_CODEX_MODE: mode, ...(mode === 'missing' ? { PATH: '' } : {}) },
+        timeoutMs: mode === 'hang' ? 400 : 5000,
+      } });
+      try {
+        const response = await fetch(server.origin + '/api/script/generate', { method: 'POST',
+          headers: { origin: server.origin, authorization: `Bearer ${server.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify(input) });
+        const text = await response.text();
+        assert.equal(response.status, status);
+        assert.ok(!text.includes('private-stub-output-4815'));
+        assert.ok(!text.includes(fake.root));
+        const error = JSON.parse(text).error;
+        assert.equal(error.code, code);
+        assert.equal(error.diagnostics.stage, stage);
+        assert.equal(error.diagnostics.processStarted, started);
+        assert.ok(Number.isSafeInteger(error.diagnostics.elapsedMs) && error.diagnostics.elapsedMs >= 0);
+        if (mode === 'fail') assert.equal(error.diagnostics.exitCode, 1);
+        if (mode === 'signal') assert.equal(error.diagnostics.signal, 'SIGTERM');
+        if (mode === 'hang') assert.match(error.message, /Codex no terminó en/);
+        assert.ok(Object.keys(error.diagnostics).every(key => ['stage', 'processStarted', 'elapsedMs', 'exitCode', 'signal'].includes(key)));
+      } finally { await server.close(); }
+    }
+  } finally { await rm(root, { recursive: true, force: true }); await fake.cleanup(); }
+});
+
 test('capabilities uses a fake PATH executable, reports only booleans and times out without a provider', async () => {
   const fake = await fakeCodex();
   try {

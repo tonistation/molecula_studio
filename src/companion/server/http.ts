@@ -463,6 +463,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       if (error instanceof GenerationError) {
         // The bearer token is never part of a returned diagnostic, even in fake output.
         sendJson(res, error.status, { error: { code: error.code, message: error.message,
+          ...(error.diagnostics === undefined ? {} : { diagnostics: error.diagnostics }),
           ...(error.responseText === undefined ? {} : { responseText: error.responseText.split(context.token).join('[oculto]') }) } });
       } else throw error;
     } finally {

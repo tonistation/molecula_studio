@@ -30,6 +30,8 @@ Base: commit `ad26d62`. Uso local, una persona. Servidor: [más adelante](#camin
 
 La ruta está implementada hasta 5.4. La [aceptación real acotada](#aceptación-real-acotada--9-de-noviembre-de-2026) distingue componentes verificados, recorrido con guion manual y pendientes humanos; no equivale a un pipeline totalmente automático verificado.
 
+En una aceptación automática posterior se guardó un guion de tres escenas. El primer dibujo devolvió HTTP 504 al agotarse el límite local de 180 s; la causa de la espera es desconocida. Los diagnósticos efímeros de proceso no incluyen salida del CLI y no identifican su actividad interna. No se realizó un reintento en esta corrección.
+
 ## Decisiones
 
 | ID | Decisión | Por qué | Descartado |

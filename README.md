@@ -4,6 +4,8 @@ Aplicación local para crear videos animados verticales a partir de guiones, esc
 
 **Estado: implementado hasta 5.4; componentes reales verificados, aceptación humana pendiente.** Schema 2, persistencia local, editor React, kit 3D, subtítulos y exportación MP4 por CLI/UI. Guion/dibujo ofrecen modos manual/automático con Codex CLI; voz permite WAV/MP3 o Vibi TTS/STT con consentimiento. La aceptación del 09/11/2026 confirmó los schemas reales de guion y dibujo por separado y un recorrido **guion manual → dibujo Codex real → voz/alineación Vibi reales → MP4 descargado y reabierto**. No verifica un pipeline totalmente automático sobre la misma propuesta. El [ROADMAP](ROADMAP.md#aceptación-real-acotada--9-de-noviembre-de-2026) detalla resultados y límites; el [backlog anterior](docs/plan/implementation-tasks.md) sigue congelado.
 
+En la aceptación automática posterior se guardó un guion de tres escenas; el primer dibujo devolvió HTTP 504 tras el límite local de 180 s. La causa de la espera es desconocida. Los errores de proceso incluyen metadatos efímeros acotados, sin salida del CLI; no demuestran qué ocurrió dentro de Codex.
+
 ## Ejecutar localmente
 
 Requiere Node.js 26 (`.nvmrc`).
