@@ -124,6 +124,7 @@ test('kit prompt is deterministic, single scene, literal schema/catalog and comp
   assert.equal(buildKitPrompt(args), prompt);
   assert.ok(prompt.includes(JSON.stringify(KIT_SCENE_SCHEMA)));
   assert.ok(prompt.includes(JSON.stringify(previous.visual.objects)));
-  for (const term of ['objectId', 'low-poly', 'cámara', 'una sola', 'JSON', 'referencias', 'seed', '6000']) assert.ok(prompt.includes(term), term);
+  for (const term of ['objectId', 'low-poly', 'cámara', 'una sola', 'JSON', 'referencias', 'seed', '6000',
+    'la mayor', 'diámetros', '35 %', '65 %', '+Y', 'menor que el sujeto', 'margen', 'uniones automáticas']) assert.ok(prompt.includes(term), term);
   assert.deepEqual(args, before);
 });

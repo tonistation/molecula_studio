@@ -34,6 +34,14 @@ npm run render -- docs/plan/examples/kit/sal-del-mar-storyboard.json workspace/s
 
 Usar una salida nueva al repetir. La [demo local con voz](ROADMAP.md#ampliación-autorizada--demo-con-planos-distintos) dura 35,8 s y usa Paulina de macOS, sin proveedor ni gasto. Sus binarios no se versionan; no se afirma permiso de redistribución de esa voz. Los puntos dorados son símbolos ampliados, no cristales visibles en el agua.
 
+### Apariencia del kit y compatibilidad
+
+Las flechas son sólidos cerrados: la mayor dimensión de `proportions` define el largo; las otras dos, los diámetros de la punta elíptica. No se recortan las medidas. La punta ocupa el 35 % del largo y el cuerpo el 65 %, con diámetros del 40 % de la punta. El eje local +Y se orienta hacia `direction` antes de aplicar `rotation`. Ejemplo alargado: `{ "width": 0.3, "height": 1.5, "depth": 0.25 }`. Esta convención admite tanto flechas históricas largas en `depth` como dibujos largos en `height`.
+
+El renderer usa luz principal con sombras suaves y relleno moderado, conservando sombreado plano y colores del proyecto. Las sombras cubren un volumen central de 48 unidades de ancho; no se garantiza cobertura para escenarios arbitrariamente grandes. Los ríos con terreno reciben orillas inclinadas que siguen sus puntos, hasta 0,18 anchos adicionales por lado y 0,08 anchos de relieve; no se añaden a cascadas ni mares. No se excava terreno ni se unen automáticamente objetos separados: hay que componer sus alturas y desembocaduras.
+
+Son cambios de **apariencia compartidos por vista previa y exportación**, no de schema: los JSON anteriores siguen siendo válidos, conservan parámetros e identidades, pero sus renders pueden verse distintos. No hay migración ni reescritura automática de proyectos. El prompt de dibujo explica dimensiones, jerarquía visual y márgenes de cámara; la aprobación estética sigue siendo humana.
+
 ## Elegir y escuchar una voz
 
 En un proyecto abierto: «Voz automática» → «Cargar voces Vibi» → elegir voz. El selector muestra nombre e idioma/acento cuando el catálogo los informa; la ficha amplía género, estilo y descripción disponibles. No se deduce «español mexicano» del nombre ni del idioma español. Si faltan datos, aparece «Idioma/acento no informado»; no hay filtro por país.

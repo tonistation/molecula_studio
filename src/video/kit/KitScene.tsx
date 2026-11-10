@@ -17,16 +17,19 @@ export function KitScene({ spec, durationInFrames }: { spec: SceneSpec; duration
   const dark = spec.palette.preset === 'dark';
   return <AbsoluteFill style={{ background: `linear-gradient(${spec.sky.top}, ${spec.sky.bottom})` }}>
     <ThreeCanvas
-      width={width} height={height} camera={camera} dpr={1} flat
+      width={width} height={height} camera={camera} dpr={1} flat shadows
       gl={{ alpha: true, antialias: true }}
       fallback={<AbsoluteFill style={{ background: '#FFF0E8', color: '#772211', padding: 100, fontSize: 48 }}>
         No se pudo iniciar WebGL. Revisa el navegador y la configuración gráfica.
       </AbsoluteFill>}
     >
       <fog attach="fog" args={[spec.palette.background, dark ? 18 : 28, dark ? 65 : 100]} />
-      <ambientLight intensity={dark ? 0.45 : 0.8} />
-      <hemisphereLight args={[dark ? '#819BCC' : '#DAF4FF', '#678655', dark ? 0.5 : 1.2]} />
-      <directionalLight position={[-5, 10, 7]} intensity={dark ? 1 : 2.2} color={dark ? '#AFC8FF' : '#FFF2CB'} />
+      <ambientLight intensity={dark ? 0.3 : 0.45} />
+      <hemisphereLight args={[dark ? '#819BCC' : '#DAF4FF', '#678655', dark ? 0.5 : 0.8]} />
+      <directionalLight position={[-12, 20, 12]} intensity={dark ? 1 : 2.2} color={dark ? '#AFC8FF' : '#FFF2CB'}
+        castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-24} shadow-camera-right={24}
+        shadow-camera-top={24} shadow-camera-bottom={-24} shadow-camera-near={0.5} shadow-camera-far={80}
+        shadow-bias={-0.0002} shadow-normalBias={0.03} />
       <Environment spec={spec} ms={ms} />
       {spec.objects.map(object => <KitObject key={object.id} spec={object} ms={ms} />)}
       {spec.particles.map((system, i) => <Particles key={i} spec={system} ms={ms} />)}

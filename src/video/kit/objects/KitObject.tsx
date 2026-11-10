@@ -1,11 +1,12 @@
-import { Quaternion, Vector2, Vector3 } from 'three';
+import { Vector2 } from 'three';
 import type { ReactNode } from 'react';
 import type { KitObject as ObjectSpec } from '../../../shared/kit/types.ts';
 import type { Vec3 } from '../../../shared/schema/types.ts';
 import { animateObject, identitySeed, seeded } from '../animate.ts';
+import { arrowShape } from './arrow-shape.ts';
 
 function Solid({ children, color, opacity }: { children: ReactNode; color: string; opacity: number }) {
-  return <mesh>{children}<meshStandardMaterial color={color} flatShading roughness={0.9} transparent={opacity < 1} opacity={opacity} /></mesh>;
+  return <mesh castShadow receiveShadow>{children}<meshStandardMaterial color={color} flatShading roughness={0.9} transparent={opacity < 1} opacity={opacity} /></mesh>;
 }
 
 export function KitObject({ spec, ms }: { spec: ObjectSpec; ms: number }) {
@@ -47,12 +48,10 @@ export function KitObject({ spec, ms }: { spec: ObjectSpec; ms: number }) {
       break;
     }
     case 'arrow': {
-      const { width: w, height: h, depth: d } = spec.params.proportions;
-      const direction = new Vector3(...spec.params.direction).normalize();
-      const quaternion = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), direction);
-      content = <group quaternion={quaternion}>
-        {solid(<cylinderGeometry args={[Math.min(w, h) * 0.2, Math.min(w, h) * 0.2, d * 0.7, 8]} />, spec.params.color)}
-        <group position={[0, d * 0.45, 0]}>{solid(<coneGeometry args={[Math.max(w, h) * 0.6, d * 0.4, 8]} />, spec.params.color)}</group>
+      const s = arrowShape(spec.params.proportions, spec.params.direction);
+      content = <group quaternion={s.quaternion}>
+        <group position={[0, s.shaftCenter, 0]} scale={[s.shaftWidth, s.shaftLength, s.shaftDepth]}>{solid(<cylinderGeometry args={[0.5, 0.5, 1, 8, 1, false]} />, spec.params.color)}</group>
+        <group position={[0, s.headCenter, 0]} scale={[s.headWidth, s.headLength, s.headDepth]}>{solid(<coneGeometry args={[0.5, 1, 8, 1, false]} />, spec.params.color)}</group>
       </group>;
       break;
     }
