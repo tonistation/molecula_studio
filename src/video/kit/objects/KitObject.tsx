@@ -6,7 +6,12 @@ import { animateObject, identitySeed, seeded } from '../animate.ts';
 import { arrowShape } from './arrow-shape.ts';
 
 function Solid({ children, color, opacity }: { children: ReactNode; color: string; opacity: number }) {
-  return <mesh castShadow receiveShadow>{children}<meshStandardMaterial color={color} flatShading roughness={0.9} transparent={opacity < 1} opacity={opacity} /></mesh>;
+  return <mesh castShadow receiveShadow>
+    {children}
+    <meshStandardMaterial color={color} flatShading roughness={0.9} transparent={opacity < 1} opacity={opacity} />
+    {/* BasicDepthPacking feeds opacity to stable alphaHash; opaque meshes retain Three's original depth pass. */}
+    {opacity < 1 && <meshDepthMaterial attach="customDepthMaterial" alphaHash opacity={opacity} />}
+  </mesh>;
 }
 
 export function KitObject({ spec, ms }: { spec: ObjectSpec; ms: number }) {

@@ -40,6 +40,8 @@ Las flechas son sólidos cerrados: la mayor dimensión de `proportions` define e
 
 El renderer usa luz principal con sombras suaves y relleno moderado, conservando sombreado plano y colores del proyecto. Las sombras cubren un volumen central de 48 unidades de ancho; no se garantiza cobertura para escenarios arbitrariamente grandes. Los ríos con terreno reciben orillas inclinadas que siguen sus puntos, hasta 0,18 anchos adicionales por lado y 0,08 anchos de relieve; no se añaden a cascadas ni mares. No se excava terreno ni se unen automáticamente objetos separados: hay que componer sus alturas y desembocaduras.
 
+Durante `appear`, `disappear` y el `reveal` histórico, el material de profundidad usa la misma opacidad animada con `alphaHash` determinista. Las sombras parciales pueden mostrar grano y oscurecerse de forma no lineal cuando se superponen varias piezas; no requieren acumulación temporal ni cambian las sombras totalmente opacas. No se conserva una sombra opaca hasta el último frame ni se desactiva durante todo el fundido.
+
 Son cambios de **apariencia compartidos por vista previa y exportación**, no de schema: los JSON anteriores siguen siendo válidos, conservan parámetros e identidades, pero sus renders pueden verse distintos. No hay migración ni reescritura automática de proyectos. El prompt de dibujo explica dimensiones, jerarquía visual y márgenes de cámara; la aprobación estética sigue siendo humana.
 
 ## Elegir y escuchar una voz
