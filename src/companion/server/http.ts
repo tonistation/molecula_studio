@@ -453,6 +453,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     context.generation.active.add(controller);
     const cancel = () => controller.abort();
     res.once('close', cancel);
+    if (res.destroyed) cancel();
     try {
       let vibiVoiceConfigured = false;
       if (capability) { try { voiceConfiguration(context.vibi); vibiVoiceConfigured = true; } catch { /* Local configuration only; no network. */ } }

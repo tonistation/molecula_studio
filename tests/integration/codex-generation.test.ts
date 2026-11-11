@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
 import { fakeCodex } from '../helpers/fake-codex.ts';
-import { generateScript, generateDrawing, GenerationError, runCodex } from '../../src/companion/providers/codex-cli.ts';
+import { generateScript, generateDrawing, GenerationError, runCodex, SCRIPT_TIMEOUT_MS, DRAWING_TIMEOUT_MS } from '../../src/companion/providers/codex-cli.ts';
 import { capabilities } from '../../src/companion/providers/capabilities.ts';
 import { startCompanionServer } from '../../src/companion/server/http.ts';
 import { applyScriptProposal } from '../../src/shared/script/apply.ts';
@@ -16,6 +16,28 @@ import { validateProject } from '../../src/shared/schema/validate.ts';
 import { SCRIPT_PROPOSAL_SCHEMA } from '../../src/shared/script/schema.ts';
 
 const input = { idea: 'Una roca', styleId: 'stylized-3d', locale: 'es' as const, targetSeconds: 15 };
+
+test('drawing has a bounded longer deadline without changing script deadline', () => {
+  assert.equal(SCRIPT_TIMEOUT_MS, 180_000);
+  assert.equal(DRAWING_TIMEOUT_MS, 600_000);
+});
+
+test('drawing timeout reports the injected limit and removes its temporary files', async () => {
+  const fake = await fakeCodex('hang');
+  try {
+    const result = validateProject(fixtureJson('storyboard'));
+    assert.ok(result.ok);
+    await assert.rejects(generateDrawing({ project: result.project, sceneId: result.project.scenes[0]!.sceneId },
+      { env: fake.env, tempRoot: fake.root, timeoutMs: 300 }), error => {
+      assert.ok(error instanceof GenerationError);
+      assert.equal(error.code, 'generation-timeout');
+      assert.match(error.message, /0\.3 s/);
+      assert.equal(error.diagnostics?.stage, 'timeout');
+      return true;
+    });
+    assert.ok(!(await readdir(fake.root)).some(name => name.startsWith('molecula-codex-')));
+  } finally { await fake.cleanup(); }
+});
 
 test('HTTP Codex failures expose only bounded process lifecycle diagnostics', async () => {
   const fake = await fakeCodex();
@@ -204,6 +226,23 @@ test('explicit abort and companion shutdown stop pending generation and remove i
     assert.ok(!(await readdir(fake.root)).some(name => name.startsWith('molecula-codex-')));
     await rm(fake.env.FAKE_CODEX_CHILD);
     server = await startCompanionServer({ workspaceRoot: root, codexOptions: options });
+    const drawingProject = validateProject(fixtureJson('storyboard'));
+    assert.ok(drawingProject.ok);
+    const client = new AbortController();
+    const disconnected = fetch(server.origin + '/api/drawing/generate', { method: 'POST', signal: client.signal,
+      headers: { origin: server.origin, authorization: `Bearer ${server.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ project: drawingProject.project, sceneId: drawingProject.project.scenes[0]!.sceneId }) });
+    const disconnectResult = assert.rejects(disconnected);
+    await waitForStart();
+    const drawingPid = Number(await readFile(fake.env.FAKE_CODEX_CHILD, 'utf8'));
+    client.abort();
+    await disconnectResult;
+    for (let i = 0; i < 100; i++) {
+      try { process.kill(drawingPid, 0); } catch { break; }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.throws(() => process.kill(drawingPid, 0), 'disconnected drawing descendants do not survive');
+    await rm(fake.env.FAKE_CODEX_CHILD);
     const response = fetch(server.origin + '/api/script/generate', { method: 'POST',
       headers: { origin: server.origin, authorization: `Bearer ${server.token}`, 'content-type': 'application/json' }, body: JSON.stringify(input) });
     await waitForStart();

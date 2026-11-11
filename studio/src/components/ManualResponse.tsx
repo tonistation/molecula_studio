@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, describeError } from '../api.ts';
+import { SCRIPT_TIMEOUT_MS } from '../../../src/shared/generation-timeouts.ts';
+import { useElapsed } from './useElapsed.ts';
 
 interface ManualResponseProps<T> {
   label: string;
@@ -10,17 +12,19 @@ interface ManualResponseProps<T> {
   apply: (value: T) => boolean;
   applyLabel?: string;
   generate?: (signal: AbortSignal) => Promise<string>;
+  timeoutMs?: number;
 }
 
 /** Review is invalidated on paste/edit; only explicit application changes the draft. */
 export function ManualResponse<T>({ label, copyLabel, buildPrompt, parse, review, apply,
-  applyLabel = 'Aplicar al borrador', generate }: ManualResponseProps<T>) {
+  applyLabel = 'Aplicar al borrador', generate, timeoutMs = SCRIPT_TIMEOUT_MS }: ManualResponseProps<T>) {
   const [response, setResponse] = useState('');
   const [proposal, setProposal] = useState<T | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
   const [fallback, setFallback] = useState('');
   const [generating, setGenerating] = useState(false);
+  const elapsed = useElapsed(generating);
   const pending = useRef<AbortController | null>(null);
   useEffect(() => () => pending.current?.abort(), []);
 
@@ -42,7 +46,7 @@ export function ManualResponse<T>({ label, copyLabel, buildPrompt, parse, review
       if (error instanceof ApiError && typeof error.details.responseText === 'string') setResponse(error.details.responseText);
     } finally {
       pending.current = null;
-      if (!controller.signal.aborted) setGenerating(false);
+      setGenerating(false);
     }
   };
 
@@ -66,7 +70,8 @@ export function ManualResponse<T>({ label, copyLabel, buildPrompt, parse, review
     {generate ? <button type="button" disabled={generating} onClick={() => void generateResponse()}>
       {generating ? 'Generando con Codex…' : 'Generar con Codex'}
     </button> : <button type="button" className="ghost" onClick={() => void copyPrompt()}>{copyLabel}</button>}
-    {generating && <p role="status">Esperando respuesta de Codex (hasta 180 s)…</p>}
+    {generating && <><p role="status">Esperando respuesta de Codex. Puede tardar varios minutos. Transcurrido: {elapsed} s; límite: {timeoutMs / 1000} s.</p>
+      <button type="button" onClick={() => { pending.current?.abort(); setNotice('Generación cancelada.'); }}>Cancelar generación</button></>}
     {fallback && <label className="field"><span>Prompt para copiar</span>
       <textarea aria-label="Prompt para copiar" rows={5} readOnly value={fallback} onFocus={event => event.target.select()} />
     </label>}

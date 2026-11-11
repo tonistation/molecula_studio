@@ -6,6 +6,8 @@ Aplicación local para crear videos animados verticales a partir de guiones, esc
 
 En la aceptación automática posterior se guardó un guion de tres escenas; el primer dibujo devolvió HTTP 504 tras el límite local de 180 s. La causa de la espera es desconocida. Los errores de proceso incluyen metadatos efímeros acotados, sin salida del CLI; no demuestran qué ocurrió dentro de Codex.
 
+El dibujo automático dispone ahora de hasta 600 s por escena (420 s más que antes); el guion conserva 180 s. La interfaz muestra el tiempo transcurrido y permite cancelar. No hay reintentos automáticos. Este límite fijo puede reducir falsos vencimientos, pero no garantiza éxito ni se ha validado todavía con Codex real. No se muestra la salida interna del CLI.
+
 ## Ejecutar localmente
 
 Requiere Node.js 26 (`.nvmrc`).

@@ -1,0 +1,2 @@
+export const SCRIPT_TIMEOUT_MS = 180_000;
+export const DRAWING_TIMEOUT_MS = 600_000;

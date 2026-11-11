@@ -11,6 +11,8 @@ import { parseScriptResponse } from '../../shared/script/parse.ts';
 import { buildKitPrompt } from '../../shared/kit/prompt.ts';
 import { selectKitOutputSchema } from '../../shared/kit/output-schema.ts';
 import { parseKitResponse } from '../../shared/kit/parse.ts';
+import { SCRIPT_TIMEOUT_MS, DRAWING_TIMEOUT_MS } from '../../shared/generation-timeouts.ts';
+export { SCRIPT_TIMEOUT_MS, DRAWING_TIMEOUT_MS } from '../../shared/generation-timeouts.ts';
 
 export interface CodexOptions {
   /** Test-only process environment and shorter deadlines; never accepted over HTTP. */
@@ -62,7 +64,7 @@ export function runCodex(args: string[], options: CodexOptions & { cwd?: string;
       // Kill the process group as well as the CLI (tools must not outlive a timeout).
       if (child.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); } }
     };
-    const timeoutMs = options.timeoutMs ?? 180000;
+    const timeoutMs = options.timeoutMs ?? SCRIPT_TIMEOUT_MS;
     const timer = setTimeout(() => stop(new GenerationError(504, 'generation-timeout',
       `Codex no terminó en ${timeoutMs / 1000} s (tiempo de espera). Reintenta o usa el modo manual.`, undefined, diagnostics('timeout'))), timeoutMs);
     const abort = () => stop(new GenerationError(499, 'generation-cancelled', 'Generación cancelada.', undefined,
@@ -169,5 +171,5 @@ export async function generateDrawing(input: unknown, options: CodexOptions = {}
       const parsed = parseKitResponse(text, { durationMs: scene.durationMs,
         entities: new Map(project.entities.map(entity => [entity.entityId, entity])) });
       return parsed.ok ? { ok: true, value: parsed.scene } : parsed;
-    }, options, signal);
+    }, { ...options, timeoutMs: options.timeoutMs ?? DRAWING_TIMEOUT_MS }, signal);
 }

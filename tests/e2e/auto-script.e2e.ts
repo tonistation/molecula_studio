@@ -84,6 +84,35 @@ test('automatic mode is disabled with an actionable reason when CLI is missing; 
   });
 });
 
+test('drawing displays elapsed time, prevents duplicate requests and cancels', { timeout: 45000 }, async t => {
+  const fake = await fakeCodex();
+  try {
+    await withStudio(t, async ({ page }) => {
+      await page.getByLabel('Nombre', { exact: true }).fill('Cancelación');
+      await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+      await page.getByLabel('Idea', { exact: true }).fill('Una roca');
+      await page.waitForFunction(() => !document.querySelector<HTMLOptionElement>('select option[value="auto"]')?.disabled);
+      await page.getByLabel('Modo de guion').selectOption('auto');
+      const script = page.getByRole('region', { name: 'Guion automático' });
+      await script.getByRole('button', { name: 'Generar con Codex', exact: true }).click();
+      await script.getByRole('region', { name: 'Revisión del guion' }).waitFor();
+      await script.getByRole('button', { name: 'Aplicar al borrador', exact: true }).click();
+      const card = page.locator('.scene-card').first();
+      await card.locator('summary').click();
+      await card.getByLabel('Modo de dibujo').selectOption('auto');
+      fake.env.FAKE_CODEX_MODE = 'hang';
+      await card.getByRole('button', { name: 'Generar con Codex', exact: true }).click();
+      await card.getByText(/Transcurrido: [1-9]\d* s; límite: 600 s/).waitFor();
+      assert.ok(await card.getByRole('button', { name: 'Generando con Codex…' }).isDisabled());
+      assert.equal((await readFile(fake.env.FAKE_CODEX_RECORD, 'utf8')).trim().split('\n').length, 2);
+      await card.getByRole('button', { name: 'Cancelar generación' }).click();
+      await card.getByText('Generación cancelada.').waitFor();
+      assert.ok(await card.getByRole('button', { name: 'Generar con Codex', exact: true }).isEnabled());
+      assert.equal(await card.getByRole('region', { name: 'Revisión del dibujo' }).count(), 0);
+    }, 'chromium', { env: fake.env });
+  } finally { await fake.cleanup(); }
+});
+
 test('auto errors expose safe invalid text/manual fallback and pending/stale drawings never overwrite edits', { timeout: 90000 }, async t => {
   const fake = await fakeCodex('success');
   try {

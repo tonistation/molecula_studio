@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, describeError } from '../api.ts';
 import { applyKitScene } from '../../../src/shared/kit/apply.ts';
 import type { DraftStepProps } from './ScriptStep.tsx';
+import { DRAWING_TIMEOUT_MS } from '../../../src/shared/generation-timeouts.ts';
+import { useElapsed } from './useElapsed.ts';
 
 /** Sequential generation sends each accepted drawing as continuity for the next. */
 export function DrawAll({ draft, disabled, onEdit }: DraftStepProps) {
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const elapsed = useElapsed(busy, progress);
   const [response, setResponse] = useState('');
   const pending = useRef<AbortController | null>(null);
   useEffect(() => () => pending.current?.abort(), []);
@@ -43,12 +46,13 @@ export function DrawAll({ draft, disabled, onEdit }: DraftStepProps) {
         setError(`${describeError(failure)} Se conservan los dibujos ya aplicados.`); setProgress('');
         if (failure instanceof ApiError && typeof failure.details.responseText === 'string') setResponse(failure.details.responseText);
       }
-    } finally { pending.current = null; if (!controller.signal.aborted) setBusy(false); }
+    } finally { pending.current = null; setBusy(false); }
   };
   return <div>
     <p className="muted small">Dibujar todas reemplaza los dibujos, uno por uno, con continuidad. No cambia el guion ni guarda. Un fallo conserva las escenas ya dibujadas.</p>
     <button type="button" disabled={disabled || busy || !draft.scenes.length} onClick={() => void draw()}>Dibujar todas con Codex</button>
-    {progress && <p role="status">{progress}</p>}
+    {busy && <button type="button" onClick={() => { pending.current?.abort(); setProgress('Dibujo detenido. Se conservan los dibujos ya aplicados.'); }}>Cancelar generación</button>}
+    {progress && <p role="status">{progress} {busy && `Puede tardar varios minutos. Transcurrido: ${elapsed} s; límite por escena: ${DRAWING_TIMEOUT_MS / 1000} s.`}</p>}
     {error && <p role="alert" className="banner banner-error">{error}</p>}
     {response && <label className="field"><span>Respuesta de Codex para revisión manual</span>
       <textarea aria-label="Respuesta de Codex para revisión manual" rows={5} readOnly value={response} />

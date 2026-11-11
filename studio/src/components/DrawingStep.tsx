@@ -6,6 +6,7 @@ import type { DraftStepProps } from './ScriptStep.tsx';
 import { useState } from 'react';
 import { api } from '../api.ts';
 import { GenerationMode } from './GenerationMode.tsx';
+import { DRAWING_TIMEOUT_MS } from '../../../src/shared/generation-timeouts.ts';
 
 export function DrawingStep({ draft, sceneId, disabled, onEdit, codexCapability = 'unavailable' }: DraftStepProps & { sceneId: string }) {
   const [mode, setMode] = useState<'auto' | 'manual'>('manual');
@@ -18,7 +19,7 @@ export function DrawingStep({ draft, sceneId, disabled, onEdit, codexCapability 
     <fieldset className="manual-fields" disabled={disabled}>
       <p className="muted small">Una respuesta por escena. Dibuja en orden para reutilizar los objetos anteriores. Aplicar solo cambia este dibujo, sin guardar.</p>
       <GenerationMode label="Modo de dibujo" mode={mode} onChange={value => { setMode(value); setGeneratedFrom(null); }} capability={codexCapability} />
-      <ManualResponse key={`${mode}:${sceneId}:${scene.durationMs}`} label="Pegar escena" copyLabel="Copiar prompt de dibujo"
+      <ManualResponse key={`${mode}:${sceneId}:${scene.durationMs}`} label="Pegar escena" copyLabel="Copiar prompt de dibujo" timeoutMs={DRAWING_TIMEOUT_MS}
         generate={mode === 'auto' ? async signal => {
           setGeneratedFrom(JSON.stringify(draft));
           return JSON.stringify(await api.generateDrawing(draft, sceneId, signal), null, 2);
