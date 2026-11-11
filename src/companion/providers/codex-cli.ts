@@ -19,6 +19,9 @@ export interface CodexOptions {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
   tempRoot?: string;
+  /** Test-only barriers for proving cleanup ordering. */
+  beforeCleanup?: (directory: string) => Promise<void>;
+  afterCleanup?: (directory: string) => void;
 }
 
 export interface CodexDiagnostics {
@@ -136,7 +139,10 @@ async function generate<T>(prompt: string, schema: object,
       `La respuesta de Codex no es válida. ${result.errors.join(' ')} Usa el modo manual para revisarla.`,
       safeText.slice(0, 16000));
     return result.value;
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    try { await options.beforeCleanup?.(directory); }
+    finally { await rm(directory, { recursive: true, force: true }); options.afterCleanup?.(directory); }
+  }
 }
 
 export async function generateScript(input: unknown, options: CodexOptions = {}, signal?: AbortSignal) {

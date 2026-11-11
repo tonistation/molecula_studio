@@ -36,6 +36,8 @@ El schema de salida para dibujos nuevos sin datos históricos en la escena desti
 
 El límite local de dibujo es de 600 s por escena (420 s más que antes); guion conserva 180 s. La interfaz muestra tiempo transcurrido y permite cancelar, sin reintentos automáticos. El límite es fijo en producción y solo se inyecta uno menor en pruebas; no expone configuración por HTTP. La cancelación cierra el proceso local, sin asegurar qué ocurrió dentro del proveedor. Este ajuste no demuestra la causa ni ha sido validado con Codex real.
 
+El companion admite un único dibujo automático por proceso, incluso entre proyectos, hasta que termina el proceso y la limpieza temporal. Un intento concurrente recibe HTTP 409 y requiere un nuevo clic; el guion se admite independientemente. Esta exclusión conservadora evita solapar un reintento con una cancelación todavía en curso.
+
 ## Decisiones
 
 | ID | Decisión | Por qué | Descartado |

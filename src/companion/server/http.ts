@@ -79,6 +79,9 @@ const ASSET_LIMIT = LIMITS.maxAssetBytes;
 const IMPORT_BODY_LIMIT = LIMITS.maxJsonBytes * 6 + 1024;
 const TOKEN_HEADER = 'x-companion-token';
 
+// This local single-user process admits one drawing across all projects and clients.
+let drawingBusy = false;
+
 const ASSET_CONTENT_TYPES = new Set(['audio/wav', 'audio/mpeg', 'image/png', 'image/jpeg']);
 
 export async function startCompanionServer(options: CompanionServerOptions): Promise<CompanionServer> {
@@ -449,6 +452,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     if (method !== (capability ? 'GET' : 'POST')) throw methodNotAllowed(capability ? 'GET' : 'POST');
     const body = capability ? undefined : await readJsonBody(req);
     if (context.generation.closing) throw new HttpError(503, 'companion-closing', 'El companion se está cerrando.');
+    const drawing = pathname === '/api/drawing/generate';
+    if (drawing && drawingBusy) throw new HttpError(409, 'drawing-in-progress',
+      'Ya hay un dibujo en curso o terminando su cancelación. Vuelve a intentar en un momento.');
+    if (drawing) drawingBusy = true;
     const controller = new AbortController();
     context.generation.active.add(controller);
     const cancel = () => controller.abort();
@@ -470,6 +477,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     } finally {
       res.removeListener('close', cancel);
       context.generation.active.delete(controller);
+      if (drawing) drawingBusy = false;
     }
     return;
   }

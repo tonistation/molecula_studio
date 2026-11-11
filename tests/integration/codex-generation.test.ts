@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, realpath, rm, writeFile, watch } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
@@ -16,6 +16,79 @@ import { validateProject } from '../../src/shared/schema/validate.ts';
 import { SCRIPT_PROPOSAL_SCHEMA } from '../../src/shared/script/schema.ts';
 
 const input = { idea: 'Una roca', styleId: 'stylized-3d', locale: 'es' as const, targetSeconds: 15 };
+
+test('drawing admission remains exclusive through cancelled process cleanup', async () => {
+  const fake = await fakeCodex('hang');
+  const root = await mkdtemp(join(tmpdir(), 'molecula-drawing-lock-'));
+  let release!: () => void;
+  let reached!: () => void;
+  let cleaned!: () => void;
+  const barrier = new Promise<void>(resolve => { release = resolve; });
+  const cleanupStarted = new Promise<void>(resolve => { reached = resolve; });
+  const cleanupDone = new Promise<void>(resolve => { cleaned = resolve; });
+  let block = true;
+  let firstDirectory = '';
+  const server = await startCompanionServer({ workspaceRoot: root, codexOptions: { env: fake.env, tempRoot: fake.root,
+    beforeCleanup: async directory => { if (block) { block = false; firstDirectory = directory; reached(); await barrier; } },
+    afterCleanup: directory => { if (directory === firstDirectory) cleaned(); },
+  } });
+  try {
+    const validated = validateProject(fixtureJson('storyboard'));
+    assert.ok(validated.ok);
+    const project = validated.project;
+    const headers = { origin: server.origin, authorization: `Bearer ${server.token}`, 'content-type': 'application/json' };
+    const drawing = (sceneId: string, signal?: AbortSignal) => fetch(server.origin + '/api/drawing/generate', {
+      method: 'POST', headers, signal, body: JSON.stringify({ project, sceneId }) });
+    const watcher = watch(fake.root);
+    const started = (async () => { for await (const event of watcher) { if (event.filename === 'child.pid') break; } })();
+    const abort = new AbortController();
+    const first = drawing(project.scenes[1]!.sceneId, abort.signal);
+    const firstResult = first.then(() => false, () => true);
+    await started;
+    fake.env.FAKE_CODEX_MODE = 'success';
+    const concurrent = await drawing(project.scenes[0]!.sceneId);
+    assert.equal(concurrent.status, 409);
+    assert.equal((await concurrent.json()).error.code, 'drawing-in-progress');
+    abort.abort();
+    assert.equal(await firstResult, true);
+    await cleanupStarted;
+    const retry = await drawing(project.scenes[1]!.sceneId);
+    assert.equal(retry.status, 409);
+    assert.equal((await retry.json()).error.code, 'drawing-in-progress');
+    assert.equal((await readFile(fake.env.FAKE_CODEX_RECORD, 'utf8')).trim().split('\n').length, 1);
+    fake.env.FAKE_CODEX_MODE = 'success';
+    const script = await fetch(server.origin + '/api/script/generate', { method: 'POST', headers, body: JSON.stringify(input) });
+    assert.equal(script.status, 200);
+    release();
+    await cleanupDone;
+    const next = await drawing(project.scenes[1]!.sceneId);
+    assert.equal(next.status, 200);
+    const records = (await readFile(fake.env.FAKE_CODEX_RECORD, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    assert.equal(records.filter(record => record.schema.properties.kind).length, 2);
+  } finally { release(); await server.close(); await rm(root, { recursive: true, force: true }); await fake.cleanup(); }
+});
+
+test('drawing admission is released after validation, spawn, timeout, and success', async () => {
+  const fake = await fakeCodex();
+  const root = await mkdtemp(join(tmpdir(), 'molecula-drawing-release-'));
+  const server = await startCompanionServer({ workspaceRoot: root, codexOptions: { env: fake.env, tempRoot: fake.root, timeoutMs: 400 } });
+  try {
+    const result = validateProject(fixtureJson('storyboard'));
+    assert.ok(result.ok);
+    const headers = { origin: server.origin, authorization: `Bearer ${server.token}`, 'content-type': 'application/json' };
+    const send = (body: unknown) => fetch(server.origin + '/api/drawing/generate', { method: 'POST', headers, body: JSON.stringify(body) });
+    const valid = { project: result.project, sceneId: result.project.scenes[0]!.sceneId };
+    assert.equal((await send({})).status, 400);
+    fake.env.PATH = '';
+    assert.equal((await send(valid)).status, 503);
+    fake.env.PATH = fake.root;
+    fake.env.FAKE_CODEX_MODE = 'hang';
+    assert.equal((await send(valid)).status, 504);
+    fake.env.FAKE_CODEX_MODE = 'success';
+    assert.equal((await send(valid)).status, 200);
+    assert.equal((await send(valid)).status, 200);
+  } finally { await server.close(); await rm(root, { recursive: true, force: true }); await fake.cleanup(); }
+});
 
 test('drawing has a bounded longer deadline without changing script deadline', () => {
   assert.equal(SCRIPT_TIMEOUT_MS, 180_000);

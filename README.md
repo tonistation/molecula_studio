@@ -8,6 +8,8 @@ En la aceptación automática posterior se guardó un guion de tres escenas; el 
 
 El dibujo automático dispone ahora de hasta 600 s por escena (420 s más que antes); el guion conserva 180 s. La interfaz muestra el tiempo transcurrido y permite cancelar. No hay reintentos automáticos. Este límite fijo puede reducir falsos vencimientos, pero no garantiza éxito ni se ha validado todavía con Codex real. No se muestra la salida interna del CLI.
 
+Solo se admite un dibujo automático a la vez en el proceso local, incluso entre proyectos. Tras cancelar, un nuevo intento puede recibir un aviso temporal mientras termina la limpieza; vuelve a intentarlo manualmente. El guion no comparte este límite.
+
 ## Ejecutar localmente
 
 Requiere Node.js 26 (`.nvmrc`).
