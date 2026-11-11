@@ -293,6 +293,26 @@ test('real CLI renders 2s fixture as H.264 1080x1920 at 30fps', { timeout: 240_0
   assert.equal(metadata.streams.some((s: { codec_type: string }) => s.codec_type === 'audio'), false);
 });
 
+test('real CLI completes a label pulse through exact zero scale', { timeout: 240_000 }, async t => {
+  const { root, input } = await setup(t);
+  const parsed = parseProjectText(await readFile('docs/plan/examples/kit/sal-del-mar-storyboard.json'));
+  assert.ok(parsed.ok);
+  const project = parsed.project; const scene = project.scenes[0]!;
+  assert.ok(scene.visual && 'kind' in scene.visual && scene.visual.kind === 'kit');
+  project.output.durationMs = 2000; project.output.voiceMode = 'silent';
+  project.scenes = [{ ...scene, startMs: 0, durationMs: 2000, words: [], audio: null, mediaBindings: { audio: null, words: null } }];
+  const visual = project.scenes[0]!.visual!; assert.ok('kind' in visual && visual.kind === 'kit');
+  visual.camera = { move: 'static', from: [0, 0, 10], to: [0, 0, 10], target: [0, 0, 0], easing: 'linear' };
+  visual.particles = []; visual.overlays = []; visual.labels = [];
+  visual.objects = [{ id: 'pulse-label', type: 'label', params: { proportions: { width: 2, height: 0.5, depth: 0.1 }, text: 'Pulso', color: '#273E46' },
+    position: [0, 0, 0], rotation: [0, 0, 0.4], scale: 1, color: '#273E46',
+    animations: [{ type: 'pulse', startMs: 0, endMs: 2000, easing: 'linear', params: { amplitude: 1, cycles: 1 } }] }];
+  await writeFile(input, serializeProject(project));
+  const output = join(root, 'pulse.mp4');
+  await exec(process.execPath, ['scripts/render-project.ts', input, output], { timeout: 220_000 });
+  assert.ok((await readFile(output)).length > 0);
+});
+
 test('real CLI includes audio with scene sync, source offsets and gain; silent mode excludes attached audio', { timeout: 300_000 }, async t => {
   const { root, input, project } = await setup(t);
   const audio = voicedFixture(project);

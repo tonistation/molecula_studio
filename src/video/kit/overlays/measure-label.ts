@@ -33,18 +33,20 @@ export function measureAnchoredLabel({ text, cssText, width, height, maxFontSize
       return { fontSize, width: measuredWidth, height: measuredHeight, minX, minY };
     };
     const fits = (box: ReturnType<typeof measure>) => box.width <= width && box.height <= height;
-    let result = measure(maxFontSize);
+    let result = measure(Math.max(1, maxFontSize));
     if (!fits(result)) {
-      let low = 0.01; let high = maxFontSize;
+      let low = 1; let high = Math.max(1, maxFontSize);
       result = measure(low);
-      for (let i = 0; i < 18; i++) {
-        const candidate = measure((low + high) / 2);
-        if (fits(candidate)) { low = candidate.fontSize; result = candidate; }
-        else high = candidate.fontSize;
+      if (fits(result)) {
+        for (let i = 0; i < 18; i++) {
+          const candidate = measure((low + high) / 2);
+          if (fits(candidate)) { low = candidate.fontSize; result = candidate; }
+          else high = candidate.fontSize;
+        }
       }
     }
     // A browser minimum font size or tiny viewport must not defeat the measured bounds.
-    const scale = Math.min(1, width / result.width, height / result.height);
+    const scale = Math.min(1, maxFontSize / result.fontSize, width / result.width, height / result.height);
     return { ...result, scale, width: result.width * scale, height: result.height * scale };
   } finally { probe.remove(); }
 }

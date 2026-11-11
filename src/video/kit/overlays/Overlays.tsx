@@ -26,13 +26,17 @@ export function Overlays({ spec, ms, camera, width, height }: { spec: KitScene; 
     {spec.objects.map(object => {
       if (object.type !== 'label') return null;
       const state = animateObject(object, ms);
+      if (!Number.isFinite(state.scale) || state.scale <= 0) return null;
       const point = projectPoint(state.position, camera, width, height);
       if (!point.visible || state.opacity <= 0) return null;
       const distance = Math.hypot(...state.position.map((v, i) => v - camera.position[i]!));
       const pixelsPerUnit = height / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.max(0.01, distance));
-      return <ObjectLabel key={object.id} pill={pill} text={object.params.text} color={object.params.color} opacity={state.opacity}
-        x={point.x} y={point.y} width={object.params.proportions.width * state.scale * pixelsPerUnit}
-        height={object.params.proportions.height * state.scale * pixelsPerUnit} rotation={state.rotation[2]}
+      const labelWidth = object.params.proportions.width * state.scale * pixelsPerUnit;
+      const labelHeight = object.params.proportions.height * state.scale * pixelsPerUnit;
+      if (!Number.isFinite(labelWidth) || !Number.isFinite(labelHeight) || labelWidth <= 0 || labelHeight <= 0) return null;
+      return <ObjectLabel key={JSON.stringify([object.id, object.params.text, labelWidth, labelHeight])} pill={pill} text={object.params.text} color={object.params.color} opacity={state.opacity}
+        x={point.x} y={point.y} width={labelWidth}
+        height={labelHeight} rotation={state.rotation[2]}
         viewportWidth={width} viewportHeight={height} />;
     })}
     {spec.overlays.map((overlay, i) => {

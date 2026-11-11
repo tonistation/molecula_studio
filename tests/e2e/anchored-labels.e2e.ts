@@ -5,6 +5,58 @@ import { withStudio } from '../helpers/studio-browser.ts';
 import { measureAnchoredLabel } from '../../src/video/kit/overlays/measure-label.ts';
 import { anchoredLabelLayout } from '../../src/video/kit/overlays/layout.ts';
 
+test('zero-scale pulsing object labels disappear, release render handles and recover on seek', async t => {
+  const project = JSON.parse(await readFile(new URL('../../docs/plan/examples/kit/sal-del-mar-storyboard.json', import.meta.url), 'utf8'));
+  project.scenes = [project.scenes[0]]; project.scenes[0].durationMs = 4000; project.output.durationMs = 4000;
+  const visual = project.scenes[0].visual;
+  visual.camera = { move: 'static', from: [0, 0, 10], to: [0, 0, 10], target: [0, 0, 0], easing: 'linear' };
+  visual.particles = []; visual.overlays = []; visual.labels = [];
+  visual.objects = [{ id: 'pulse-label', type: 'label', params: { proportions: { width: 2, height: 0.5, depth: 0.1 }, text: 'Pulso', color: '#273E46' },
+    position: [0, 0, 0], rotation: [0, 0, 0.4], scale: 1, color: '#273E46',
+    animations: [{ type: 'pulse', startMs: 0, endMs: 4000, easing: 'linear', params: { amplitude: 1, cycles: 1 } }] }];
+  await withStudio(t, async ({ page, consoleErrors, resourceErrors }) => {
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(project)) });
+    await page.waitForSelector('[data-object-label][data-label-fitted="true"]');
+    const bar = page.locator('.preview-transport div[style*="touch-action: none"]');
+    const box = await bar.boundingBox(); assert.ok(box);
+    const seek = async (fraction: number) => { await bar.click({ position: { x: box.width * fraction, y: box.height / 2 } }); };
+    await seek(90.5 / 119);
+    await page.waitForFunction(() => document.querySelectorAll('[data-object-label]').length === 0 && (window as unknown as { remotion_delayRenderHandles: number[] }).remotion_delayRenderHandles.length === 0);
+    await seek(91.5 / 119);
+    await page.waitForSelector('[data-object-label][data-label-fitted="true"]');
+    const after = await page.locator('[data-object-label]').evaluate(el => ({ width: parseFloat((el as HTMLElement).style.width), rotation: (el as HTMLElement).style.rotate, text: el.textContent }));
+    const expectedWidth = 2 * 1920 / (2 * Math.tan(Math.PI / 8) * 10) * (1 + Math.sin(91 / 120 * Math.PI * 2));
+    assert.ok(Math.abs(after.width - expectedWidth) < 0.02); assert.equal(after.rotation, '0.4rad'); assert.equal(after.text, 'Pulso');
+    await seek(90.5 / 119);
+    await page.waitForFunction(() => document.querySelectorAll('[data-object-label]').length === 0 && (window as unknown as { remotion_delayRenderHandles: number[] }).remotion_delayRenderHandles.length === 0);
+    await page.getByRole('button', { name: 'Ver escena 1', exact: true }).click();
+    await page.waitForSelector('[data-object-label][data-label-fitted="true"]');
+    await page.evaluate(() => {
+      const load = document.fonts.load.bind(document.fonts); const releases: (() => void)[] = [];
+      Object.assign(window, { releasePulseFonts: () => releases.splice(0).forEach(release => release()) });
+      document.fonts.load = (font, text) => font === '700 34px sans-serif'
+        ? new Promise<FontFace[]>(resolve => releases.push(() => { void load(font, text).then(resolve); })) : load(font, text);
+    });
+    await seek(0.8);
+    await page.waitForSelector('[data-object-label][data-label-fitted="false"]');
+    await seek(90.5 / 119);
+    await page.waitForFunction(() => document.querySelectorAll('[data-object-label]').length === 0 && (window as unknown as { remotion_delayRenderHandles: number[] }).remotion_delayRenderHandles.length === 0);
+    await page.evaluate(() => (window as unknown as { releasePulseFonts(): void }).releasePulseFonts());
+    assert.equal(await page.locator('[data-object-label]').count(), 0, 'late font completion does not revive a zero-scale label');
+    await seek(0.8);
+    await page.waitForSelector('[data-object-label][data-label-fitted="false"]');
+    await page.evaluate(() => (window as unknown as { releasePulseFonts(): void }).releasePulseFonts());
+    await page.waitForSelector('[data-object-label][data-label-fitted="true"]');
+    await seek(0.7);
+    await page.waitForSelector('[data-object-label][data-label-fitted="false"]');
+    await page.getByRole('button', { name: 'Proyectos', exact: true }).click();
+    assert.equal(await page.evaluate(() => (window as unknown as { remotion_delayRenderHandles: number[] }).remotion_delayRenderHandles.length), 0);
+    await page.evaluate(() => (window as unknown as { releasePulseFonts(): void }).releasePulseFonts());
+    assert.equal(await page.locator('[data-object-label]').count(), 0);
+    assert.deepEqual(consoleErrors, []); assert.deepEqual(resourceErrors, []);
+  }, 'chromium');
+});
+
 test('natural words wrap intact and projected object labels stay inside the viewport', async t => {
   const project = JSON.parse(await readFile(new URL('../../docs/plan/examples/kit/sal-del-mar-storyboard.json', import.meta.url), 'utf8'));
   project.scenes = [project.scenes[0]]; project.output.durationMs = project.scenes[0].durationMs;
