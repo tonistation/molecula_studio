@@ -244,6 +244,9 @@ export async function fetchAssetBlobUrl(projectId: string, assetId: string, sign
 }
 
 export const api = {
+  models: (offset = 0, expectedRevision?: string) => call<{ models: import('../../src/shared/models/model.ts').ModelSnapshot[]; hasMore: boolean; revision: string }>('GET', `/api/models?offset=${offset}${expectedRevision ? `&expectedRevision=${encodeURIComponent(expectedRevision)}` : ''}`),
+  publishModels: (models: import('../../src/shared/models/model.ts').ModelSnapshot[], signal?: AbortSignal) =>
+    call<{ models: import('../../src/shared/models/model.ts').ModelSnapshot[] }>('POST', '/api/models/resolve', { models }, signal),
   vibiVoices: (signal?: AbortSignal) => call<VoiceCatalog>('GET', '/api/vibi/voices', undefined, signal),
   generateVoice: (projectId: string, sceneId: string, revision: number, digest: string, signal?: AbortSignal, selection?: VoiceSelection) =>
     call<{ opened: ReadResult; receipt: SaveReceipt; alignment: 'vibi' | 'estimated'; alignmentKind: AlignmentKind; warnings: string[]; alignmentDiagnostic?: AlignmentDiagnostic }>('POST',
@@ -259,6 +262,9 @@ export const api = {
     call<import('../../src/shared/script/schema.ts').ScriptProposal>('POST', '/api/script/generate', input, signal),
   generateDrawing: (project: Project, sceneId: string, signal?: AbortSignal) =>
     call<import('../../src/shared/kit/types.ts').KitScene>('POST', '/api/drawing/generate', { project, sceneId }, signal),
+  generateModelDrawing: (project: Project, sceneId: string, signal?: AbortSignal) =>
+    call<{ scene: import('../../src/shared/kit/types.ts').KitScene; models: import('../../src/shared/models/model.ts').ModelSnapshot[] }>(
+      'POST', '/api/drawing/generate', { project, sceneId, modelMode: true }, signal),
   startRender: (projectId: string, expectedRevision: number) =>
     call<{ renderId: string }>('POST', `/api/projects/${encodeURIComponent(projectId)}/renders`, { expectedRevision }),
   renderStatus: (projectId: string, renderId: string) =>

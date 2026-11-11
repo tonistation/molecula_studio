@@ -1,4 +1,5 @@
 import type { KitScene } from '../kit/types.ts';
+import type { ModelSnapshot } from '../models/model.ts';
 
 /** A single validation finding. `path` is rooted at `$` and uses dot/bracket notation. */
 export type Issue = { path: string; code: string; message: string };
@@ -103,7 +104,7 @@ export type SceneVisual = KitScene | InertVisual;
 
 /** Validated legacy data is used only at the migration boundary. */
 export type LegacyScene = Omit<Scene, 'visual'> & { visual: StylizedVisual | InertVisual | null };
-export type LegacyProject = Omit<Project, 'schemaVersion' | 'scenes' | 'sources' | 'cover' | 'postText'> & { schemaVersion: 1; scenes: LegacyScene[] };
+export type LegacyProject = Omit<Project, 'schemaVersion' | 'scenes' | 'sources' | 'cover' | 'postText' | 'models'> & { schemaVersion: 1; scenes: LegacyScene[] };
 
 export interface Word {
   text: string;
@@ -213,6 +214,7 @@ export interface Project {
   output: Output;
   captionStyle: CaptionStyle;
   entities: Entity[];
+  models?: ModelSnapshot[];
   scenes: Scene[];
   assets: Asset[];
   approval: Approval | null;

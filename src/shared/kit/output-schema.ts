@@ -127,3 +127,26 @@ export function selectKitOutputSchema(scenes: readonly Pick<Scene, 'visual'>[]) 
     && (visual.camera.keyframes !== undefined || visual.objects.some(item => item.legacy !== undefined)))
     ? KIT_SCENE_SCHEMA : COMPACT_KIT_SCENE_SCHEMA;
 }
+
+export const MAX_GENERATED_MODELS = 8;
+
+/** Explicit model-generation contract; ordinary drawing schemas remain unchanged. */
+export function selectKitModelOutputSchema(scenes: readonly Pick<Scene, 'visual'>[]) {
+  const base = selectKitOutputSchema(scenes);
+  const properties = (base as Node).properties as Record<string, Node>;
+  const existingObjects = properties.objects as Node;
+  const oldChoices = (existingObjects.items as Node).anyOf as Node[];
+  const modelObject = variants({ id, type: enumeration(['model']),
+    params: object({ modelId: text(1, 64, '^(new-[a-z][a-z0-9-]{0,43}|[0-9a-f]{64})$') }),
+    position: vector(), rotation: vector(-6.284, 6.284), scale: number(0.1, 10), color,
+    animations: array(ref('animation'), KIT_LIMITS.animationsPerObject) }, { seed });
+  const scene = { ...base, properties: { ...properties,
+    objects: array(choice(...oldChoices, modelObject), KIT_LIMITS.objects) } };
+  delete (scene as Partial<typeof scene>).$defs;
+  const part = object({ shape: enumeration(['sphere', 'box', 'cylinder', 'capsule', 'cone']),
+    position: vector(-4, 4), rotation: vector(-6.284, 6.284), scale: vector(0.01, 4), color });
+  const model = object({ version: enumeration([1]), name: text(1, 80, '^[\\p{L}\\p{N}][\\p{L}\\p{N} ,.' + "'-]*$"),
+    semanticId: text(1, 48, '^[a-z][a-z0-9-]{0,47}$'), parts: array(part, 24, 1) });
+  return { ...object({ scene, models: array(object({ alias: text(5, 48, '^new-[a-z][a-z0-9-]{0,43}$'), model }), MAX_GENERATED_MODELS) }),
+    $defs: base.$defs };
+}

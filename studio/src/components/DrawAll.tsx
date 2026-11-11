@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, describeError } from '../api.ts';
-import { applyKitScene } from '../../../src/shared/kit/apply.ts';
+import { applyKitSceneWithModels } from '../../../src/shared/kit/apply.ts';
 import type { DraftStepProps } from './ScriptStep.tsx';
 import { DRAWING_TIMEOUT_MS } from '../../../src/shared/generation-timeouts.ts';
 import { useElapsed } from './useElapsed.ts';
@@ -30,10 +30,10 @@ export function DrawAll({ draft, disabled, onEdit }: DraftStepProps) {
     try {
       for (const [index, scene] of draft.scenes.entries()) {
         setProgress(`Dibujando ${index + 1} de ${draft.scenes.length}…`);
-        const kit = await api.generateDrawing(working, scene.sceneId, controller.signal);
+        const bundle = await api.generateModelDrawing(working, scene.sceneId, controller.signal);
         if (controller.signal.aborted) return;
         const expected = JSON.stringify(working);
-        const next = applyKitScene(working, scene.sceneId, kit);
+        const next = applyKitSceneWithModels(working, scene.sceneId, bundle.scene, bundle.models);
         onEdit(project => {
           if (JSON.stringify(project) !== expected) throw new Error('El borrador cambió. Se detuvo el dibujo para no reemplazar tus cambios.');
           return next;

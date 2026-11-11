@@ -1,5 +1,5 @@
 import { Player, type PlayerRef } from '@remotion/player';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Project } from '../../../src/shared/schema/types.ts';
 import { VerticalVideo } from '../../../src/video/VerticalVideo.tsx';
 import { draftVideoProps } from '../preview-model.ts';
@@ -20,10 +20,10 @@ export function PreviewPlayer({ draft, seek, missingAssets }: {
     return loadPreviewAssets(draft.projectId, assetIds, (urls, failed) => setAssets({ key: assetKey, urls, failed }));
   }, [assetKey]);
   const currentAssets = assets?.key === assetKey ? assets : null;
-  const prepared = useMemo(() => {
+  const prepared = (() => {
     try { return { props: draftVideoProps(draft, currentAssets?.urls ?? {}), error: null }; }
     catch { return { props: null, error: 'No se puede mostrar este borrador. Revise el estilo y el texto de las escenas.' }; }
-  }, [draft, currentAssets]);
+  })();
   const props = prepared.props;
   const seekFrame = props?.scenes.find(scene => scene.sceneId === seek?.sceneId)?.fromFrame;
   useEffect(() => {

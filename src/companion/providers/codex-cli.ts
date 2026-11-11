@@ -8,9 +8,12 @@ import { validateProject } from '../../shared/schema/validate.ts';
 import { buildScriptPrompt, type ScriptPromptInput } from '../../shared/script/prompt.ts';
 import { SCRIPT_PROPOSAL_SCHEMA } from '../../shared/script/schema.ts';
 import { parseScriptResponse } from '../../shared/script/parse.ts';
-import { buildKitPrompt } from '../../shared/kit/prompt.ts';
-import { selectKitOutputSchema } from '../../shared/kit/output-schema.ts';
-import { parseKitResponse } from '../../shared/kit/parse.ts';
+import { buildKitPrompt, buildKitModelPrompt } from '../../shared/kit/prompt.ts';
+import { selectKitOutputSchema, selectKitModelOutputSchema } from '../../shared/kit/output-schema.ts';
+import { parseKitResponse, parseKitModelBundle } from '../../shared/kit/parse.ts';
+import { applyKitSceneWithModels } from '../../shared/kit/apply.ts';
+import type { ModelSnapshot } from '../../shared/models/model.ts';
+import { selectModelCatalog } from '../../shared/models/catalog.ts';
 import { SCRIPT_TIMEOUT_MS, DRAWING_TIMEOUT_MS } from '../../shared/generation-timeouts.ts';
 export { SCRIPT_TIMEOUT_MS, DRAWING_TIMEOUT_MS } from '../../shared/generation-timeouts.ts';
 
@@ -178,4 +181,31 @@ export async function generateDrawing(input: unknown, options: CodexOptions = {}
         entities: new Map(project.entities.map(entity => [entity.entityId, entity])) });
       return parsed.ok ? { ok: true, value: parsed.scene } : parsed;
     }, { ...options, timeoutMs: options.timeoutMs ?? DRAWING_TIMEOUT_MS }, signal);
+}
+
+export async function generateModelDrawing(input: unknown, catalog: readonly ModelSnapshot[], options: CodexOptions = {}, signal?: AbortSignal) {
+  const body = input as { project?: unknown; sceneId?: unknown; modelMode?: unknown };
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || Object.keys(body).sort().join() !== 'modelMode,project,sceneId' || body.modelMode !== true || typeof body.sceneId !== 'string') {
+    throw new GenerationError(400, 'invalid-argument', 'Indica un borrador válido y la escena que deseas dibujar.');
+  }
+  const result = validateProject(body.project);
+  if (!result.ok || result.mode !== 'editable') throw new GenerationError(400, 'invalid-argument', 'El borrador no es válido o es de solo lectura.');
+  const project = result.project;
+  const index = project.scenes.findIndex(scene => scene.sceneId === body.sceneId);
+  const scene = project.scenes[index];
+  if (!scene) throw new GenerationError(400, 'invalid-argument', 'No se encontró la escena para dibujar.');
+  const previousScenes = project.scenes.slice(0, index);
+  let shortlist: ModelSnapshot[];
+  try { shortlist = selectModelCatalog(project.models ?? [], catalog, `${scene.title} ${scene.text} ${scene.visualIntent}`); }
+  catch { throw new GenerationError(400, 'invalid-argument', 'No se pudieron verificar los modelos del borrador.'); }
+  const prompt = buildKitModelPrompt({ scene, previousScenes, references: project.sources ?? [], targetVisual: scene.visual, catalog: shortlist });
+  return generate(prompt, selectKitModelOutputSchema([...previousScenes, scene]), text => {
+    const parsed = parseKitModelBundle(text, { durationMs: scene.durationMs,
+      entities: new Map(project.entities.map(entity => [entity.entityId, entity])) }, shortlist);
+    if (!parsed.ok) return parsed;
+    try { applyKitSceneWithModels(project, scene.sceneId, parsed.scene, parsed.models); }
+    catch { return { ok: false, errors: ['La escena y los modelos no se pueden aplicar al borrador.'] }; }
+    return { ok: true, value: { scene: parsed.scene, models: parsed.models } };
+  }, { ...options, timeoutMs: options.timeoutMs ?? DRAWING_TIMEOUT_MS }, signal);
 }

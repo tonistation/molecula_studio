@@ -40,6 +40,8 @@ La copia visual cambió el ancla de «Representación ampliada» al océano en l
 
 El companion admite un único dibujo automático por proceso, incluso entre proyectos, hasta que termina el proceso y la limpieza temporal. Un intento concurrente recibe HTTP 409 y requiere un nuevo clic; el guion se admite independientemente. Esta exclusión conservadora evita solapar un reintento con una cancelación todavía en curso.
 
+La biblioteca procedural local permite crear modelos declarativos y reutilizarlos entre proyectos, con un máximo de 1024 entradas en el catálogo del workspace. Cada proyecto conserva snapshots verificados por hash para previsualización y render independientes del catálogo. Las formas son composiciones acotadas de primitivas, sin código generado ni recursos remotos; no garantizan geometría arbitraria ni fotorrealismo. La integración automática usa Codex CLI y su aceptación para esta función usa un ejecutable falso, no una llamada real al proveedor.
+
 ## Decisiones
 
 | ID | Decisión | Por qué | Descartado |

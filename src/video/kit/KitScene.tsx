@@ -7,8 +7,9 @@ import { Environment } from './environment/Environment.tsx';
 import { KitObject } from './objects/KitObject.tsx';
 import { Particles } from './particles/Particles.tsx';
 import { Overlays } from './overlays/Overlays.tsx';
+import type { ProceduralModel } from '../../shared/models/model.ts';
 
-export function KitScene({ spec, durationInFrames }: { spec: SceneSpec; durationInFrames: number }) {
+export function KitScene({ spec, durationInFrames, models }: { spec: SceneSpec; durationInFrames: number; models: ReadonlyMap<string, ProceduralModel> }) {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
   const ms = frame * 1000 / fps;
@@ -31,7 +32,7 @@ export function KitScene({ spec, durationInFrames }: { spec: SceneSpec; duration
         shadow-camera-top={24} shadow-camera-bottom={-24} shadow-camera-near={0.5} shadow-camera-far={80}
         shadow-bias={-0.0002} shadow-normalBias={0.03} />
       <Environment spec={spec} ms={ms} />
-      {spec.objects.map(object => <KitObject key={object.id} spec={object} ms={ms} />)}
+      {spec.objects.map(object => <KitObject key={object.id} spec={object} ms={ms} models={models} />)}
       {spec.particles.map((system, i) => <Particles key={i} spec={system} ms={ms} />)}
     </ThreeCanvas>
     <Overlays spec={spec} ms={ms} camera={state} width={width} height={height} />

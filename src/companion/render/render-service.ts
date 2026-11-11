@@ -7,6 +7,7 @@ import { renderMedia, selectComposition } from '@remotion/renderer';
 import type { RenderMediaOnProgress } from '@remotion/renderer';
 import { LIMITS, parseProjectText } from '../../shared/schema/index.ts';
 import { projectToVideoProps } from '../../shared/video-props.ts';
+import { verifyModelSnapshots } from '../../shared/models/integrity.ts';
 import type { Project } from '../../shared/schema/types.ts';
 import { serveRenderAssets } from './render-assets.ts';
 
@@ -118,6 +119,9 @@ async function readSavedProject(projectFile: string): Promise<Project> {
   const parsed = parseProjectText(bytes);
   if (!parsed.ok) {
     throw new Error(`Proyecto inválido: ${parsed.issues.map(i => `${i.path}: ${i.message}`).join('; ')}`);
+  }
+  if (parsed.project.models !== undefined && await verifyModelSnapshots(parsed.project.models) === null) {
+    throw new Error('Proyecto inválido: la integridad de los modelos no coincide con su identificador.');
   }
   return parsed.project;
 }

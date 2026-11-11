@@ -10,6 +10,7 @@ import {
 import type { Asset, AssetMimeType, Project, ProjectMode, Word } from '../../shared/schema/types.ts';
 import type { KitScene } from '../../shared/kit/types.ts';
 import { bindingDigests, sha256Hex } from '../../shared/digests.ts';
+import { verifyModelSnapshots } from '../../shared/models/integrity.ts';
 import { createNodeFsOps, isErrno, type FsOps, type FsStats } from './fs-ops.ts';
 import { isValidOperationId, isValidProjectId, newOperationId, newProjectId } from './ids.ts';
 import { InspectionError } from './media-inspect.ts';
@@ -271,6 +272,13 @@ export class ProjectStore {
     }
   }
 
+  /** Return only the root protected by this initialized store's workspace lock. */
+  lockedWorkspaceRoot(): string {
+    this.#assertReady();
+    if (!this.#lockPath) throw new StoreNotInitializedError();
+    return this.#root;
+  }
+
   /** Re-reads committed bytes; mandatory check for `uncertain` receipts. */
   async verifyReceipt(args: { projectId: string; receipt: SaveReceipt }): Promise<ReceiptVerification> {
     this.#assertReady();
@@ -437,6 +445,8 @@ export class ProjectStore {
     }
     const project = this.#assertEditablePayload(args.project, args.projectId);
 
+    await this.#assertModelIntegrity(project, args.projectId);
+
     const bytes = this.#encode(project);
     if (bytes.length > LIMITS.maxJsonBytes) {
       throw new InvalidProjectError(args.projectId, 'too-large', [
@@ -518,6 +528,7 @@ export class ProjectStore {
       if (!parsed.ok) throw new InvalidProjectError(args.projectId, parsed.failure, parsed.issues);
       if (parsed.project.projectId !== args.projectId) throw new InvalidArgumentError('copy snapshot projectId must match source');
       snapshot = parsed.project;
+      await this.#assertModelIntegrity(snapshot, args.projectId);
       await this.#checkProjectDirectory(args.projectId);
       const file = this.#projectFile(args.projectId);
       const stats = await this.#lstatOrNull(file);
@@ -639,6 +650,7 @@ export class ProjectStore {
       throw new InvalidProjectError('import', outcome.failure, outcome.issues);
     }
     const incoming = outcome.project;
+    await this.#assertModelIntegrity(incoming, 'import');
     const approvalCleared = incoming.approval !== null;
 
     return this.#withWorkspace(async () => {
@@ -1308,6 +1320,7 @@ export class ProjectStore {
     if (!outcome.ok) {
       throw new InvalidProjectError(projectId, outcome.failure, outcome.issues);
     }
+    await this.#assertModelIntegrity(outcome.project, projectId);
     return {
       project: outcome.project,
       revision: outcome.project.revision,
@@ -1332,6 +1345,14 @@ export class ProjectStore {
 
   #encode(project: Project): Uint8Array {
     return new TextEncoder().encode(serializeProject(project));
+  }
+
+  async #assertModelIntegrity(project: Project, projectId: string): Promise<void> {
+    if (project.models !== undefined && await verifyModelSnapshots(project.models) === null) {
+      throw new InvalidProjectError(projectId, 'invalid-schema', [
+        { path: '$.models', code: 'reference', message: 'model snapshot SHA-256 does not match its content' },
+      ]);
+    }
   }
 
   #assertEditablePayload(project: Project, projectId: string): Project {

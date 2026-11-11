@@ -10,6 +10,8 @@ El dibujo automático dispone ahora de hasta 600 s por escena (420 s más que an
 
 Solo se admite un dibujo automático a la vez en el proceso local, incluso entre proyectos. Tras cancelar, un nuevo intento puede recibir un aviso temporal mientras termina la limpieza; vuelve a intentarlo manualmente. El guion no comparte este límite.
 
+El dibujo puede crear modelos procedurales declarativos cuando falta un objeto y reutilizar modelos del workspace en otros proyectos. El catálogo local admite hasta 1024 modelos; cada proyecto guarda las definiciones verificadas por hash que usa, por lo que la vista previa y la exportación no dependen del catálogo original. Son composiciones acotadas de primitivas, no geometría arbitraria ni fotorrealismo; no se ejecuta código generado ni se descargan recursos. El modo automático usa Codex CLI; la creación y reutilización nuevas se probaron con un ejecutable falso local, sin llamadas reales al proveedor.
+
 ## Ejecutar localmente
 
 Requiere Node.js 26 (`.nvmrc`).

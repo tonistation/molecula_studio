@@ -16,6 +16,7 @@ export interface ObjectParams {
   car: { proportions: Proportions; bodyColor: string; wheelColor: string };
   rockLayers: { proportions: Proportions; colors: string[] };
   label: { proportions: Proportions; text: string; color: string };
+  model: { modelId: string };
 }
 
 export interface AnimationParams {

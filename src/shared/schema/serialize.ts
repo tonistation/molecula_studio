@@ -43,6 +43,7 @@ function orderProject(project: Project): unknown {
     output: orderOutput(project.output),
     captionStyle: orderCaptionStyle(project.captionStyle),
     entities: project.entities.map(orderEntity),
+    ...(project.models === undefined ? {} : { models: orderKitData(project.models) }),
     scenes: project.scenes.map(orderScene),
     assets: project.assets.map(orderAsset),
     approval: project.approval ? orderApproval(project.approval) : null,

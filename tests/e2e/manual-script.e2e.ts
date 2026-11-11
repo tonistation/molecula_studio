@@ -5,6 +5,9 @@ import { join } from 'node:path';
 import type { Page } from 'playwright-core';
 import { fixtureText } from '../helpers/fixtures.ts';
 import { withStudio } from '../helpers/studio-browser.ts';
+import { ModelLibrary } from '../../src/companion/store/model-library.ts';
+import { canonicalize } from '../../src/shared/canonical.ts';
+import { sha256Sync } from '../../src/shared/models/sha256-sync.ts';
 
 // Local external-response fixture: no provider, login or claim of real ChatGPT use.
 const proposal = {
@@ -26,6 +29,194 @@ async function snapshot(page: Page) {
   delete result.updatedAt;
   return result;
 }
+
+test('manual drawing finds a relevant model after the first catalog page', async t => {
+  await withStudio(t, async ({ page, root }) => {
+    page.setDefaultTimeout(15000);
+    const part = { shape: 'sphere', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], color: '#ffffff' };
+    const fillers = Array.from({ length: 64 }, (_, i) => ({ version: 1, name: `Other ${i}`, semanticId: `other-${i}`, parts: [part] }));
+    const max = fillers.map(model => sha256Sync(canonicalize(model))).sort().at(-1)!;
+    let target = { version: 1, name: 'Personaje 0', semanticId: 'personaje-0', parts: [part] };
+    for (let i = 1; sha256Sync(canonicalize(target)) <= max; i++) target = { ...target, name: `Personaje ${i}`, semanticId: `personaje-${i}` };
+    const library = new ModelLibrary(root);
+    await library.putMany(fillers);
+    const id = await library.put(target);
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText('storyboard')) });
+    const before = await snapshot(page);
+    // Match against the current scene's words, not an arbitrary URL query.
+    const matching = before.scenes[0].title + ' ' + before.scenes[0].text + ' ' + before.scenes[0].visualIntent;
+    assert.match(matching.toLowerCase(), /personaje/);
+    const card = page.locator('.scene-card').first();
+    await card.locator('summary').click();
+    const scene = structuredClone(before.scenes[0].visual);
+    scene.objects.push({ id: 'reuse-model', type: 'model', params: { modelId: id }, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, color: '#ffffff', animations: [] });
+    await card.getByLabel('Pegar escena').fill(JSON.stringify({ scene, models: [] }));
+    await card.getByRole('button', { name: 'Revisar', exact: true }).click();
+    await card.getByRole('region', { name: 'Revisión del dibujo' }).getByText(`${target.name} · ${target.semanticId}`).waitFor();
+    await card.getByRole('button', { name: 'Aplicar al borrador', exact: true }).click();
+    await card.getByText(/Aplicado al borrador/).waitFor();
+    assert.equal((await snapshot(page)).models[0].id, id);
+  }, 'chromium');
+});
+
+test('manual review uses the catalog advertised in the copied prompt', async t => {
+  await withStudio(t, async ({ page, root }) => {
+    page.setDefaultTimeout(15000);
+    const part = { shape: 'sphere', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], color: '#ffffff' };
+    const library = new ModelLibrary(root);
+    const models = Array.from({ length: 64 }, (_, i) => ({ version: 1, name: `Other ${i}`, semanticId: `other-${i}`, parts: [part] }));
+    await library.putMany(models);
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText('storyboard')) });
+    const before = await snapshot(page);
+    const selected = (await library.list()).at(-1)!;
+    const card = page.locator('.scene-card').first();
+    await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Copiar prompt de dibujo' }).click();
+    await card.getByText(/Prompt copiado|No se pudo acceder al portapapeles/).waitFor();
+    await library.put({ version: 1, name: 'Personaje', semanticId: 'personaje', parts: [part] });
+    const scene = structuredClone(before.scenes[0].visual);
+    scene.objects.push({ id: 'reuse-model', type: 'model', params: { modelId: selected.id }, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, color: '#ffffff', animations: [] });
+    await card.getByLabel('Pegar escena').fill(JSON.stringify({ scene, models: [] }));
+    await card.getByRole('button', { name: 'Revisar', exact: true }).click();
+    await card.getByRole('region', { name: 'Revisión del dibujo' }).getByText(`${selected.model.name} · ${selected.model.semanticId}`).waitFor();
+    await card.getByRole('button', { name: 'Aplicar al borrador' }).click();
+    await card.getByText(/Aplicado al borrador/).waitFor();
+    assert.equal((await snapshot(page)).models[0].id, selected.id);
+  }, 'chromium');
+});
+
+test('catalog changes retry once and repeated changes report an error', async t => {
+  await withStudio(t, async ({ page, root }) => {
+    page.setDefaultTimeout(15000);
+    const part = { shape: 'sphere', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], color: '#ffffff' };
+    const library = new ModelLibrary(root);
+    const model = (i: number) => ({ version: 1, name: `Other ${i}`, semanticId: `other-${i}`, parts: [part] });
+    await library.putMany(Array.from({ length: 64 }, (_, i) => model(i)));
+    await library.put(model(64));
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText('storyboard')) });
+    const card = page.locator('.scene-card').first();
+    await card.locator('summary').click();
+    let insertions = 0;
+    let limit = 1;
+    await page.route('**/api/models?*', async route => {
+      if (new URL(route.request().url()).searchParams.get('offset') === '64' && insertions < limit) await library.put(model(100 + insertions++));
+      await route.continue();
+    });
+    await card.getByRole('button', { name: 'Copiar prompt de dibujo' }).click();
+    await card.getByText(/Prompt copiado|No se pudo acceder al portapapeles/).waitFor();
+    assert.equal(insertions, 1);
+    limit = 3;
+    await card.getByRole('button', { name: 'Copiar prompt de dibujo' }).click();
+    await card.getByRole('alert').getByText(/cambió varias veces/).waitFor();
+    assert.equal(insertions, 3);
+  }, 'chromium');
+});
+
+test('manual copied catalog is invalid after a draft edit', async t => {
+  await withStudio(t, async ({ page }) => {
+    page.setDefaultTimeout(15000);
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText('storyboard')) });
+    const before = await snapshot(page);
+    const card = page.locator('.scene-card').first();
+    await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Copiar prompt de dibujo' }).click();
+    await card.getByText(/Prompt copiado|No se pudo acceder al portapapeles/).waitFor();
+    await page.getByLabel('Idea').fill('Cambio posterior');
+    await card.getByLabel('Pegar escena').fill(JSON.stringify({ scene: before.scenes[0].visual, models: [] }));
+    await card.getByRole('button', { name: 'Revisar', exact: true }).click();
+    await card.getByRole('alert').getByText(/borrador cambió desde que copiaste el prompt/).waitFor();
+    assert.equal(await card.getByRole('region', { name: 'Revisión del dibujo' }).count(), 0);
+  }, 'chromium');
+});
+
+test('plain drawing response requires the copied prompt draft until a fresh copy', async t => {
+  await withStudio(t, async ({ page }) => {
+    page.setDefaultTimeout(15000);
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText('storyboard')) });
+    const before = await snapshot(page);
+    const card = page.locator('.scene-card').first();
+    await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Copiar prompt de dibujo' }).click();
+    await card.getByText(/Prompt copiado|No se pudo acceder al portapapeles/).waitFor();
+    await card.getByLabel('Intención visual').fill('Nueva intención visual');
+    const edited = await snapshot(page);
+    const scene = structuredClone(before.scenes[0].visual);
+    for (const response of [scene, { scene, models: [] }]) {
+      await card.getByLabel('Pegar escena').fill(JSON.stringify(response));
+      await card.getByRole('button', { name: 'Revisar', exact: true }).click();
+      await card.getByRole('alert').getByText(/borrador cambió desde que copiaste el prompt/).waitFor();
+      assert.equal(await card.getByRole('region', { name: 'Revisión del dibujo' }).count(), 0);
+      assert.deepEqual(await snapshot(page), edited);
+    }
+    await card.getByRole('button', { name: 'Copiar prompt de dibujo' }).click();
+    await card.getByText(/Prompt copiado|No se pudo acceder al portapapeles/).waitFor();
+    await card.getByLabel('Pegar escena').fill(JSON.stringify(scene));
+    await card.getByRole('button', { name: 'Revisar', exact: true }).click();
+    await card.getByRole('region', { name: 'Revisión del dibujo' }).waitFor();
+    await card.getByRole('button', { name: 'Aplicar al borrador' }).click();
+    await card.getByText(/Aplicado al borrador/).waitFor();
+    assert.equal((await snapshot(page)).scenes[0].visualIntent, 'Nueva intención visual');
+  }, 'chromium');
+});
+
+test('manual model bundle review publishes only on apply and preserves the draft on publication failure', async t => {
+  await withStudio(t, async ({ page, root }) => {
+    page.setDefaultTimeout(15000);
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText('storyboard')) });
+    const before = await snapshot(page);
+    const card = page.locator('.scene-card').first();
+    await card.locator('summary').click();
+    const scene = structuredClone(before.scenes[0].visual);
+    scene.objects.push({ id: 'farol', type: 'model', params: { modelId: 'new-farol' }, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, color: '#ffffff', animations: [] });
+    const model = { version: 1, name: 'Farol', semanticId: 'farol', parts: [{ shape: 'sphere', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], color: '#ffffff' }] };
+    await card.getByLabel('Pegar escena').fill(`Respuesta:\n\`\`\`json\n${JSON.stringify({ scene, models: [{ alias: 'new-farol', model }] })}\n\`\`\``);
+    await card.getByRole('button', { name: 'Revisar', exact: true }).click();
+    await card.getByRole('region', { name: 'Revisión del dibujo' }).getByText('Farol · farol').waitFor();
+    await assert.rejects(readFile(join(root, '.models')), { code: 'ENOENT' });
+    assert.deepEqual(await snapshot(page), before);
+    await page.route('**/api/models/resolve', route => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"Error de prueba"}}' }));
+    await card.getByRole('button', { name: 'Aplicar al borrador', exact: true }).click();
+    await card.getByRole('alert').waitFor();
+    assert.deepEqual(await snapshot(page), before);
+    await page.unroute('**/api/models/resolve');
+    await card.getByRole('button', { name: 'Aplicar al borrador', exact: true }).click();
+    await card.getByText(/Aplicado al borrador/).waitFor();
+    const after = await snapshot(page);
+    assert.equal(after.models[0].model.name, 'Farol');
+    assert.equal(after.scenes[0].visual.objects.at(-1).params.modelId, after.models[0].id);
+    assert.ok((await readFile(join(root, '.models'), 'utf8')).includes('farol'));
+  }, 'chromium');
+});
+
+test('manual model publication never overwrites edits made while publishing', async t => {
+  await withStudio(t, async ({ page }) => {
+    page.setDefaultTimeout(15000);
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText('storyboard')) });
+    const before = await snapshot(page);
+    const card = page.locator('.scene-card').first();
+    await card.locator('summary').click();
+    const scene = structuredClone(before.scenes[0].visual);
+    scene.objects.push({ id: 'farol', type: 'model', params: { modelId: 'new-farol' }, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, color: '#ffffff', animations: [] });
+    const model = { version: 1, name: 'Farol', semanticId: 'farol', parts: [{ shape: 'sphere', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], color: '#ffffff' }] };
+    await card.getByLabel('Pegar escena').fill(JSON.stringify({ scene, models: [{ alias: 'new-farol', model }] }));
+    await card.getByRole('button', { name: 'Revisar', exact: true }).click();
+    await card.getByRole('region', { name: 'Revisión del dibujo' }).waitFor();
+    let release!: () => void;
+    let reached!: () => void;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    const requested = new Promise<void>(resolve => { reached = resolve; });
+    await page.route('**/api/models/resolve', async route => { reached(); await barrier; await route.continue(); });
+    await card.getByRole('button', { name: 'Aplicar al borrador', exact: true }).click();
+    await requested;
+    await page.getByLabel('Idea').fill('Edición concurrente');
+    release();
+    await card.getByRole('alert').getByText(/El borrador cambió desde la revisión/).waitFor();
+    const after = await snapshot(page);
+    assert.equal(after.idea, 'Edición concurrente');
+    assert.deepEqual(after.scenes, before.scenes);
+    assert.equal(after.models, undefined);
+  }, 'chromium');
+});
 
 test('manual script and drawings: review, confirmation, isolation, unsaved 3D/captions and mobile in Chromium', async t => {
   await withStudio(t, async ({ page, root, consoleErrors, resourceErrors }) => {
@@ -104,8 +295,11 @@ test('manual script and drawings: review, confirmation, isolation, unsaved 3D/ca
     assert.deepEqual(drawn.scenes[1].visual, kit);
     // Changing a reviewed response invalidates Apply, rather than applying stale JSON.
     const first = cards.first();
+    await first.getByRole('button', { name: 'Copiar prompt de dibujo', exact: true }).click();
+    await first.getByText(/Prompt copiado/).waitFor();
     await first.getByLabel('Pegar escena', { exact: true }).fill(JSON.stringify(kit));
     await first.getByRole('button', { name: 'Revisar', exact: true }).click();
+    await first.getByRole('region', { name: 'Revisión del dibujo' }).waitFor();
     await first.getByLabel('Pegar escena', { exact: true }).fill('{"kind":"code"}');
     assert.equal(await first.getByRole('button', { name: 'Aplicar al borrador', exact: true }).count(), 0);
     await first.getByRole('button', { name: 'Revisar', exact: true }).click();
@@ -127,6 +321,8 @@ test('manual script and drawings: review, confirmation, isolation, unsaved 3D/ca
     await page.waitForTimeout(800);
     if (process.env.MANUAL_SCREENSHOT_DIR) await preview.screenshot({ path: join(process.env.MANUAL_SCREENSHOT_DIR, 'manual-preview-desktop.png') });
     await page.setViewportSize({ width: 390, height: 844 });
+    await first.getByRole('button', { name: 'Copiar prompt de dibujo', exact: true }).click();
+    await first.getByText(/Prompt copiado/).waitFor();
     await first.getByLabel('Pegar escena', { exact: true }).fill(JSON.stringify(kit));
     await first.getByRole('button', { name: 'Revisar', exact: true }).click();
     await first.getByRole('button', { name: 'Aplicar al borrador', exact: true }).click();

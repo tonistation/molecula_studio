@@ -6,7 +6,10 @@ import { pipeline } from 'node:stream/promises';
 import { createRenderJobs, RenderRequestError } from '../render/render-jobs.ts';
 import type { renderProject } from '../render/render-service.ts';
 import { capabilities } from '../providers/capabilities.ts';
-import { generateScript, generateDrawing, GenerationError, type CodexOptions } from '../providers/codex-cli.ts';
+import { generateScript, generateDrawing, generateModelDrawing, GenerationError, type CodexOptions } from '../providers/codex-cli.ts';
+import { ModelLibrary } from '../store/model-library.ts';
+import { verifyModelSnapshotsSync } from '../../shared/models/integrity.ts';
+import { sha256Sync } from '../../shared/models/sha256-sync.ts';
 import { estimateWords } from '../../shared/voice/estimate.ts';
 import { alignmentKind, sttWordsToWords } from '../../shared/voice/alignment.ts';
 import type { AlignmentDiagnostic } from '../../shared/voice/alignment.ts';
@@ -101,6 +104,10 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
     await store.init({ forceUnlock: options.forceUnlock === true });
   }
 
+  const root = store.lockedWorkspaceRoot();
+  if (root !== await realpath(options.workspaceRoot)) throw new Error('Store workspace does not match server workspace');
+  const models = new ModelLibrary(root);
+
   const token = options.token ?? randomBytes(32).toString('hex');
   const state = { port: 0, origin: '' };
   const renders = createRenderJobs(store, await realpath(options.workspaceRoot), options.renderer);
@@ -110,7 +117,7 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
     modelId: env.VIBI_MODEL_ID ?? (env.VIBI_PROVIDER === 'minimax' ? '' : env.VIBI_PROVIDER === 'capcut' ? 'capcut' : 'eleven_multilingual_v2'), ...options.vibiOptions };
 
   const server = createServer((req, res) => {
-    void handleRequest(req, res, { store, token, state, renders, generation, vibi, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
+    void handleRequest(req, res, { store, models, token, state, renders, generation, vibi, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -146,6 +153,7 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
 
 interface HandlerContext {
   store: ProjectStore;
+  models: ModelLibrary;
   token: string;
   state: { port: number; origin: string };
   studioDir: string | undefined;
@@ -447,6 +455,39 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     }
   }
 
+  if (pathname === '/api/models') {
+    if (method !== 'GET') throw methodNotAllowed('GET');
+    store.lockedWorkspaceRoot();
+    const params = new URL(req.url!, context.state.origin).searchParams;
+    const offsets = params.getAll('offset');
+    const revisions = params.getAll('expectedRevision');
+    if ([...params.keys()].some(key => key !== 'offset' && key !== 'expectedRevision') || offsets.length > 1 || revisions.length > 1
+      || (revisions.length && !/^[0-9a-f]{64}$/.test(revisions[0]!))
+      || (offsets.length && !/^(0|[1-9][0-9]{0,3})$/.test(offsets[0]!))) {
+      throw new HttpError(400, 'invalid-argument', 'El desplazamiento no es válido.');
+    }
+    const offset = Number(offsets[0] ?? 0);
+    if (offset > 1024) throw new HttpError(400, 'invalid-argument', 'El desplazamiento no es válido.');
+    if (offset > 0 && !revisions.length) throw new HttpError(400, 'invalid-argument', 'Falta la revisión de la biblioteca.');
+    const models = await context.models.list();
+    const revision = sha256Sync(JSON.stringify(models.map(model => model.id)));
+    if (revisions.length && revisions[0] !== revision) throw new HttpError(409, 'model-catalog-changed', 'La biblioteca de modelos cambió. Vuelve a intentarlo.');
+    sendJson(res, 200, { models: models.slice(offset, offset + 64), hasMore: models.length > offset + 64, revision });
+    return;
+  }
+
+  if (pathname === '/api/models/resolve') {
+    if (method !== 'POST') throw methodNotAllowed('POST');
+    const body = requireObject(await readJsonBody(req));
+    const snapshots = Object.keys(body).length === 1 && Object.hasOwn(body, 'models')
+      ? verifyModelSnapshotsSync(body.models) : null;
+    if (!snapshots) throw new HttpError(400, 'invalid-models', 'Los modelos no son válidos.');
+    store.lockedWorkspaceRoot();
+    await context.models.putMany(snapshots.map(snapshot => snapshot.model), () => store.lockedWorkspaceRoot());
+    sendJson(res, 200, { models: snapshots });
+    return;
+  }
+
   if (['/api/capabilities', '/api/script/generate', '/api/drawing/generate'].includes(pathname)) {
     const capability = pathname === '/api/capabilities';
     if (method !== (capability ? 'GET' : 'POST')) throw methodNotAllowed(capability ? 'GET' : 'POST');
@@ -464,8 +505,19 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     try {
       let vibiVoiceConfigured = false;
       if (capability) { try { voiceConfiguration(context.vibi); vibiVoiceConfigured = true; } catch { /* Local configuration only; no network. */ } }
-      const result = capability ? { ...await capabilities(context.generation.options, controller.signal), vibi: Boolean(context.vibi.apiKey?.trim()), vibiVoiceConfigured }
-        : await (pathname === '/api/script/generate' ? generateScript : generateDrawing)(body, context.generation.options, controller.signal);
+      let result;
+      if (capability) result = { ...await capabilities(context.generation.options, controller.signal), vibi: Boolean(context.vibi.apiKey?.trim()), vibiVoiceConfigured };
+      else if (drawing && body && typeof body === 'object' && 'modelMode' in body) {
+        store.lockedWorkspaceRoot();
+        const catalog = await context.models.list();
+        const bundle = await generateModelDrawing(body, catalog, context.generation.options, controller.signal);
+        controller.signal.throwIfAborted();
+        await context.models.putMany(bundle.models.map(snapshot => snapshot.model), () => {
+          controller.signal.throwIfAborted();
+          store.lockedWorkspaceRoot();
+        });
+        result = bundle;
+      } else result = await (pathname === '/api/script/generate' ? generateScript : generateDrawing)(body, context.generation.options, controller.signal);
       sendJson(res, 200, result);
     } catch (error) {
       if (error instanceof GenerationError) {

@@ -7,6 +7,168 @@ import { promisify } from 'node:util';
 import { withStudio } from '../helpers/studio-browser.ts';
 import { fakeCodex } from '../helpers/fake-codex.ts';
 
+test('draw all reuses one verified model across scenes', { timeout: 90000 }, async t => {
+  const fake = await fakeCodex('model-batch');
+  try {
+    await withStudio(t, async ({ page, root, store }) => {
+      await page.getByLabel('Nombre', { exact: true }).fill('Modelos en lote');
+      await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+      await page.getByLabel('Idea', { exact: true }).fill('Un farol');
+      await page.waitForFunction(() => !document.querySelector<HTMLOptionElement>('select option[value="auto"]')?.disabled);
+      await page.getByLabel('Modo de guion').selectOption('auto');
+      const script = page.getByRole('region', { name: 'Guion automático' });
+      await script.getByRole('button', { name: 'Generar con Codex' }).click();
+      await script.getByRole('region', { name: 'Revisión del guion' }).waitFor();
+      await script.getByRole('button', { name: 'Aplicar al borrador' }).click();
+      const projects = await store.listProjects();
+      const path = join(root, projects[0]!.projectId, 'project.json');
+      const original = await readFile(path);
+      const requests: any[] = [];
+      page.on('request', request => {
+        if (request.url().endsWith('/api/drawing/generate')) requests.push(request.postDataJSON());
+      });
+      await script.getByRole('button', { name: 'Dibujar todas con Codex' }).click();
+      await script.getByText('Dibujos aplicados al borrador. Los cambios no se han guardado.').waitFor();
+      assert.deepEqual(await readFile(path), original);
+      assert.equal(requests.length, 2);
+      assert.ok(requests.every(request => request.modelMode === true));
+      assert.equal(requests[1].project.models.length, 1);
+      const id = requests[1].project.models[0].id;
+      assert.equal(requests[1].project.scenes[0].visual.objects.find((object: any) => object.id === 'farol').params.modelId, id);
+      const records = (await readFile(fake.env.FAKE_CODEX_RECORD, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+      assert.match(records[2].input, new RegExp(id));
+      await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+      await page.getByText(/Guardado · rev\./).waitFor();
+      const saved = JSON.parse(await readFile(path, 'utf8'));
+      assert.equal(saved.models.length, 1);
+      assert.equal(saved.models[0].id, id);
+      for (const scene of saved.scenes) assert.equal(scene.visual.objects.find((object: any) => object.id === 'farol').params.modelId, id);
+    }, 'chromium', { env: fake.env });
+  } finally { await fake.cleanup(); }
+});
+
+test('draw all retains the first model when the second scene fails', { timeout: 90000 }, async t => {
+  const fake = await fakeCodex('model-partial');
+  try {
+    await withStudio(t, async ({ page, root, store }) => {
+      await page.getByLabel('Nombre', { exact: true }).fill('Fallo de modelo');
+      await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+      await page.getByLabel('Idea', { exact: true }).fill('Un farol');
+      await page.waitForFunction(() => !document.querySelector<HTMLOptionElement>('select option[value="auto"]')?.disabled);
+      await page.getByLabel('Modo de guion').selectOption('auto');
+      const script = page.getByRole('region', { name: 'Guion automático' });
+      await script.getByRole('button', { name: 'Generar con Codex' }).click();
+      await script.getByRole('region', { name: 'Revisión del guion' }).waitFor();
+      await script.getByRole('button', { name: 'Aplicar al borrador' }).click();
+      await script.getByRole('button', { name: 'Dibujar todas con Codex' }).click();
+      await script.getByRole('alert').filter({ hasText: /Se conservan los dibujos ya aplicados/ }).waitFor();
+      await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+      await page.getByText(/Guardado · rev\./).waitFor();
+      const projects = await store.listProjects();
+      const saved = JSON.parse(await readFile(join(root, projects[0]!.projectId, 'project.json'), 'utf8'));
+      assert.equal(saved.models.length, 1);
+      assert.equal(saved.scenes[0].visual.objects.find((object: any) => object.id === 'farol').params.modelId, saved.models[0].id);
+      assert.equal(saved.scenes[1].visual, null);
+    }, 'chromium', { env: fake.env });
+  } finally { await fake.cleanup(); }
+});
+
+test('draw all cancellation and stale edits retain the previously applied model', { timeout: 120000 }, async t => {
+  for (const scenario of ['cancel', 'edit'] as const) {
+    const fake = await fakeCodex('model-batch');
+    try {
+      await withStudio(t, async ({ page, root, store }) => {
+        await page.getByLabel('Nombre', { exact: true }).fill(`Interrupción ${scenario}`);
+        await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+        await page.getByLabel('Idea', { exact: true }).fill('Un farol');
+        await page.waitForFunction(() => !document.querySelector<HTMLOptionElement>('select option[value="auto"]')?.disabled);
+        await page.getByLabel('Modo de guion').selectOption('auto');
+        const script = page.getByRole('region', { name: 'Guion automático' });
+        await script.getByRole('button', { name: 'Generar con Codex' }).click();
+        await script.getByRole('region', { name: 'Revisión del guion' }).waitFor();
+        await script.getByRole('button', { name: 'Aplicar al borrador' }).click();
+        let count = 0;
+        let reached!: () => void;
+        let release!: () => void;
+        const second = new Promise<void>(resolve => { reached = resolve; });
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        await page.route('**/api/drawing/generate', async route => {
+          if (++count !== 2) return route.continue();
+          const response = await route.fetch();
+          reached();
+          await gate;
+          try { await route.fulfill({ response }); } catch { /* cancellation closes the request */ }
+        });
+        await script.getByRole('button', { name: 'Dibujar todas con Codex' }).click();
+        await second;
+        if (scenario === 'cancel') {
+          await script.getByRole('button', { name: 'Cancelar generación' }).click();
+          await script.getByText(/Dibujo detenido/).waitFor();
+        } else {
+          await page.locator('.scene-card').first().getByLabel('Texto').fill('Mi edición prevalece.');
+        }
+        release();
+        if (scenario === 'edit') await script.getByRole('alert').filter({ hasText: /borrador cambió/ }).waitFor();
+        else await script.getByRole('button', { name: 'Dibujar todas con Codex' }).waitFor({ state: 'visible' });
+        await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+        await page.getByText(/Guardado · rev\./).waitFor();
+        const projects = await store.listProjects();
+        const saved = JSON.parse(await readFile(join(root, projects[0]!.projectId, 'project.json'), 'utf8'));
+        assert.equal(count, 2);
+        assert.equal(saved.models.length, 1);
+        assert.equal(saved.scenes[0].visual.objects.find((object: any) => object.id === 'farol').params.modelId, saved.models[0].id);
+        assert.equal(saved.scenes[1].visual, null);
+        if (scenario === 'edit') assert.equal(saved.scenes[0].text, 'Mi edición prevalece.');
+      }, 'chromium', { env: fake.env });
+    } finally { await fake.cleanup(); }
+  }
+});
+
+test('single-scene automatic drawing reviews and applies a portable model without saving', { timeout: 90000 }, async t => {
+  const fake = await fakeCodex('model');
+  try {
+    await withStudio(t, async ({ page, root }) => {
+      await page.getByLabel('Nombre', { exact: true }).fill('Modelo automático');
+      await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+      await page.getByLabel('Idea', { exact: true }).fill('Un farol');
+      await page.waitForFunction(() => !document.querySelector<HTMLOptionElement>('select option[value="auto"]')?.disabled);
+      await page.getByLabel('Modo de guion').selectOption('auto');
+      const script = page.getByRole('region', { name: 'Guion automático' });
+      await script.getByRole('button', { name: 'Generar con Codex' }).click();
+      await script.getByRole('region', { name: 'Revisión del guion' }).waitFor();
+      await script.getByRole('button', { name: 'Aplicar al borrador' }).click();
+      const projects = await page.evaluate(async () => {
+        const token = document.querySelector<HTMLMetaElement>('meta[name="companion-token"]')!.content;
+        return (await (await fetch('/api/projects', { headers: { authorization: `Bearer ${token}` } })).json()).projects;
+      });
+      const path = join(root, projects[0].projectId, 'project.json');
+      const original = await readFile(path);
+      const card = page.locator('.scene-card').first();
+      await card.locator('summary').click();
+      await card.getByLabel('Modo de dibujo').selectOption('auto');
+      await card.getByRole('button', { name: 'Generar con Codex' }).click();
+      await card.getByRole('button', { name: 'Generar con Codex', exact: true }).waitFor();
+      const errors = await card.getByRole('alert').allTextContents();
+      assert.equal(errors.length, 0, errors.join(' '));
+      const review = card.getByRole('region', { name: 'Revisión del dibujo' });
+      await review.getByText('Farol · farol').waitFor();
+      assert.deepEqual(await readFile(path), original);
+      await card.getByRole('button', { name: 'Aplicar al borrador' }).click();
+      await card.getByText(/Aplicado al borrador/).waitFor();
+      assert.deepEqual(await readFile(path), original);
+      await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+      await page.getByText(/Guardado · rev\./).waitFor();
+      const saved = JSON.parse(await readFile(path, 'utf8'));
+      assert.equal(saved.models[0].model.name, 'Farol');
+      assert.equal(saved.scenes[0].visual.objects.find((object: { id: string }) => object.id === 'farol').params.modelId, saved.models[0].id);
+      const records = (await readFile(fake.env.FAKE_CODEX_RECORD, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+      assert.equal(records.length, 2);
+      assert.ok(records[1].schema.properties.models);
+      assert.ok(records.every(record => !record.inheritedProviderSecret));
+    }, 'chromium', { env: fake.env });
+  } finally { await fake.cleanup(); }
+});
+
 test('automatic script and sequential drawings via fake executable → real Chromium preview → saved silent MP4', { timeout: 240000 }, async t => {
   const fake = await fakeCodex();
   try {

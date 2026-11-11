@@ -1,6 +1,7 @@
 import type { Entity, Issue } from '../schema/types.ts';
 import { LIMITS } from '../schema/limits.ts';
 import { canonicalize } from '../canonical.ts';
+import { MODEL_ID_PATTERN } from '../models/model.ts';
 import type { KitScene } from './types.ts';
 import { KIT_ANIMATION_TYPES, KIT_CAMERA_MOVES, KIT_EASINGS, KIT_LIMITS,
   KIT_OBJECT_TYPES, KIT_PARTICLE_TYPES, KIT_POSES } from './schema.ts';
@@ -71,6 +72,7 @@ const params: Record<string, Rule> = {
   car: object({ proportions, bodyColor: color, wheelColor: color }),
   rockLayers: object({ proportions, colors: array(color, 6, 2) }),
   label: object({ proportions, text: text(1, 120), color }),
+  model: object({ modelId: text(64, 64, MODEL_ID_PATTERN) }),
 };
 const animationParams: Record<string, Rule> = {
   move: object({ from: vector, to: vector }), fall: object({ from: vector, to: vector }),
@@ -116,7 +118,7 @@ function inspect(value: unknown, path: string, issues: Issue[], seen = new Set<o
   seen.delete(value);
 }
 
-export interface KitValidationOptions { durationMs?: number; entities?: Map<string, Entity> }
+export interface KitValidationOptions { durationMs?: number; entities?: Map<string, Entity>; modelIds?: ReadonlySet<string> }
 export type KitValidationOutcome = { ok: true; scene: KitScene } | { ok: false; issues: Issue[] };
 
 /** Validates a declarative scene; no code, arbitrary parameter bags or URLs are interpreted. */
@@ -138,7 +140,7 @@ export function validateKitScene(value: unknown, options: KitValidationOptions =
       } })(value, path, findings);
     interval(value, path);
   };
-  const kitObject = object({ id, type: enumeration(KIT_OBJECT_TYPES),
+  const kitObject = object({ id, type: enumeration([...KIT_OBJECT_TYPES, 'model']),
     params: (_value, _path, _issues) => {}, position: vector, rotation: vec(-6.284, 6.284),
     scale: number(0.1, 10), color, animations: array(animation, KIT_LIMITS.animationsPerObject) }, {
     seed, legacy: object({ entityId: id, definitionVersion: number(1, Number.MAX_SAFE_INTEGER, true),
@@ -178,6 +180,9 @@ export function validateKitScene(value: unknown, options: KitValidationOptions =
     const path = `$.objects[${index}]`;
     if (ids.has(item.id)) report(issues, `${path}.id`, 'unique', 'duplicate object id');
     ids.add(item.id);
+    if (item.type === 'model' && options.modelIds && !options.modelIds.has(item.params.modelId)) {
+      report(issues, `${path}.params.modelId`, 'reference', 'model snapshot is not registered');
+    }
     if (item.legacy && options.entities) {
       const entity = options.entities.get(item.legacy.entityId);
       if (!entity || entity.definitionVersion !== item.legacy.definitionVersion) {

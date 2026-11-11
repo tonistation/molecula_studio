@@ -4,6 +4,7 @@ import { issue } from './errors.ts';
 import type { IssueCode } from './errors.ts';
 import { validateKitScene } from '../kit/validate.ts';
 import { migrateV1Project } from './migrate.ts';
+import { MAX_PROJECT_MODELS, MODEL_ID_PATTERN, validateProceduralModel, type ModelSnapshot } from '../models/model.ts';
 import type {
   Approval,
   Asset,
@@ -458,7 +459,7 @@ interface ReadProjectResult {
 }
 
 function readProject(ctx: Ctx, value: unknown, version: 1 | 2): ReadProjectResult {
-  const root = readObject(ctx, '$', value, ROOT_KEYS, version === 2 ? ['sources', 'cover', 'postText'] : []);
+  const root = readObject(ctx, '$', value, ROOT_KEYS, version === 2 ? ['sources', 'cover', 'postText', 'models'] : []);
 
   const schemaVersion = readConst(ctx, '$.schemaVersion', root.schemaVersion, version);
   const projectId = readId(ctx, '$.projectId', root.projectId);
@@ -479,6 +480,7 @@ function readProject(ctx: Ctx, value: unknown, version: 1 | 2): ReadProjectResul
   const captionStyle = readCaptionStyle(ctx, '$.captionStyle', root.captionStyle);
   const assets = readAssets(ctx, '$.assets', root.assets);
   const entities = readEntities(ctx, '$.entities', root.entities);
+  const models = Object.hasOwn(root, 'models') ? readModels(ctx, root.models) : undefined;
 
   const mode: ProjectMode =
     styleId === INSTALLED_STYLE_ID && styleVersion === INSTALLED_STYLE_VERSION
@@ -490,6 +492,7 @@ function readProject(ctx: Ctx, value: unknown, version: 1 | 2): ReadProjectResul
     mode,
     output,
     entities: new Map(entities.map((entity) => [entity.entityId, entity])),
+    modelIds: new Set(models?.map(model => model.id)),
     assets: new Map(assets.map((asset) => [asset.assetId, asset])),
   });
 
@@ -511,12 +514,33 @@ function readProject(ctx: Ctx, value: unknown, version: 1 | 2): ReadProjectResul
     output,
     captionStyle,
     entities,
+    ...(models === undefined ? {} : { models }),
     scenes: scenes.items,
     assets,
     approval,
   };
 
   return { mode, project, inertVisual: scenes.inertVisual };
+}
+
+function readModels(ctx: Ctx, value: unknown): ModelSnapshot[] {
+  const items = readArray(ctx, '$.models', value, MAX_PROJECT_MODELS);
+  const seen = new Set<string>();
+  const snapshots: ModelSnapshot[] = [];
+  for (const [index, item] of items.slice(0, MAX_PROJECT_MODELS).entries()) {
+    const path = `$.models[${index}]`;
+    const raw = readObject(ctx, path, item, ['id', 'model']);
+    if (typeof raw.id !== 'string' || !MODEL_ID_PATTERN.test(raw.id)) {
+      push(ctx, `${path}.id`, 'pattern', 'must be 64 lowercase hex characters');
+      continue;
+    }
+    if (seen.has(raw.id)) push(ctx, `${path}.id`, 'unique', 'duplicate model id');
+    seen.add(raw.id);
+    const result = validateProceduralModel(raw.model);
+    if (!result.ok) push(ctx, `${path}.model`, 'type', 'invalid procedural model');
+    else snapshots.push({ id: raw.id, model: structuredClone(result.model) });
+  }
+  return snapshots;
 }
 
 function readScriptMetadata(ctx: Ctx, root: Record<string, unknown>, version: 1 | 2): Pick<Project, 'sources' | 'cover' | 'postText'> {
@@ -810,6 +834,7 @@ interface SceneEnv {
   mode: ProjectMode;
   output: Output;
   entities: Map<string, Entity>;
+  modelIds: ReadonlySet<string>;
   assets: Map<string, Asset>;
 }
 
@@ -923,9 +948,18 @@ function readSceneVisual(
     push(ctx, `${path}.kind`, 'const', 'visual.kind "code" is reserved and is not supported');
     return null;
   }
-  if (env.mode === 'read-only') return { inert: value };
+  if (env.mode === 'read-only') {
+    // Opaque styles remain inert, but an explicit kit model reference must not
+    // bypass the project-wide snapshot constraint.
+    if (env.schemaVersion === 2 && value.kind === 'kit' && Array.isArray(value.objects)
+      && value.objects.some(item => isPlainObject(item) && item.type === 'model')) {
+      const result = validateKitScene(value, { durationMs, entities: env.entities, modelIds: env.modelIds });
+      if (!result.ok) ctx.issues.push(...result.issues.map(finding => ({ ...finding, path: `${path}${finding.path.slice(1)}` })));
+    }
+    return { inert: value };
+  }
   if (env.schemaVersion === 2) {
-    const result = validateKitScene(value, { durationMs, entities: env.entities });
+    const result = validateKitScene(value, { durationMs, entities: env.entities, modelIds: env.modelIds });
     if (!result.ok) {
       ctx.issues.push(...result.issues.map(finding => ({ ...finding, path: `${path}${finding.path.slice(1)}` })));
       return null;

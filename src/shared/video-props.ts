@@ -1,7 +1,9 @@
 import type { CaptionStyle, Entity, Output, Project, Word } from './schema/types.ts';
 import type { KitScene } from './kit/types.ts';
+import type { ModelSnapshot } from './models/model.ts';
 import { totalFrames } from './timeline.ts';
 import { estimateWords } from './voice/estimate.ts';
+import { verifyModelSnapshotsSync } from './models/integrity.ts';
 
 export interface VideoSceneProps {
   sceneId: string;
@@ -27,10 +29,13 @@ export type VideoProps = {
   captionStyle: CaptionStyle;
   voiceMode: Output['voiceMode'];
   entities: Entity[];
+  models?: ModelSnapshot[];
   scenes: VideoSceneProps[];
 };
 
 export function projectToVideoProps(project: Project, assetUrls: Record<string, string>): VideoProps {
+  const models = project.models === undefined ? undefined : verifyModelSnapshotsSync(project.models);
+  if (models === null) throw new Error('La integridad de los modelos no coincide con su identificador.');
   if (project.styleId !== 'stylized-3d' || project.styleVersion !== 1) {
     throw new Error(`Unsupported style: ${project.styleId} version ${project.styleVersion}`);
   }
@@ -71,6 +76,7 @@ export function projectToVideoProps(project: Project, assetUrls: Record<string, 
     captionStyle: project.captionStyle,
     voiceMode: project.output.voiceMode,
     entities: project.entities,
+    ...(models === undefined ? {} : { models }),
     scenes,
   };
 }

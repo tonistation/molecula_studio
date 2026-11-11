@@ -1,5 +1,6 @@
 import { canonicalize } from './canonical.ts';
 import type { Asset, Project, Scene } from './schema/types.ts';
+import { verifyModelSnapshots } from './models/integrity.ts';
 
 const encoder = new TextEncoder();
 
@@ -40,6 +41,10 @@ export interface BindingDigests {
  * bindings when they differ instead of "repairing" them.
  */
 export async function bindingDigests(project: Project): Promise<BindingDigests> {
+  project = structuredClone(project);
+  if (project.models !== undefined && await verifyModelSnapshots(project.models) === null) {
+    throw new Error('La integridad de los modelos no coincide con su identificador.');
+  }
   const scenes = await Promise.all(
     project.scenes.map((scene) => sceneBindingDigests(project, scene)),
   );

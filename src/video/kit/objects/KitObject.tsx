@@ -4,6 +4,8 @@ import type { KitObject as ObjectSpec } from '../../../shared/kit/types.ts';
 import type { Vec3 } from '../../../shared/schema/types.ts';
 import { animateObject, identitySeed, seeded } from '../animate.ts';
 import { arrowShape } from './arrow-shape.ts';
+import type { ProceduralModel as Model } from '../../../shared/models/model.ts';
+import { ProceduralModel } from './ProceduralModel.tsx';
 
 function Solid({ children, color, opacity }: { children: ReactNode; color: string; opacity: number }) {
   return <mesh castShadow receiveShadow>
@@ -14,7 +16,7 @@ function Solid({ children, color, opacity }: { children: ReactNode; color: strin
   </mesh>;
 }
 
-export function KitObject({ spec, ms }: { spec: ObjectSpec; ms: number }) {
+export function KitObject({ spec, ms, models }: { spec: ObjectSpec; ms: number; models: ReadonlyMap<string, Model> }) {
   const state = animateObject(spec, ms);
   const solid = (geometry: ReactNode, color = spec.color) => <Solid color={color} opacity={state.opacity}>{geometry}</Solid>;
   const block = (size: Vec3, position: Vec3, color = spec.color) => <group position={position}>{solid(<boxGeometry args={size} />, color)}</group>;
@@ -77,6 +79,12 @@ export function KitObject({ spec, ms }: { spec: ObjectSpec; ms: number }) {
       break;
     }
     case 'label': content = null; break; // Rendered as projected DOM, never a texture or HTML in WebGL.
+    case 'model': {
+      const model = models.get(spec.params.modelId);
+      if (!model) throw new Error('Procedural model snapshot is missing');
+      content = <ProceduralModel model={model} tint={spec.color} opacity={state.opacity} />;
+      break;
+    }
     default: { const unreachable: never = spec; throw new Error(`Unsupported object: ${String(unreachable)}`); }
   }
   return <group position={state.position} rotation={state.rotation} scale={state.scale} visible={state.opacity > 0}>{content}</group>;

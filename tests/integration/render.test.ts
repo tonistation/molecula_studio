@@ -13,6 +13,8 @@ import { fixtureText } from '../helpers/fixtures.ts';
 import { draftVideoProps } from '../../studio/src/preview-model.ts';
 import { projectToVideoProps } from '../../src/shared/video-props.ts';
 import { voicedFixture, assertRenderedAudio } from '../helpers/render-audio.ts';
+import { sha256Hex } from '../../src/shared/digests.ts';
+import { canonicalize } from '../../src/shared/canonical.ts';
 
 const exec = promisify(execFile);
 
@@ -311,6 +313,31 @@ test('real CLI completes a label pulse through exact zero scale', { timeout: 240
   const output = join(root, 'pulse.mp4');
   await exec(process.execPath, ['scripts/render-project.ts', input, output], { timeout: 220_000 });
   assert.ok((await readFile(output)).length > 0);
+});
+
+test('real CLI renders a verified procedural model and refuses tampering', { timeout: 240_000 }, async t => {
+  const { root, input } = await setup(t);
+  const parsed = parseProjectText(await readFile('docs/plan/examples/kit/sal-del-mar-storyboard.json'));
+  assert.ok(parsed.ok);
+  const project = parsed.project;
+  const scene = project.scenes[0]!;
+  project.output.durationMs = 2000; project.output.voiceMode = 'silent';
+  project.scenes = [{ ...scene, startMs: 0, durationMs: 2000, words: [], audio: null, mediaBindings: { audio: null, words: null } }];
+  const visual = project.scenes[0]!.visual!; assert.ok('kind' in visual && visual.kind === 'kit');
+  const model = { version: 1 as const, name: 'Plant', semanticId: 'plant', parts: [{ shape: 'sphere' as const,
+    position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number],
+    scale: [1, 1, 1] as [number, number, number], color: '#00ff00' }] };
+  const id = await sha256Hex(canonicalize(model));
+  project.models = [{ id, model }];
+  visual.objects = [{ id: 'plant', type: 'model', params: { modelId: id }, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, color: '#ffffff', animations: [] }];
+  visual.labels = []; visual.particles = []; visual.overlays = [];
+  await writeFile(input, serializeProject(project));
+  const output = join(root, 'model.mp4');
+  await exec(process.execPath, ['scripts/render-project.ts', input, output], { timeout: 220_000 });
+  assert.ok((await readFile(output)).length > 0);
+  project.models[0]!.model.name = 'Forged';
+  await writeFile(input, serializeProject(project));
+  await assert.rejects(exec(process.execPath, ['scripts/render-project.ts', input, join(root, 'forged.mp4')], { timeout: 60000 }), /integridad de los modelos/);
 });
 
 test('real CLI includes audio with scene sync, source offsets and gain; silent mode excludes attached audio', { timeout: 300_000 }, async t => {
