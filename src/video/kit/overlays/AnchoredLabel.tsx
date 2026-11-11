@@ -31,7 +31,7 @@ export function AnchoredLabel({ text, color, opacity, x, y, width, height, pill 
     ...pill, fontFamily: 'sans-serif', background: color, maxWidth: layout.width, width: 'max-content',
     left: fit ? (layout.width - fit.width) / 2 - fit.minX * fit.scale : 0, top: fit ? -fit.minY * fit.scale : 0,
     boxSizing: 'border-box', fontSize: fit?.fontSize ?? 34, lineHeight: 1.2,
-    padding: `${layout.paddingY}px ${layout.paddingX}px`, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-all', textAlign: 'center',
+    padding: `${layout.paddingY}px ${layout.paddingX}px`, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal', textAlign: 'center',
     transform: `scale(${fit?.scale ?? 1})`, transformOrigin: 'top left',
   }}>{text}</div></div>;
 }

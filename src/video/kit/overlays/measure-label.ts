@@ -8,8 +8,8 @@ export interface MeasuredLabel {
 }
 
 /** Called after fonts load. Isolated from Player transforms; never estimates glyph widths. */
-export function measureAnchoredLabel({ text, cssText, width, height }: {
-  text: string; cssText: string; width: number; height: number;
+export function measureAnchoredLabel({ text, cssText, width, height, maxFontSize = 34 }: {
+  text: string; cssText: string; width: number; height: number; maxFontSize?: number;
 }): MeasuredLabel {
   const probe = document.createElement('div');
   probe.dataset.labelMeasure = '';
@@ -33,9 +33,9 @@ export function measureAnchoredLabel({ text, cssText, width, height }: {
       return { fontSize, width: measuredWidth, height: measuredHeight, minX, minY };
     };
     const fits = (box: ReturnType<typeof measure>) => box.width <= width && box.height <= height;
-    let result = measure(34);
+    let result = measure(maxFontSize);
     if (!fits(result)) {
-      let low = 0.01; let high = 34;
+      let low = 0.01; let high = maxFontSize;
       result = measure(low);
       for (let i = 0; i < 18; i++) {
         const candidate = measure((low + high) / 2);

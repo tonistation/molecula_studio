@@ -4,8 +4,8 @@ import type { KitScene } from '../../../shared/kit/types.ts';
 import { animateObject, ease, mix, progress } from '../animate.ts';
 import { projectPoint } from '../camera.ts';
 import type { CameraState } from '../camera.ts';
-import { labelLayout } from './layout.ts';
 import { AnchoredLabel } from './AnchoredLabel.tsx';
+import { ObjectLabel } from './ObjectLabel.tsx';
 
 const pill: CSSProperties = {
   position: 'absolute', borderRadius: 40, padding: '15px 28px', background: '#172D45',
@@ -30,14 +30,10 @@ export function Overlays({ spec, ms, camera, width, height }: { spec: KitScene; 
       if (!point.visible || state.opacity <= 0) return null;
       const distance = Math.hypot(...state.position.map((v, i) => v - camera.position[i]!));
       const pixelsPerUnit = height / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.max(0.01, distance));
-      const labelHeight = object.params.proportions.height * state.scale * pixelsPerUnit;
-      const layout = labelLayout(object.params.proportions.width * state.scale * pixelsPerUnit, labelHeight, object.params.text);
-      return <div key={object.id} style={{
-        ...pill, left: point.x, top: point.y, translate: '-50% -50%', padding: 0,
-        background: object.params.color, opacity: state.opacity,
-        ...layout, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        textAlign: 'center', rotate: `${state.rotation[2]}rad`,
-      }}>{object.params.text}</div>;
+      return <ObjectLabel key={object.id} pill={pill} text={object.params.text} color={object.params.color} opacity={state.opacity}
+        x={point.x} y={point.y} width={object.params.proportions.width * state.scale * pixelsPerUnit}
+        height={object.params.proportions.height * state.scale * pixelsPerUnit} rotation={state.rotation[2]}
+        viewportWidth={width} viewportHeight={height} />;
     })}
     {spec.overlays.map((overlay, i) => {
       if (overlay.type === 'counter') {

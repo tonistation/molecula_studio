@@ -5,6 +5,85 @@ import { withStudio } from '../helpers/studio-browser.ts';
 import { measureAnchoredLabel } from '../../src/video/kit/overlays/measure-label.ts';
 import { anchoredLabelLayout } from '../../src/video/kit/overlays/layout.ts';
 
+test('natural words wrap intact and projected object labels stay inside the viewport', async t => {
+  const project = JSON.parse(await readFile(new URL('../../docs/plan/examples/kit/sal-del-mar-storyboard.json', import.meta.url), 'utf8'));
+  project.scenes = [project.scenes[0]]; project.output.durationMs = project.scenes[0].durationMs;
+  const visual = project.scenes[0].visual;
+  visual.camera = { move: 'static', from: [0, 0, 10], to: [0, 0, 10], target: [0, 0, 0], easing: 'linear' };
+  visual.particles = []; visual.overlays = [];
+  const halfWidth = 10 * Math.tan(Math.PI / 8) * 9 / 16;
+  visual.objects = [-0.99, 0.99, 2].map((x, i) => ({
+    id: `object-label-${i}`, type: 'label', params: { proportions: { width: 2, height: 0.25, depth: 0.1 }, text: `Objeto ${i}`, color: '#273E46' },
+    position: [x * halfWidth, 0, 0], rotation: [0, 0, 0], scale: 1, color: '#273E46', animations: [],
+  }));
+  visual.objects.push({ id: 'anchor', type: 'sphere', params: { radius: 0.1 }, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, color: '#FFFFFF', animations: [] });
+  visual.labels = [{ objectId: 'anchor', text: 'salado '.repeat(12).trim(), color: '#172D45' },
+    { objectId: 'anchor', text: 'W'.repeat(120), color: '#172D45' }];
+  await withStudio(t, async ({ page, consoleErrors, resourceErrors }) => {
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(project)) });
+    await page.waitForFunction(() => document.querySelectorAll('[data-anchored-label]').length === 2 && document.querySelectorAll('[data-object-label]').length === 2 && Array.from(document.querySelectorAll('[data-label-fitted]')).every(el => (el as HTMLElement).dataset.labelFitted === 'true'));
+    const result = await page.locator('[data-anchored-label]').evaluateAll(elements => elements.map(element => {
+      const pill = element.firstElementChild as HTMLElement; const node = pill.firstChild!; const range = document.createRange();
+      const lines: number[] = [];
+      for (let i = 0; i < node.textContent!.length; i++) { range.setStart(node, i); range.setEnd(node, i + 1); lines.push(range.getBoundingClientRect().top); }
+      const box = pill.getBoundingClientRect(); const parent = element.parentElement!.getBoundingClientRect();
+      return { text: node.textContent!, lines, left: box.left - parent.left, right: box.right - parent.left, top: box.top - parent.top, bottom: box.bottom - parent.top, width: parent.width, height: parent.height };
+    }));
+    for (const word of result[0]!.text.matchAll(/salado/g)) assert.equal(new Set(result[0]!.lines.slice(word.index, word.index + 6)).size, 1);
+    assert.ok(new Set(result[1]!.lines).size > 1, 'overlong word wraps');
+    const objects = await page.locator('[data-object-label]').evaluateAll(elements => elements.map(element => {
+      const r = element.getBoundingClientRect(); const p = element.parentElement!.getBoundingClientRect();
+      return { left: r.left - p.left, top: r.top - p.top, right: r.right - p.left, bottom: r.bottom - p.top, width: p.width, height: p.height };
+    }));
+    for (const label of objects) assert.ok(label.left >= 0 && label.right <= label.width && label.top >= 0 && label.bottom <= label.height, JSON.stringify(label));
+    assert.deepEqual(consoleErrors, []); assert.deepEqual(resourceErrors, []);
+  }, 'chromium');
+});
+
+test('object labels retain projected dimensions and rotation while their rotated bounds clamp safely', async t => {
+  const project = JSON.parse(await readFile(new URL('../../docs/plan/examples/kit/sal-del-mar-storyboard.json', import.meta.url), 'utf8'));
+  project.scenes = [project.scenes[0]]; project.output.durationMs = project.scenes[0].durationMs;
+  const visual = project.scenes[0].visual;
+  visual.camera = { move: 'static', from: [0, 0, 10], to: [0, 0, 10], target: [0, 0, 0], easing: 'linear' };
+  visual.particles = []; visual.overlays = []; visual.labels = [];
+  const halfHeight = 10 * Math.tan(Math.PI / 8); const halfWidth = halfHeight * 9 / 16;
+  const points = [[0, 0], [-0.99, 0.99], [0.99, 0.99], [-0.99, -0.99], [0.99, -0.99], [2, 0]];
+  visual.objects = points.map(([x, y], i) => ({ id: `label-${i}`, type: 'label',
+    params: { proportions: { width: 2, height: 0.5, depth: 0.1 }, text: i === 1 ? 'ဪ'.repeat(120) : 'Sal', color: '#273E46' },
+    position: [x! * halfWidth, y! * halfHeight, 0], rotation: [0, 0, 0.4], scale: 1.5, color: '#273E46', animations: [] }));
+  await withStudio(t, async ({ page }) => {
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(project)) });
+    await page.waitForFunction(() => document.querySelectorAll('[data-object-label]').length === 5 && Array.from(document.querySelectorAll('[data-object-label]')).every(el => (el as HTMLElement).dataset.labelFitted === 'true'));
+    const result = await page.locator('[data-object-label]').evaluateAll(elements => elements.map(el => {
+      const h = el as HTMLElement; const rect = h.getBoundingClientRect(); const parent = h.parentElement!.getBoundingClientRect(); const scale = parent.width / 1080;
+      const range = document.createRange(); range.selectNodeContents(h.firstElementChild!); const textRect = range.getBoundingClientRect();
+      return { width: parseFloat(h.style.width), height: parseFloat(h.style.height), rotation: h.style.rotate, fontSize: parseFloat(getComputedStyle(h.firstElementChild!).fontSize),
+        left: (rect.left - parent.left) / scale, right: (rect.right - parent.left) / scale, top: (rect.top - parent.top) / scale, bottom: (rect.bottom - parent.top) / scale,
+        rectWidth: rect.width / scale, rectHeight: rect.height / scale, text: h.textContent, textInside: textRect.left >= rect.left - 1 && textRect.right <= rect.right + 1 && textRect.top >= rect.top - 1 && textRect.bottom <= rect.bottom + 1 };
+    }));
+    for (const [i, r] of result.entries()) {
+      const x = points[i]![0]! * halfWidth; const y = points[i]![1]! * halfHeight; const distance = Math.hypot(x, y, 10);
+      const px = 1920 / (2 * Math.tan(Math.PI / 8) * distance);
+      assert.ok(Math.abs(r.width - 3 * px) < 0.02 && Math.abs(r.height - 0.75 * px) < 0.02, JSON.stringify(r));
+      assert.equal(r.rotation, '0.4rad');
+      assert.ok(Math.abs(r.rectWidth - (r.width * Math.cos(0.4) + r.height * Math.sin(0.4))) < 0.2, JSON.stringify(r));
+      assert.ok(Math.abs(r.rectHeight - (r.height * Math.cos(0.4) + r.width * Math.sin(0.4))) < 0.2, JSON.stringify(r));
+      assert.ok(r.left >= 0 && r.right <= 1080 && r.top >= 0 && r.bottom <= 1920, JSON.stringify(r));
+      assert.equal(r.text, i === 1 ? 'ဪ'.repeat(120) : 'Sal'); assert.equal(r.textInside, true);
+    }
+    const originalFontSize = Math.min(result[0]!.height * 0.6, result[0]!.width / (3 * 0.7 + 2));
+    assert.ok(Math.abs(result[0]!.fontSize - originalFontSize) < 0.02, 'normal text retains its authored font size');
+    assert.ok(Math.abs((result[0]!.left + result[0]!.right) / 2 - 540) < 0.2, 'unclamped anchor stays centered');
+    assert.ok(Math.abs((result[0]!.top + result[0]!.bottom) / 2 - 960) < 0.2, 'unclamped anchor stays centered');
+    const before = await page.locator('[data-object-label]').evaluateAll(elements => elements.map(el => `${el.getAttribute('style')}${el.firstElementChild!.getAttribute('style')}`));
+    const bar = page.locator('.preview-transport div[style*="touch-action: none"]');
+    const box = await bar.boundingBox(); assert.ok(box);
+    await bar.click({ position: { x: box.width / 2, y: box.height / 2 } });
+    await page.getByRole('button', { name: 'Ver escena 1', exact: true }).click();
+    assert.deepEqual(await page.locator('[data-object-label]').evaluateAll(elements => elements.map(el => `${el.getAttribute('style')}${el.firstElementChild!.getAttribute('style')}`)), before);
+  }, 'chromium');
+});
+
 test('anchored labels keep complete Chromium pill/text bounds safe at all corners and hide off-frustum anchors', async t => {
   const project = JSON.parse(await readFile(new URL('../../docs/plan/examples/kit/sal-del-mar-storyboard.json', import.meta.url), 'utf8'));
   project.scenes = [project.scenes[0]];
