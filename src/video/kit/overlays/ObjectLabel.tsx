@@ -34,7 +34,10 @@ export function ObjectLabel({ text, color, opacity, x, y, width, height, rotatio
   return <div data-object-label data-label-fitted={fit !== null} style={{ ...pill, left: centerX, top: centerY,
     width, height, translate: '-50% -50%', rotate: `${rotation}rad`, scale, padding: 0,
     background: color, opacity, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-  }}><span ref={element} style={{ display: 'block', width: 'max-content', maxWidth: width, whiteSpace: 'nowrap',
-    fontFamily: 'sans-serif', fontWeight: 700, fontSize: fit?.fontSize ?? maxFontSize, transform: `scale(${fit?.scale ?? 1})`,
+  }}><span ref={element} style={{ position: 'absolute', display: 'block', width: 'max-content', maxWidth: width, whiteSpace: 'nowrap', textAlign: 'left',
+    left: fit ? (width - fit.width) / 2 - fit.minX * fit.scale : 0,
+    top: fit ? (height - fit.height) / 2 - fit.minY * fit.scale : 0,
+    fontFamily: 'sans-serif', fontWeight: 700, fontSize: fit?.fontSize ?? maxFontSize,
+    transform: `scale(${fit?.scale ?? 1})`, transformOrigin: 'top left',
   }}>{text}</span></div>;
 }

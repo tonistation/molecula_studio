@@ -5,6 +5,39 @@ import { withStudio } from '../helpers/studio-browser.ts';
 import { measureAnchoredLabel } from '../../src/video/kit/overlays/measure-label.ts';
 import { anchoredLabelLayout } from '../../src/video/kit/overlays/layout.ts';
 
+test('tiny long object labels keep all glyphs within the pill and viewport at edges', async t => {
+  const project = JSON.parse(await readFile(new URL('../../docs/plan/examples/kit/sal-del-mar-storyboard.json', import.meta.url), 'utf8'));
+  project.scenes = [project.scenes[0]]; project.output.durationMs = project.scenes[0].durationMs;
+  const visual = project.scenes[0].visual;
+  visual.camera = { move: 'static', from: [0, 0, 10], to: [0, 0, 10], target: [0, 0, 0], easing: 'linear' };
+  visual.particles = []; visual.overlays = []; visual.labels = [];
+  const halfHeight = 10 * Math.tan(Math.PI / 8); const halfWidth = halfHeight * 9 / 16;
+  visual.objects = [[0.99, 0.99], [-0.99, -0.99]].map(([x, y], i) => ({ id: `tiny-${i}`, type: 'label',
+    params: { proportions: { width: 2, height: 0.5, depth: 0.1 }, text: i === 0 ? 'ဪ'.repeat(120) : 'W'.repeat(120), color: '#273E46' },
+    position: [x! * halfWidth, y! * halfHeight, 0], rotation: [0, 0, i === 0 ? 0 : 0.45], scale: 0.1, color: '#273E46', animations: [] }));
+  await withStudio(t, async ({ page, consoleErrors, resourceErrors }) => {
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(project)) });
+    await page.waitForFunction(() => document.querySelectorAll('[data-object-label][data-label-fitted="true"]').length === 2);
+    const result = await page.locator('[data-object-label]').evaluateAll(elements => elements.map(el => {
+      const pill = el.getBoundingClientRect(); const viewport = el.parentElement!.getBoundingClientRect();
+      const range = document.createRange(); range.selectNodeContents(el.firstElementChild!); const text = range.getBoundingClientRect();
+      return { text: el.textContent, pill: { left: pill.left, right: pill.right, top: pill.top, bottom: pill.bottom },
+        glyph: { left: text.left, right: text.right, top: text.top, bottom: text.bottom },
+        viewport: { left: viewport.left, right: viewport.right, top: viewport.top, bottom: viewport.bottom },
+        overflow: getComputedStyle(el).overflow };
+    }));
+    for (const [i, r] of result.entries()) {
+      assert.equal(r.text, (i === 0 ? 'ဪ' : 'W').repeat(120));
+      assert.notEqual(r.overflow, 'hidden');
+      for (const box of [r.pill, r.glyph]) {
+        assert.ok(box.left >= r.viewport.left - 0.1 && box.right <= r.viewport.right + 0.1 && box.top >= r.viewport.top - 0.1 && box.bottom <= r.viewport.bottom + 0.1, JSON.stringify(r));
+      }
+      assert.ok(r.glyph.left >= r.pill.left - 0.1 && r.glyph.right <= r.pill.right + 0.1 && r.glyph.top >= r.pill.top - 0.1 && r.glyph.bottom <= r.pill.bottom + 0.1, JSON.stringify(r));
+    }
+    assert.deepEqual(consoleErrors, []); assert.deepEqual(resourceErrors, []);
+  }, 'chromium');
+});
+
 test('zero-scale pulsing object labels disappear, release render handles and recover on seek', async t => {
   const project = JSON.parse(await readFile(new URL('../../docs/plan/examples/kit/sal-del-mar-storyboard.json', import.meta.url), 'utf8'));
   project.scenes = [project.scenes[0]]; project.scenes[0].durationMs = 4000; project.output.durationMs = 4000;
