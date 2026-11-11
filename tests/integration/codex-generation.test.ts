@@ -39,19 +39,28 @@ test('drawing admission remains exclusive through cancelled process cleanup', as
     const headers = { origin: server.origin, authorization: `Bearer ${server.token}`, 'content-type': 'application/json' };
     const drawing = (sceneId: string, signal?: AbortSignal) => fetch(server.origin + '/api/drawing/generate', {
       method: 'POST', headers, signal, body: JSON.stringify({ project, sceneId }) });
-    const watcher = watch(fake.root);
-    const started = (async () => { for await (const event of watcher) { if (event.filename === 'child.pid') break; } })();
+    const watcher = watch(fake.root, { signal: AbortSignal.timeout(5000) });
+    const started = (async () => {
+      try { for await (const event of watcher) { if (event.filename === 'child.pid') return; } }
+      finally { await watcher.return?.(); }
+      throw new Error('Fake Codex exited before creating child.pid');
+    })();
     const abort = new AbortController();
     const first = drawing(project.scenes[1]!.sceneId, abort.signal);
     const firstResult = first.then(() => false, () => true);
     await started;
+    const firstRecord = JSON.parse((await readFile(fake.env.FAKE_CODEX_RECORD, 'utf8')).trim());
+    assert.ok(Number.isSafeInteger(firstRecord.pid) && firstRecord.pid > 0);
+    assert.doesNotThrow(() => process.kill(firstRecord.pid, 0), 'original fake CLI is alive');
     fake.env.FAKE_CODEX_MODE = 'success';
     const concurrent = await drawing(project.scenes[0]!.sceneId);
     assert.equal(concurrent.status, 409);
     assert.equal((await concurrent.json()).error.code, 'drawing-in-progress');
+    assert.doesNotThrow(() => process.kill(firstRecord.pid, 0), 'original fake CLI remains alive after rejection');
     abort.abort();
     assert.equal(await firstResult, true);
     await cleanupStarted;
+    assert.throws(() => process.kill(firstRecord.pid, 0), { code: 'ESRCH' }, 'original fake CLI exited before releasing admission');
     const retry = await drawing(project.scenes[1]!.sceneId);
     assert.equal(retry.status, 409);
     assert.equal((await retry.json()).error.code, 'drawing-in-progress');

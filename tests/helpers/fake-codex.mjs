@@ -37,7 +37,7 @@ if (args[0] === '--version') {
   if (schema.type !== 'object' || schema.anyOf) throw Error('root must be object');
   if (args.join(' ').includes('workspace-write') || args[0] !== 'exec' || args.at(-1) !== '-'
     || args[args.indexOf('--sandbox') + 1] !== 'read-only' || !args.includes('--skip-git-repo-check')) throw Error('unsafe flags');
-  appendFileSync(process.env.FAKE_CODEX_RECORD, JSON.stringify({ args, cwd: process.cwd(), input, schema,
+  appendFileSync(process.env.FAKE_CODEX_RECORD, JSON.stringify({ args, cwd: process.cwd(), input, schema, pid: process.pid,
     inheritedProviderSecret: Boolean(process.env.VIBI_API_KEY || process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY) }) + '\n');
   if (['hang', 'fail', 'signal'].includes(mode)) {
     console.log('private-stub-output-4815');
