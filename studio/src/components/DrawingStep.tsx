@@ -25,7 +25,7 @@ export function DrawingStep({ draft, sceneId, disabled, onEdit, codexCapability 
         } : undefined}
         buildPrompt={() => buildKitPrompt({
           scene: { title: scene.title, text: scene.text, visualIntent: scene.visualIntent, durationMs: scene.durationMs },
-          previousScenes: draft.scenes.slice(0, index), references: draft.sources ?? [],
+          previousScenes: draft.scenes.slice(0, index), references: draft.sources ?? [], targetVisual: scene.visual,
         })}
         parse={text => {
           const result = parseKitResponse(text, { durationMs: scene.durationMs,

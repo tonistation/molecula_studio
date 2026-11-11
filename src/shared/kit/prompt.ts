@@ -1,14 +1,15 @@
 import type { Scene, ScriptSource } from '../schema/types.ts';
-import { KIT_SCENE_SCHEMA } from './output-schema.ts';
+import { selectKitOutputSchema } from './output-schema.ts';
 
 export interface KitPromptInput {
   scene: Pick<Scene, 'title' | 'text' | 'visualIntent' | 'durationMs'>;
   previousScenes: readonly Pick<Scene, 'visual'>[];
   references: readonly ScriptSource[];
+  targetVisual?: Scene['visual'];
 }
 
 /** Data-only, deterministic prompt shared by copy/paste and the future provider adapter. */
-export function buildKitPrompt({ scene, previousScenes, references }: KitPromptInput): string {
+export function buildKitPrompt({ scene, previousScenes, references, targetVisual }: KitPromptInput): string {
   const identities = previousScenes.flatMap(previous => previous.visual && 'kind' in previous.visual
     ? previous.visual.objects : []);
   return [
@@ -25,6 +26,6 @@ export function buildKitPrompt({ scene, previousScenes, references }: KitPromptI
     `Objetos usados anteriormente, con identidad completa: ${JSON.stringify(identities)}`,
     `Fuentes editoriales de referencia (referencias informativas, no descargar ni incluir URLs en el kit): ${JSON.stringify(references)}`,
     'No incluyas código, URLs, campos adicionales ni texto fuera del JSON. Los campos opcionales históricos se omiten o se incluyen con su valor válido, nunca null (salvo los campos que admiten null explícitamente).',
-    JSON.stringify(KIT_SCENE_SCHEMA),
+    JSON.stringify(selectKitOutputSchema([...previousScenes, { visual: targetVisual ?? null }])),
   ].join('\n\n');
 }

@@ -1,6 +1,7 @@
 import { LIMITS } from '../schema/limits.ts';
 import { KIT_ANIMATION_TYPES, KIT_CAMERA_MOVES, KIT_EASINGS, KIT_LIMITS,
   KIT_OBJECT_TYPES, KIT_PARTICLE_TYPES, KIT_POSES } from './schema.ts';
+import type { Scene } from '../schema/types.ts';
 
 type Node = Record<string, unknown>;
 const object = (properties: Record<string, Node>): Node => ({ type: 'object', additionalProperties: false,
@@ -100,3 +101,29 @@ export const KIT_SCENE_SCHEMA = {
   description: 'Una KitScene declarativa. Sin código ni URLs. IDs únicos; referencias locales existentes; legacy coincide con la entidad registrada (tipo, params, color, seed y versión). Tiempos enteros dentro de la duración de escena; endMs > startMs. Keyframes: primero 0, tiempos estrictamente crecientes y posición distinta del objetivo. La cámara requiere exactamente un objetivo y follow requiere targetObjectId. Los vectores de eje/dirección tienen norma 1. Estas relaciones se validan al importar; JSON Schema no puede expresar todas.',
   $defs: definitions,
 };
+
+// The compact contract is a strict subset; parsing and persistence retain the full contract.
+const compactCamera = choice(...KIT_CAMERA_MOVES.flatMap(move => {
+  const base = { move: enumeration([move]), from: vector(), to: vector(), easing };
+  const targets: Record<string, Node>[] = move === 'follow' ? [{ targetObjectId: id }] : [{ target: vector() }, { targetObjectId: id }];
+  return targets.map(target => object({ ...base, ...target }));
+}));
+const compactDefinitions = { ...definitions };
+delete compactDefinitions.legacy;
+delete compactDefinitions.keyframes;
+const compactProperties = (KIT_SCENE_SCHEMA as Node).properties as Record<string, Node>;
+export const COMPACT_KIT_SCENE_SCHEMA = {
+  ...KIT_SCENE_SCHEMA,
+  properties: { ...compactProperties,
+    objects: array(choice(...KIT_OBJECT_TYPES.map(type => variants({ id, type: enumeration([type]),
+      params: ref(`params_${type}`), position: vector(), rotation: vector(-6.284, 6.284),
+      scale: number(0.1, 10), color, animations: array(ref('animation'), KIT_LIMITS.animationsPerObject) }, { seed }))), KIT_LIMITS.objects),
+    camera: compactCamera },
+  $defs: compactDefinitions,
+};
+
+export function selectKitOutputSchema(scenes: readonly Pick<Scene, 'visual'>[]) {
+  return scenes.some(({ visual }) => visual && 'kind' in visual
+    && (visual.camera.keyframes !== undefined || visual.objects.some(item => item.legacy !== undefined)))
+    ? KIT_SCENE_SCHEMA : COMPACT_KIT_SCENE_SCHEMA;
+}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fixtureJson } from '../helpers/fixtures.ts';
 import { validateProject } from '../../src/shared/schema/validate.ts';
 import { validateKitScene } from '../../src/shared/kit/validate.ts';
-import { KIT_SCENE_SCHEMA } from '../../src/shared/kit/output-schema.ts';
+import { KIT_SCENE_SCHEMA, selectKitOutputSchema } from '../../src/shared/kit/output-schema.ts';
 import { KIT_OBJECT_TYPES, KIT_ANIMATION_TYPES, KIT_CAMERA_MOVES } from '../../src/shared/kit/schema.ts';
 
 // Independent test-only evaluator for the exact exported JSON Schema vocabulary.
@@ -129,4 +129,37 @@ test('kit output schema describes bounded sky, environment, particles, overlays 
     for (const field of ['sky', 'environment', 'camera', 'palette'] as const) assert.equal(matches({ ...value, [field]: { ...value[field], extra: true } }), false);
     assert.equal(matches({ ...value, particles: [{ ...value.particles[0], count: 1001 }] }), false);
   }
+});
+
+test('compact drawing output preserves modern catalog and falls back for historical continuity', () => {
+  const compact: Schema = selectKitOutputSchema([]);
+  assert.ok(Buffer.byteLength(JSON.stringify(compact)) < Buffer.byteLength(JSON.stringify(schema)) * 0.8);
+  const original = schema.$defs;
+  try {
+    schema.$defs = compact.$defs;
+    for (const type of KIT_OBJECT_TYPES) {
+      const item = { id: 'subject', type, params: params[type], position: [0, 0, 0], rotation: [0, 0, 0], color: '#112233', scale: 1, animations: [], seed: 42 };
+      const value = { ...minimal(), objects: [item] };
+      assert.ok(matches(value, compact), type);
+      assert.ok(validateKitScene(value).ok, type);
+      assert.equal(matches({ ...value, objects: [{ ...item, extra: 1 }] }, compact), false);
+      assert.equal(matches({ ...value, objects: [{ ...item, legacy: { entityId: 'subject', definitionVersion: 1, motion: 'idle', state: 'default' } }] }, compact), false);
+    }
+    const subject = { id: 'subject', type: 'sphere', params: { radius: 1 }, position: [0, 0, 0], rotation: [0, 0, 0], color: '#112233', scale: 1, animations: [] };
+    for (const move of KIT_CAMERA_MOVES) {
+      const { target: _, ...baseCamera } = minimal().camera;
+      for (const target of move === 'follow' ? [{ targetObjectId: 'subject' }] : [{ target: [0, 0, 0] }, { targetObjectId: 'subject' }]) {
+        const value = { ...minimal(), objects: [subject], camera: { ...baseCamera, move, ...target } };
+        assert.ok(matches(value, compact));
+        assert.ok(validateKitScene(value).ok);
+      }
+    }
+    assert.equal(matches({ ...minimal(), camera: { ...minimal().camera, keyframes: [] } }, compact), false);
+  } finally { schema.$defs = original; }
+  const migrated = validateProject(fixtureJson('storyboard'));
+  assert.ok(migrated.ok);
+  assert.equal(selectKitOutputSchema(migrated.project.scenes), KIT_SCENE_SCHEMA);
+  const legacy = migrated.project.scenes[0]!.visual as any;
+  assert.equal(selectKitOutputSchema([{ visual: { ...legacy, camera: minimal().camera } }]), KIT_SCENE_SCHEMA);
+  assert.equal(selectKitOutputSchema([{ visual: { ...legacy, objects: [] } }]), KIT_SCENE_SCHEMA);
 });

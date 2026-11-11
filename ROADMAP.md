@@ -32,6 +32,8 @@ La ruta está implementada hasta 5.4. La [aceptación real acotada](#aceptación
 
 En una aceptación automática posterior se guardó un guion de tres escenas. El primer dibujo devolvió HTTP 504 al agotarse el límite local de 180 s; la causa de la espera es desconocida. Los diagnósticos efímeros de proceso no incluyen salida del CLI y no identifican su actividad interna. No se realizó un reintento en esta corrección.
 
+El schema de salida para dibujos nuevos sin datos históricos en la escena destino ni en escenas anteriores usa un subconjunto compacto: 29.293 bytes frente a 48.820 bytes (UTF-8, JSON serializado). Conserva el catálogo moderno y sus límites; cuando hay `legacy` o `keyframes` se envía el schema completo para continuidad. El prompt manual y el schema de Codex usan la misma selección. El parser, validador, migración y formato persistido no cambian. La reducción no demuestra la causa del timeout ni garantiza menor latencia; falta aceptación real separadamente autorizada. El límite sigue en 180 s.
+
 ## Decisiones
 
 | ID | Decisión | Por qué | Descartado |

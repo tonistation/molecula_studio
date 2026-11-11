@@ -5,7 +5,7 @@ import { fixtureJson } from '../helpers/fixtures.ts';
 import { validateProject } from '../../src/shared/schema/validate.ts';
 import { LIMITS } from '../../src/shared/schema/limits.ts';
 import { validateKitScene } from '../../src/shared/kit/validate.ts';
-import { KIT_SCENE_SCHEMA } from '../../src/shared/kit/output-schema.ts';
+import { COMPACT_KIT_SCENE_SCHEMA } from '../../src/shared/kit/output-schema.ts';
 import { buildKitPrompt } from '../../src/shared/kit/prompt.ts';
 import { parseKitResponse } from '../../src/shared/kit/parse.ts';
 import { applyKitScene } from '../../src/shared/kit/apply.ts';
@@ -122,7 +122,7 @@ test('kit prompt is deterministic, single scene, literal schema/catalog and comp
   const before = structuredClone(args);
   const prompt = buildKitPrompt(args);
   assert.equal(buildKitPrompt(args), prompt);
-  assert.ok(prompt.includes(JSON.stringify(KIT_SCENE_SCHEMA)));
+  assert.ok(prompt.includes(JSON.stringify(COMPACT_KIT_SCENE_SCHEMA)));
   assert.ok(prompt.includes(JSON.stringify(previous.visual.objects)));
   for (const term of ['objectId', 'low-poly', 'cámara', 'una sola', 'JSON', 'referencias', 'seed', '6000',
     'la mayor', 'diámetros', '35 %', '65 %', '+Y', 'menor que el sujeto', 'margen', 'uniones automáticas']) assert.ok(prompt.includes(term), term);

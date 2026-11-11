@@ -10,7 +10,9 @@ import { capabilities } from '../../src/companion/providers/capabilities.ts';
 import { startCompanionServer } from '../../src/companion/server/http.ts';
 import { applyScriptProposal } from '../../src/shared/script/apply.ts';
 import { applyKitScene } from '../../src/shared/kit/apply.ts';
-import { KIT_SCENE_SCHEMA } from '../../src/shared/kit/output-schema.ts';
+import { COMPACT_KIT_SCENE_SCHEMA, KIT_SCENE_SCHEMA } from '../../src/shared/kit/output-schema.ts';
+import { fixtureJson } from '../helpers/fixtures.ts';
+import { validateProject } from '../../src/shared/schema/validate.ts';
 import { SCRIPT_PROPOSAL_SCHEMA } from '../../src/shared/script/schema.ts';
 
 const input = { idea: 'Una roca', styleId: 'stylized-3d', locale: 'es' as const, targetSeconds: 15 };
@@ -51,6 +53,25 @@ test('HTTP Codex failures expose only bounded process lifecycle diagnostics', as
   } finally { await rm(root, { recursive: true, force: true }); await fake.cleanup(); }
 });
 
+test('historical drawing context selects identical full schemas in prompt and CLI', async () => {
+  const fake = await fakeCodex();
+  try {
+    const result = validateProject(fixtureJson('storyboard'));
+    assert.ok(result.ok);
+    const project = result.project;
+    const before = structuredClone(project);
+    for (const scene of project.scenes) {
+      await generateDrawing({ project, sceneId: scene.sceneId }, { env: fake.env, tempRoot: fake.root });
+    }
+    const records = (await readFile(fake.env.FAKE_CODEX_RECORD, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    for (const record of records) {
+      assert.deepEqual(record.schema, KIT_SCENE_SCHEMA);
+      assert.ok(record.input.endsWith(JSON.stringify(record.schema)));
+    }
+    assert.deepEqual(project, before);
+  } finally { await fake.cleanup(); }
+});
+
 test('capabilities uses a fake PATH executable, reports only booleans and times out without a provider', async () => {
   const fake = await fakeCodex();
   try {
@@ -76,8 +97,9 @@ test('Codex generates script and sequential kits in private cwd with strict orig
     const records = (await readFile(fake.env.FAKE_CODEX_RECORD, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.equal(records.length, 3);
     assert.deepEqual(records[0].schema, SCRIPT_PROPOSAL_SCHEMA);
-    assert.deepEqual(records[1].schema, KIT_SCENE_SCHEMA);
-    assert.deepEqual(records[2].schema, KIT_SCENE_SCHEMA);
+    assert.deepEqual(records[1].schema, COMPACT_KIT_SCENE_SCHEMA);
+    assert.deepEqual(records[2].schema, COMPACT_KIT_SCENE_SCHEMA);
+    for (const record of records.slice(1)) assert.ok(record.input.endsWith(JSON.stringify(record.schema)));
     assert.ok(records[2].input.includes(JSON.stringify((draft.scenes[0]!.visual as any).objects[0])));
     for (const record of records) {
       assert.ok(record.cwd.startsWith(await realpath(fake.root)));

@@ -9,7 +9,7 @@ import { buildScriptPrompt, type ScriptPromptInput } from '../../shared/script/p
 import { SCRIPT_PROPOSAL_SCHEMA } from '../../shared/script/schema.ts';
 import { parseScriptResponse } from '../../shared/script/parse.ts';
 import { buildKitPrompt } from '../../shared/kit/prompt.ts';
-import { KIT_SCENE_SCHEMA } from '../../shared/kit/output-schema.ts';
+import { selectKitOutputSchema } from '../../shared/kit/output-schema.ts';
 import { parseKitResponse } from '../../shared/kit/parse.ts';
 
 export interface CodexOptions {
@@ -163,8 +163,9 @@ export async function generateDrawing(input: unknown, options: CodexOptions = {}
   const index = project.scenes.findIndex(scene => scene.sceneId === body.sceneId);
   const scene = project.scenes[index];
   if (!scene) throw new GenerationError(400, 'invalid-argument', 'No se encontró la escena para dibujar.');
-  return generate(buildKitPrompt({ scene, previousScenes: project.scenes.slice(0, index), references: project.sources ?? [] }),
-    KIT_SCENE_SCHEMA, text => {
+  const previousScenes = project.scenes.slice(0, index);
+  return generate(buildKitPrompt({ scene, previousScenes, references: project.sources ?? [], targetVisual: scene.visual }),
+    selectKitOutputSchema([...previousScenes, scene]), text => {
       const parsed = parseKitResponse(text, { durationMs: scene.durationMs,
         entities: new Map(project.entities.map(entity => [entity.entityId, entity])) });
       return parsed.ok ? { ok: true, value: parsed.scene } : parsed;
