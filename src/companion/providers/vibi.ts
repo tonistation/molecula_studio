@@ -116,15 +116,17 @@ export async function vibiVoicePreview(provider: string, voiceId: string, url: s
   });
 }
 
-/** One paid TTS submit. Only the documented API origin/audio path receives credentials. */
-export async function synthesizeSpeech(text: string, options: VibiOptions = {}, signal?: AbortSignal): Promise<{ bytes: Uint8Array; attribution: string }> {
+interface PreparedSpeech { text: string; voiceId: string; provider: string; modelId: string; language: string; interval: number }
+
+/** Validate all pre-submit inputs and MiniMax language without submitting a paid task. */
+export async function prepareSpeech(text: string, options: VibiOptions = {}, signal?: AbortSignal): Promise<PreparedSpeech> {
   const config = voiceConfiguration(options);
   if (!text.trim() || [...text].length > LIMITS.maxSceneText) throw new VibiError('vibi-input', 'La narración está vacía o supera el límite.');
   const interval = options.pollIntervalMs ?? 2000;
   if (!Number.isSafeInteger(interval) || interval < 1) throw new VibiError('vibi-config', 'El intervalo debe ser positivo.');
-  return withVibi(options, signal, async (request, base, combined) => {
-    let language = 'es';
-    if (config.provider === 'minimax') {
+  let language = 'es';
+  if (config.provider === 'minimax') {
+    language = await withVibi(options, signal, async request => {
       // Verify the provider's Spanish name before submitting any paid task.
       const response = await request('/v1/languages?provider=minimax');
       if (!response.ok) { await response.body?.cancel(); throw new VibiError('vibi-http', 'No se pudieron verificar los idiomas MiniMax.'); }
@@ -134,8 +136,22 @@ export async function synthesizeSpeech(text: string, options: VibiOptions = {}, 
       if (!Array.isArray(languages) || !languages.some(item => item && typeof item === 'object' && item.code === 'Spanish' && item.name === 'Spanish')) {
         throw new VibiError('vibi-config', 'Vibi no confirmó Spanish para MiniMax. No se envió TTS.');
       }
-      language = 'Spanish';
-    }
+      return 'Spanish';
+    });
+  } else {
+    // Validate the endpoint, timeout, credentials and cancellation before reservation.
+    await withVibi(options, signal, async () => undefined);
+  }
+  return { ...config, text, language, interval };
+}
+
+/** One paid TTS submit. Only the documented API origin/audio path receives credentials. */
+export async function synthesizeSpeech(text: string, options: VibiOptions = {}, signal?: AbortSignal, prepared?: PreparedSpeech): Promise<{ bytes: Uint8Array; attribution: string }> {
+  const ready = prepared ?? await prepareSpeech(text, options, signal);
+  const config = voiceConfiguration(options);
+  if (ready.text !== text || ready.provider !== config.provider || ready.voiceId !== config.voiceId || ready.modelId !== config.modelId) throw new VibiError('vibi-config', 'La configuración de voz cambió antes de generar.');
+  const { language, interval } = ready;
+  return withVibi(options, signal, async (request, base, combined) => {
     const response = await request(`/v1/text-to-speech/${config.voiceId}`, { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text, language_code: language, provider: config.provider, model_id: config.modelId,
         voice_settings: config.provider === 'elevenlabs' ? { stability: 0.5, similarity_boost: 0.75, speed: 1 } : { speed: 1, pitch: 0 } }) });

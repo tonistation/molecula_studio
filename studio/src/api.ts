@@ -189,6 +189,20 @@ export async function fetchVoiceSample(provider: string, voiceId: string, signal
   return { url, revoke: () => { if (!revoked) { revoked = true; URL.revokeObjectURL(url); } } };
 }
 
+/** Only an explicit confirmation may call POST; GET reads the workspace cache only. */
+export async function fetchGeneratedVoiceSample(provider: string, voiceId: string, signal: AbortSignal, generate: boolean): Promise<AssetBlobUrl> {
+  signal.throwIfAborted();
+  const response = await fetch(`/api/vibi/voices/${encodeURIComponent(provider)}/${encodeURIComponent(voiceId)}/generated-sample`, {
+    method: generate ? 'POST' : 'GET',
+    headers: { authorization: `Bearer ${companionToken()}`, ...(generate ? { 'content-type': 'application/json' } : {}) },
+    ...(generate ? { body: JSON.stringify({ consent: true }) } : {}), signal,
+  });
+  if (!response.ok) await parseResponse<never>(response);
+  const blob = await response.blob(); signal.throwIfAborted();
+  const url = URL.createObjectURL(blob); let revoked = false;
+  return { url, revoke: () => { if (!revoked) { revoked = true; URL.revokeObjectURL(url); } } };
+}
+
 export interface RenderStatus {
   status: 'rendering' | 'completed' | 'failed';
   progress: number;

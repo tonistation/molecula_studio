@@ -10,7 +10,7 @@ El dibujo automático dispone ahora de hasta 600 s por escena (420 s más que an
 
 Solo se admite un dibujo automático a la vez en el proceso local, incluso entre proyectos. Tras cancelar, un nuevo intento puede recibir un aviso temporal mientras termina la limpieza; vuelve a intentarlo manualmente. El guion no comparte este límite.
 
-El dibujo puede crear modelos procedurales declarativos cuando falta un objeto y reutilizar modelos del workspace en otros proyectos. El catálogo local admite hasta 1024 modelos; cada proyecto guarda las definiciones verificadas por hash que usa, por lo que la vista previa y la exportación no dependen del catálogo original. Son composiciones acotadas de primitivas, no geometría arbitraria ni fotorrealismo; no se ejecuta código generado ni se descargan recursos. El modo automático usa Codex CLI; la creación y reutilización nuevas se probaron con un ejecutable falso local, sin llamadas reales al proveedor.
+El dibujo puede crear modelos procedurales declarativos cuando falta un objeto y reutilizar modelos del workspace en otros proyectos. El catálogo local admite hasta 1024 modelos; cada proyecto guarda las definiciones verificadas por hash que usa, por lo que la vista previa y la exportación no dependen del catálogo original. Son composiciones acotadas de primitivas, no geometría arbitraria ni fotorrealismo; no se ejecuta código generado ni se descargan recursos. El modo automático usa Codex CLI; las pruebas iniciales de creación y reutilización utilizaron un ejecutable falso local.
 
 ## Ejecutar localmente
 
@@ -22,6 +22,8 @@ npm start   # compila el estudio (React + Vite) y levanta el companion
 ```
 
 Abrí `http://127.0.0.1:4787`. El companion sirve el estudio en loopback con un token efímero inyectado en la página; no hay CORS abierto ni acceso al home completo. El workspace por defecto es `./workspace` (`MOLECULA_WORKSPACE` para cambiarlo).
+
+Codex usa provisionalmente `gpt-6.1-terra` para guion, dibujo y creación de modelos. Antes de iniciar el companion, puedes definir `MOLECULA_CODEX_SCRIPT_MODEL` para guion y `MOLECULA_CODEX_DRAW_MODEL` para dibujo. Para creación de modelos se usa `MOLECULA_CODEX_MODEL_BUILD_MODEL`, o en su ausencia el modelo de dibujo y, si tampoco está definido, el predeterminado. La selección se hizo con pruebas acotadas, no demuestra calidad general. La autenticación y el proveedor dependen de la configuración global de Codex CLI: `--model` no garantiza uso de una suscripción. Si el modelo es inválido o no está disponible, se informa el error sin cambiar automáticamente a otro.
 
 ```sh
 npm run typecheck       # raíz + studio
@@ -57,6 +59,8 @@ Son cambios de **apariencia compartidos por vista previa y exportación**, no de
 En un proyecto abierto: «Voz automática» → «Cargar voces Vibi» → elegir voz. El selector muestra nombre e idioma/acento cuando el catálogo los informa; la ficha amplía género, estilo y descripción disponibles. No se deduce «español mexicano» del nombre ni del idioma español. Si faltan datos, aparece «Idioma/acento no informado»; no hay filtro por país.
 
 «Escuchar muestra» solicita audio existente, sin crear tareas TTS/STT ni enviar narración. Solo se habilita con una URL compatible y validada; «Detener», cambiar de voz o salir cancela la descarga y detiene el audio. Puede estar en otro idioma. El catálogo real funcionó, pero la única muestra solicitada devolvió 502: **su causa y disponibilidad upstream siguen desconocidas**, no se afirma reproducción real ni gratuidad universal. Ahora el error distingue HTTP, formato, firma, tamaño, red y plazo mediante datos seguros efímeros; la voz sigue utilizable y generar requiere su consentimiento separado. [Soporte y límites](ROADMAP.md#ampliación-autorizada--detalles-y-muestras-de-voces).
+
+También puedes generar una muestra con una frase fija en español y consentimiento explícito: se envía a Vibi TTS, no a STT; puede consumir créditos y su costo exacto es desconocido. La muestra se reutiliza desde `.voice-samples` dentro del workspace, sin guardar secretos en la caché ni en el proyecto. Si una solicitud queda en estado incierto, nuevas generaciones para esa misma muestra permanecen bloqueadas incluso al reiniciar; no hay un mecanismo de reconciliación disponible. Cancelar no garantiza que el proveedor detenga el trabajo. Una prueba real aislada generó una muestra con una voz; el audio se decodificó, pero no se escuchó ni se confirmó independientemente la facturación.
 
 ## Alineación parcial y diagnóstico de subtítulos
 
@@ -104,6 +108,8 @@ El HTML es una propuesta visual estática, no la aplicación ni una prueba de pe
 
 **Continuidad visual requerida:** el JSON conserva entidades reutilizables y el kit tiene renderer determinista con pruebas de seek y objetos compartidos. Las variantes deben ser intencionales, sin editor avanzado en el MVP. La aprobación estética final sigue siendo humana. Véase [continuidad visual](docs/plan/visual-continuity.md).
 
-Guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. Hay exportación H.264/AAC 1080×1920 a 30 fps, voz manual/automática y flujo guiado. Siguen pendientes la disponibilidad real de muestras y la revisión audiovisual/fonética humana. Los rótulos anclados evitan dividir palabras cortas; los objetos de texto conservan tamaño proyectado y rotación y se desplazan al área visible cuando es necesario. No existe detección general de colisiones entre subtítulos y rótulos. No se afirma rendimiento garantizado ni aprobación estética humana. Riesgos históricos de save/retención: [API](docs/plan/api-contracts.md).
+Guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. Hay exportación H.264/AAC 1080×1920 a 30 fps, voz manual/automática y flujo guiado. Siguen pendientes la disponibilidad general de muestras y la revisión audiovisual/fonética humana. Los rótulos anclados evitan dividir palabras cortas; los objetos de texto conservan tamaño proyectado y rotación y se desplazan al área visible cuando es necesario. No existe detección general de colisiones entre subtítulos y rótulos. No se afirma rendimiento garantizado ni aprobación estética humana. Riesgos históricos de save/retención: [API](docs/plan/api-contracts.md).
+
+La vista previa espera la carga de los recursos de audio declarados antes de mostrar el reproductor; cada solicitud tiene un plazo de 15 s y los fallos se informan. Se corrigió una carrera local de recursos, pero la causa del corte de audio reportado sigue sin confirmarse.
 
 Repositorio de referencia: [tonistation/molecula_studio](https://github.com/tonistation/molecula_studio).

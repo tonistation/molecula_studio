@@ -13,10 +13,12 @@ import { sha256Sync } from '../../shared/models/sha256-sync.ts';
 import { estimateWords } from '../../shared/voice/estimate.ts';
 import { alignmentKind, sttWordsToWords } from '../../shared/voice/alignment.ts';
 import type { AlignmentDiagnostic } from '../../shared/voice/alignment.ts';
-import { transcribeAudio, synthesizeSpeech, voiceConfiguration, vibiCredits, vibiVoices, vibiVoicePreview, VibiError, type VibiOptions } from '../providers/vibi.ts';
+import { transcribeAudio, synthesizeSpeech, prepareSpeech, voiceConfiguration, vibiCredits, vibiVoices, vibiVoicePreview, VibiError, type VibiOptions } from '../providers/vibi.ts';
 import type { PreviewDiagnostic } from '../../shared/voice/preview-diagnostic.ts';
 import { inspectMediaBounded } from '../store/inspection-runner.ts';
 import { InspectionError } from '../store/media-inspect.ts';
+import { GeneratedVoiceSamples, sampleKey, SampleUnresolvedError, type SampleReservationTestHooks } from '../providers/generated-voice-samples.ts';
+import { VOICE_SAMPLE_PHRASE } from '../../shared/voice/sample-phrase.ts';
 
 import { LIMITS } from '../../shared/schema/limits.ts';
 import { ProjectStore, type WorkspaceOptions } from '../store/project-store.ts';
@@ -65,6 +67,8 @@ export interface CompanionServerOptions {
   codexOptions?: CodexOptions;
   /** Test-only local Vibi transport/configuration. No production URL env override. */
   vibiOptions?: VibiOptions;
+  /** Test-only reservation I/O barrier; never configurable through HTTP or environment. */
+  sampleReservationTestHooks?: SampleReservationTestHooks;
 }
 
 export interface CompanionServer {
@@ -107,6 +111,7 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
   const root = store.lockedWorkspaceRoot();
   if (root !== await realpath(options.workspaceRoot)) throw new Error('Store workspace does not match server workspace');
   const models = new ModelLibrary(root);
+  const voiceSamples = new GeneratedVoiceSamples(root, options.sampleReservationTestHooks);
 
   const token = options.token ?? randomBytes(32).toString('hex');
   const state = { port: 0, origin: '' };
@@ -117,7 +122,7 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
     modelId: env.VIBI_MODEL_ID ?? (env.VIBI_PROVIDER === 'minimax' ? '' : env.VIBI_PROVIDER === 'capcut' ? 'capcut' : 'eleven_multilingual_v2'), ...options.vibiOptions };
 
   const server = createServer((req, res) => {
-    void handleRequest(req, res, { store, models, token, state, renders, generation, vibi, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
+    void handleRequest(req, res, { store, models, voiceSamples, token, state, renders, generation, vibi, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -154,6 +159,7 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
 interface HandlerContext {
   store: ProjectStore;
   models: ModelLibrary;
+  voiceSamples: GeneratedVoiceSamples;
   token: string;
   state: { port: number; origin: string };
   studioDir: string | undefined;
@@ -262,6 +268,77 @@ const PROJECT_ROUTE = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})(?:\/(copy|asset
 async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string, context: HandlerContext): Promise<void> {
   const { store } = context;
   const method = req.method ?? 'GET';
+
+  const generatedSample = /^\/api\/vibi\/voices\/(elevenlabs|minimax|capcut)\/([a-zA-Z0-9_-]{1,128})\/generated-sample$/.exec(pathname);
+  if (generatedSample) {
+    if (method !== 'GET' && method !== 'POST') throw methodNotAllowed('GET, POST');
+    if (context.generation.closing) throw new HttpError(503, 'companion-closing', 'El companion se está cerrando.');
+    const provider = generatedSample[1]!; const voiceId = generatedSample[2]!;
+    if (provider !== context.vibi.provider || !context.generation.voices.has(`${provider}/${voiceId}`)) {
+      throw new HttpError(400, 'invalid-voice', 'Seleccione una voz del catálogo del proveedor configurado.');
+    }
+    const options = { ...context.vibi, voiceId };
+    let config: ReturnType<typeof voiceConfiguration>;
+    try { config = voiceConfiguration(options); }
+    catch (error) {
+      if (error instanceof VibiError) throw new HttpError(503, error.code, error.message);
+      throw error;
+    }
+    const key = sampleKey(config.provider, config.voiceId, config.modelId);
+    if (method === 'POST') {
+      const body = await readJsonBody(req) as Record<string, unknown>;
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || body.consent !== true) {
+        throw new HttpError(400, 'consent-required', 'Confirme la generación de la frase fija y el posible consumo TTS.');
+      }
+    }
+    const assertCurrentVoice = () => {
+      if (provider !== context.vibi.provider || !context.generation.voices.has(`${provider}/${voiceId}`)) {
+        throw new HttpError(409, 'voice-catalog-changed', 'El catálogo de voces cambió. Seleccione la voz nuevamente.');
+      }
+      let current: ReturnType<typeof voiceConfiguration>;
+      try { current = voiceConfiguration({ ...context.vibi, voiceId }); }
+      catch (error) {
+        if (error instanceof VibiError) throw new HttpError(409, 'voice-config-changed', 'La configuración de voz cambió. Seleccione la voz nuevamente.');
+        throw error;
+      }
+      if (current.provider !== config.provider || current.modelId !== config.modelId || current.voiceId !== config.voiceId) {
+        throw new HttpError(409, 'voice-config-changed', 'La configuración de voz cambió. Seleccione la voz nuevamente.');
+      }
+    };
+    assertCurrentVoice();
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    context.generation.active.add(controller); res.once('close', cancel);
+    try {
+      let bytes = await context.voiceSamples.get(key);
+      if (method === 'POST' && !bytes) {
+        let prepared: Awaited<ReturnType<typeof prepareSpeech>>;
+        try { prepared = await prepareSpeech(VOICE_SAMPLE_PHRASE, options, controller.signal); }
+        catch (error) {
+          if (error instanceof VibiError) throw new HttpError(error.code === 'vibi-config' || error.code === 'vibi-unavailable' ? 503 : 502, error.code,
+            'No se pudo verificar la configuración de voz. No se envió TTS.');
+          throw error;
+        }
+        controller.signal.throwIfAborted();
+        assertCurrentVoice();
+        bytes = await context.voiceSamples.generate(key, async () => {
+          const generated = await synthesizeSpeech(VOICE_SAMPLE_PHRASE, options, controller.signal, prepared);
+          return generated.bytes;
+        }, assertCurrentVoice, controller.signal);
+      }
+      if (!bytes) throw new HttpError(404, 'sample-not-cached', 'No hay muestra generada en caché.');
+      if (res.destroyed) return;
+      res.setHeader('content-type', 'audio/mpeg'); res.setHeader('content-length', bytes.byteLength);
+      res.setHeader('cache-control', 'no-store'); res.setHeader('x-content-type-options', 'nosniff');
+      res.writeHead(200); res.end(bytes);
+    } catch (error) {
+      if (error instanceof SampleUnresolvedError || error instanceof VibiError || error instanceof InspectionError) {
+        throw new HttpError(409, 'sample-unresolved', 'Una solicitud anterior puede seguir en curso o su resultado no pudo verificarse. Revise Vibi; nuevas solicitudes para esta muestra están bloqueadas.');
+      }
+      throw error;
+    } finally { res.removeListener('close', cancel); context.generation.active.delete(controller); }
+    return;
+  }
 
   const voiceRoute = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})\/scenes\/([a-z][a-z0-9_-]{0,63})\/voice$/.exec(pathname);
   const previewRoute = /^\/api\/vibi\/voices\/(elevenlabs|minimax|capcut)\/([a-zA-Z0-9_-]{1,128})\/preview$/.exec(pathname);
