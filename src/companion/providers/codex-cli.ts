@@ -89,7 +89,7 @@ export function runCodex(args: string[], options: CodexOptions & { cwd?: string;
         if (Number.isInteger(code) && code! >= 0 && code! <= 255) info.exitCode = code!;
         if (signal === 'SIGTERM' || signal === 'SIGKILL' || signal === 'SIGINT' || signal === 'SIGHUP') info.signal = signal;
         reject(new GenerationError(502, 'codex-failed',
-          'Codex no pudo generar la respuesta. Comprueba tu sesión con codex login y tus límites de uso, o usa el modo manual.', undefined, info));
+          'Codex no pudo generar la respuesta. Comprueba tu sesión con codex login y tus límites de uso. Verifica que el modelo configurado esté disponible para tu cuenta o ajusta MOLECULA_CODEX_*. También puedes usar el modo manual.', undefined, info));
       }
       else resolve();
     });
@@ -105,15 +105,32 @@ function redact(text: string, env: NodeJS.ProcessEnv): string {
   return safe.replace(/\bsk-[A-Za-z0-9_-]+/g, '[oculto]');
 }
 
-async function generate<T>(prompt: string, schema: object,
+type CodexTask = 'script' | 'drawing' | 'model-drawing';
+// Provisional: single valid sample per task; visual quality and model identity remain unverified.
+const DEFAULT_CODEX_MODEL = 'gpt-6.1-terra';
+
+function selectModel(task: CodexTask, env: NodeJS.ProcessEnv): string {
+  const key = task === 'script' ? 'MOLECULA_CODEX_SCRIPT_MODEL'
+    : task === 'drawing' ? 'MOLECULA_CODEX_DRAW_MODEL'
+      : env.MOLECULA_CODEX_MODEL_BUILD_MODEL !== undefined ? 'MOLECULA_CODEX_MODEL_BUILD_MODEL' : 'MOLECULA_CODEX_DRAW_MODEL';
+  const model = env[key];
+  if (model !== undefined && !/^[A-Za-z0-9._:][A-Za-z0-9._:-]{0,79}(?![\s\S])/.test(model)) {
+    throw new GenerationError(500, 'invalid-codex-model',
+      `La configuración del modelo de Codex en ${key} no es válida. Usa de 1 a 80 caracteres ASCII: letras, números, punto, guion, guion bajo o dos puntos; no comiences con guion.`);
+  }
+  return model ?? DEFAULT_CODEX_MODEL;
+}
+
+async function generate<T>(task: CodexTask, prompt: string, schema: object,
   parse: (text: string) => { ok: true; value: T } | { ok: false; errors: string[] },
   options: CodexOptions, signal?: AbortSignal): Promise<T> {
+  const model = selectModel(task, options.env ?? process.env);
   const directory = await mkdtemp(join(options.tempRoot ?? tmpdir(), 'molecula-codex-'));
   try {
     const schemaPath = join(directory, 'schema.json');
     const outputPath = join(directory, 'response.json');
     await writeFile(schemaPath, JSON.stringify(schema), { mode: 0o600 });
-    await runCodex(['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--ephemeral',
+    await runCodex(['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--ephemeral', '--model', model,
       '--output-schema', schemaPath, '-o', outputPath, '-'], { ...options, cwd: directory, input: prompt, signal });
     let text: string;
     try {
@@ -156,7 +173,7 @@ export async function generateScript(input: unknown, options: CodexOptions = {},
       || Object.keys(record).sort().join() !== 'idea,locale,styleId,targetSeconds') throw new Error();
     prompt = buildScriptPrompt(record);
   } catch { throw new GenerationError(400, 'invalid-argument', 'Revisa la idea, el estilo, el idioma y la duración objetivo.'); }
-  return generate(prompt, SCRIPT_PROPOSAL_SCHEMA, text => {
+  return generate('script', prompt, SCRIPT_PROPOSAL_SCHEMA, text => {
     const result = parseScriptResponse(text);
     return result.ok ? { ok: true, value: result.proposal } : result;
   }, options, signal);
@@ -175,7 +192,7 @@ export async function generateDrawing(input: unknown, options: CodexOptions = {}
   const scene = project.scenes[index];
   if (!scene) throw new GenerationError(400, 'invalid-argument', 'No se encontró la escena para dibujar.');
   const previousScenes = project.scenes.slice(0, index);
-  return generate(buildKitPrompt({ scene, previousScenes, references: project.sources ?? [], targetVisual: scene.visual }),
+  return generate('drawing', buildKitPrompt({ scene, previousScenes, references: project.sources ?? [], targetVisual: scene.visual }),
     selectKitOutputSchema([...previousScenes, scene]), text => {
       const parsed = parseKitResponse(text, { durationMs: scene.durationMs,
         entities: new Map(project.entities.map(entity => [entity.entityId, entity])) });
@@ -200,7 +217,7 @@ export async function generateModelDrawing(input: unknown, catalog: readonly Mod
   try { shortlist = selectModelCatalog(project.models ?? [], catalog, `${scene.title} ${scene.text} ${scene.visualIntent}`); }
   catch { throw new GenerationError(400, 'invalid-argument', 'No se pudieron verificar los modelos del borrador.'); }
   const prompt = buildKitModelPrompt({ scene, previousScenes, references: project.sources ?? [], targetVisual: scene.visual, catalog: shortlist });
-  return generate(prompt, selectKitModelOutputSchema([...previousScenes, scene]), text => {
+  return generate('model-drawing', prompt, selectKitModelOutputSchema([...previousScenes, scene]), text => {
     const parsed = parseKitModelBundle(text, { durationMs: scene.durationMs,
       entities: new Map(project.entities.map(entity => [entity.entityId, entity])) }, shortlist);
     if (!parsed.ok) return parsed;
