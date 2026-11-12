@@ -71,3 +71,21 @@ test('preview asset snapshot reports partial failure and relinquishes URLs on re
   });
   await published;
 });
+
+test('preview asset timeout aborts a stalled request, reports failure, and revokes a late result', async () => {
+  let signal: AbortSignal | undefined;
+  let resolveLate!: (blob: { url: string; revoke(): void }) => void;
+  let revoked = false;
+  const late = new Promise<{ url: string; revoke(): void }>(resolve => { resolveLate = resolve; });
+  let cleanup!: () => void;
+  const result = await new Promise<{ urls: Record<string, string>; failed: string[] }>(resolve => {
+    cleanup = loadPreviewAssets('p', ['stalled'], (urls, failed) => resolve({ urls, failed }),
+      async (_projectId, _id, abort) => { signal = abort; return late; }, 20);
+  });
+  assert.deepEqual(result, { urls: {}, failed: ['stalled'] });
+  assert.equal(signal?.aborted, true);
+  resolveLate({ url: 'blob:late', revoke: () => { revoked = true; } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(revoked, true);
+  cleanup();
+});

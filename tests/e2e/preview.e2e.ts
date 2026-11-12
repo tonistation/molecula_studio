@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fixtureText } from '../helpers/fixtures.ts';
 import { wavBytes } from '../helpers/media.ts';
+import { toneWav } from '../helpers/playable-audio.ts';
 import { withStudio } from '../helpers/studio-browser.ts';
 
 test('preview: live unsaved captions, draft scene seek, play/pause and visible 9:16 WebGL in Chromium', async t => {
@@ -120,5 +121,44 @@ test('preview: React cleanup revokes live blobs and aborts pending media without
     assert.deepEqual(state.revoked, state.created, 'every live URL revoked');
     assert.deepEqual(consoleErrors, []);
     assert.deepEqual(resourceErrors, []);
+  }, 'chromium');
+});
+
+test('preview: playback waits for the current audio blobs before starting', async t => {
+  await withStudio(t, async ({ page }) => {
+    await page.evaluate(() => {
+      const state = { hold: false, release: null as (() => void) | null };
+      Object.assign(globalThis, { previewDelay: state });
+      const request = globalThis.fetch.bind(globalThis);
+      globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
+        const response = await request(...args);
+        if (state.hold && String(args[0]).includes('/assets/') && args[1]?.method === 'GET') {
+          await new Promise<void>(resolve => { state.release = resolve; });
+        }
+        return response;
+      };
+    });
+    const source = JSON.parse(fixtureText('storyboard'));
+    const audio = toneWav(1000);
+    source.output.voiceMode = 'withVoice';
+    source.assets = [{ assetId: 'preview_voice', kind: 'audio', path: 'assets/preview_voice.wav',
+      mimeType: 'audio/wav', byteLength: audio.length, sha256: null, durationMs: 1000,
+      source: { origin: 'fixture', license: 'Synthetic test data', attribution: '' } }];
+    source.scenes[0].audio = { assetId: 'preview_voice', offsetMs: 0, gainDb: 0 };
+    await page.getByLabel('JSON externo').setInputFiles({ name: 'project.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(source)) });
+    await page.getByLabel('Revincular preview_voice').setInputFiles({ name: 'voice.wav', mimeType: 'audio/wav', buffer: Buffer.from(audio) });
+    await page.getByText(/Recurso revinculado/).waitFor();
+    await page.getByRole('button', { name: 'Proyectos', exact: true }).click();
+    await page.evaluate(() => { (globalThis as any).previewDelay.hold = true; });
+    await page.getByRole('button', { name: 'Abrir', exact: true }).click();
+    await page.waitForFunction(() => (globalThis as any).previewDelay.release !== null);
+    const preview = page.getByRole('region', { name: 'Vista previa del borrador' });
+    assert.equal(await preview.getByRole('button', { name: 'Play video', exact: true }).count(), 0,
+      'cannot start the timeline before audio arrives');
+    await page.evaluate(() => (globalThis as any).previewDelay.release());
+    await preview.getByRole('button', { name: 'Play video', exact: true }).waitFor();
+    await preview.getByRole('button', { name: 'Play video', exact: true }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('audio')].some(audio =>
+      audio.src.startsWith('blob:') && !audio.paused && audio.currentTime > 0.1));
   }, 'chromium');
 });
