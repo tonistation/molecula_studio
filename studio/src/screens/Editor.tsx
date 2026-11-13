@@ -13,6 +13,7 @@ import { VoiceStep } from '../components/VoiceStep.tsx';
 import { Stepper } from '../components/Stepper.tsx';
 import { useCodexCapability } from '../components/GenerationMode.tsx';
 import { ApiError, api, describeError, type ReadResult, type SaveResult } from '../api.ts';
+import { changeProjectStyle, type SelectableStyle } from '../style-selection.ts';
 import {
   createScene,
   downloadJson,
@@ -88,6 +89,17 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
     live.current.dirty = true;
     setDirty(true);
     setNotice(null);
+  };
+
+  const selectStyle = (styleId: SelectableStyle) => {
+    if (readOnly || relinkLock.current) return;
+    try {
+      const current = live.current.draft;
+      const next = changeProjectStyle(current, styleId, count => window.confirm(
+        `Cambiar de estilo eliminará los dibujos de ${count} ${count === 1 ? 'escena' : 'escenas'}. Se conservarán el guion, la voz y los demás datos. ¿Desea continuar?`,
+      ));
+      if (next !== current) edit(() => next);
+    } catch (caught) { setError(describeError(caught)); }
   };
 
   const acceptSave = (result: SaveResult, sent: NonNullable<typeof pendingSave.current>) => {
@@ -216,7 +228,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
     } finally { relinkLock.current = false; setRelinking(false); }
   };
 
-  const attachAudio = async (sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, alignVibi = false, generationSignal?: AbortSignal, selection?: VoiceSelection) => {
+  const attachAudio = async (sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, alignVibi = false, generationSignal?: AbortSignal, selection?: VoiceSelection, quote?: string) => {
     const current = live.current;
     if (current.dirty || operationLock.current || current.saving || readOnly || relinkLock.current || pendingSave.current) {
       throw new Error('Guarde o verifique los cambios antes de subir audio.');
@@ -226,7 +238,7 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
     setRelinking(true); setError(null); setNotice(null);
     try {
       const result = generationSignal
-        ? await api.generateVoice(current.draft.projectId, sceneId, current.confirmedRevision, current.digest, generationSignal, selection)
+        ? await api.generateVoice(current.draft.projectId, sceneId, current.confirmedRevision, current.digest, quote ?? '', generationSignal, selection)
         : await api.attachAudio(current.draft.projectId, sceneId, bytes, mimeType, license, current.confirmedRevision, current.digest, alignVibi);
       generationSignal?.throwIfAborted();
       if (result.receipt.sync === 'uncertain') {
@@ -483,29 +495,16 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
             </div>
           </div>
 
-          <fieldset className="style-cards" disabled={readOnly}>
+          <fieldset className="style-cards" disabled={readOnly || relinking}>
             <legend>Estilo</legend>
-            <label className="style-card selected">
-              <input type="radio" name="style" checked readOnly />
-              <span>
-                <strong>3D estilizado</strong>
-                <small className="muted">Seleccionado · paisaje/personaje de catálogo procedural</small>
-              </span>
-            </label>
-            <label className="style-card disabled">
-              <input type="radio" name="style" disabled />
-              <span>
-                <strong>2D vectorial</strong>
-                <small className="muted">Futuro, deshabilitado</small>
-              </span>
-            </label>
-            <label className="style-card disabled">
-              <input type="radio" name="style" disabled />
-              <span>
-                <strong>Motion</strong>
-                <small className="muted">Futuro, deshabilitado</small>
-              </span>
-            </label>
+            {([
+              ['stylized-3d', '3D estilizado', 'Paisajes y personajes del catálogo procedural'],
+              ['vector-2d', '2D vectorial', 'Formas y escenas vectoriales'],
+              ['motion-graphics', 'Motion', 'Gráficos y elementos animados'],
+            ] as const).map(([id, label, description]) => <label key={id} className={`style-card${draft.styleId === id && !readOnly ? ' selected' : ''}`}>
+              <input type="radio" name="style" value={id} checked={draft.styleId === id && !readOnly} onChange={() => selectStyle(id)} />
+              <span><strong>{label}</strong><small className="muted">{description}</small></span>
+            </label>)}
           </fieldset>
 
           <fieldset className="captions" disabled={readOnly}>
@@ -544,9 +543,9 @@ export function Editor({ opened, importNotice, onBack, onOpenProject }: EditorPr
         <a href="#workflow-storyboard">Editar escenas y dibujos del guion</a>
         </div>
         <div id="workflow-voice" className="workflow-target" role="group" tabIndex={-1} aria-label="Voz">
-        <VoiceStep draft={draft} dirty={dirty} disabled={readOnly || saving || needsVerification || relinking}
+        <VoiceStep draft={draft} revision={confirmedRevision} digest={digest} dirty={dirty} disabled={readOnly || saving || needsVerification || relinking}
            missingAssets={missingAssets} onUpload={attachAudio}
-            onGenerate={(sceneId, signal, selection) => attachAudio(sceneId, new Uint8Array(), 'audio/mpeg', '', false, signal, selection)} />
+            onGenerate={(sceneId, signal, selection, quote) => attachAudio(sceneId, new Uint8Array(), 'audio/mpeg', '', false, signal, selection, quote)} />
         </div>
         </div>
 

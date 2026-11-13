@@ -4,7 +4,7 @@
  * Single source of truth: validators, editor limits and future companion
  * checks must import these values instead of repeating literals.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const LIMITS = {
   maxJsonBytes: 2 * 1024 * 1024,

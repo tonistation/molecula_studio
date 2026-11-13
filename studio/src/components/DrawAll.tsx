@@ -4,6 +4,8 @@ import { applyKitSceneWithModels } from '../../../src/shared/kit/apply.ts';
 import type { DraftStepProps } from './ScriptStep.tsx';
 import { DRAWING_TIMEOUT_MS } from '../../../src/shared/generation-timeouts.ts';
 import { useElapsed } from './useElapsed.ts';
+import { applyVectorVisual } from '../../../src/shared/vector/apply.ts';
+import { applyMotionVisual } from '../../../src/shared/motion/apply.ts';
 
 /** Sequential generation sends each accepted drawing as continuity for the next. */
 export function DrawAll({ draft, disabled, onEdit }: DraftStepProps) {
@@ -30,10 +32,17 @@ export function DrawAll({ draft, disabled, onEdit }: DraftStepProps) {
     try {
       for (const [index, scene] of draft.scenes.entries()) {
         setProgress(`Dibujando ${index + 1} de ${draft.scenes.length}…`);
-        const bundle = await api.generateModelDrawing(working, scene.sceneId, controller.signal);
-        if (controller.signal.aborted) return;
         const expected = JSON.stringify(working);
-        const next = applyKitSceneWithModels(working, scene.sceneId, bundle.scene, bundle.models);
+        let next;
+        if (working.schemaVersion === 3 && working.styleVersion === 1 && (working.styleId === 'vector-2d' || working.styleId === 'motion-graphics')) {
+          const visual = await api.generateFlatDrawing(working, scene.sceneId, controller.signal);
+          if (controller.signal.aborted) return;
+          next = working.styleId === 'vector-2d' ? applyVectorVisual(working, scene.sceneId, visual) : applyMotionVisual(working, scene.sceneId, visual);
+        } else if (working.styleId === 'stylized-3d' && working.styleVersion === 1) {
+          const bundle = await api.generateModelDrawing(working, scene.sceneId, controller.signal);
+          if (controller.signal.aborted) return;
+          next = applyKitSceneWithModels(working, scene.sceneId, bundle.scene, bundle.models);
+        } else throw new Error('El estilo de este proyecto no admite dibujo.');
         onEdit(project => {
           if (JSON.stringify(project) !== expected) throw new Error('El borrador cambió. Se detuvo el dibujo para no reemplazar tus cambios.');
           return next;

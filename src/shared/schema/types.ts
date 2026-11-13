@@ -1,5 +1,7 @@
 import type { KitScene } from '../kit/types.ts';
 import type { ModelSnapshot } from '../models/model.ts';
+import type { VectorVisual } from '../vector/types.ts';
+import type { MotionVisual } from '../motion/types.ts';
 
 /** A single validation finding. `path` is rooted at `$` and uses dot/bracket notation. */
 export type Issue = { path: string; code: string; message: string };
@@ -100,7 +102,7 @@ export interface InertVisual {
   readonly inert: unknown;
 }
 
-export type SceneVisual = KitScene | InertVisual;
+export type SceneVisual = KitScene | VectorVisual | MotionVisual | InertVisual;
 
 /** Validated legacy data is used only at the migration boundary. */
 export type LegacyScene = Omit<Scene, 'visual'> & { visual: StylizedVisual | InertVisual | null };
@@ -197,7 +199,7 @@ export interface ScriptCover {
 }
 
 export interface Project {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   projectId: string;
   revision: number;
   title: string;

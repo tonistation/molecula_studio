@@ -117,7 +117,7 @@ test('manual Vibi alignment requires consent, saves authoritative words/bindings
   assert.equal((await upload({ 'x-vibi-consent': '' })).status, 400); assert.equal(posts, 0);
   assert.equal((await upload({ 'x-expected-digest': '0'.repeat(64) })).status, 409); assert.equal(posts, 0);
   const capability = await fetch(`${companion.origin}/api/capabilities`, { headers: { authorization: `Bearer ${companion.token}` } });
-  assert.deepEqual(await capability.json(), { codex: false, vibi: true, vibiVoiceConfigured: false }); assert.equal(posts, 0);
+  assert.deepEqual(await capability.json(), { codex: false, vibi: true, vibiVoiceConfigured: false, vibiAccentDirective: true }); assert.equal(posts, 0);
   const good = await upload(); assert.equal(good.status, 200, await good.clone().text());
   const body = await good.json() as any; assert.equal(body.alignment, 'vibi'); assert.deepEqual(body.warnings, []);
   assert.equal(body.alignmentDiagnostic, undefined);

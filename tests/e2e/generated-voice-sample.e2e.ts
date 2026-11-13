@@ -8,6 +8,7 @@ import { withStudio } from '../helpers/studio-browser.ts';
 import { fixtureText } from '../helpers/fixtures.ts';
 import { toneMp3 } from '../helpers/playable-audio.ts';
 import { VOICE_SAMPLE_PHRASE } from '../../src/shared/voice/sample-phrase.ts';
+import { SPANISH_ACCENT_PREFIX } from '../../src/shared/voice/speech-input.ts';
 
 test('generated sample requires visible fixed-phrase consent and plays only after confirmation', async t => {
   const temp = await mkdtemp(join(tmpdir(), 'sample-e2e-'));
@@ -18,7 +19,7 @@ test('generated sample requires visible fixed-phrase consent and plays only afte
     if (req.url === '/v1/default-voices?page_size=30') { res.end(JSON.stringify({ voices: [{ voice_id: 'first', name: 'Primera' }, { voice_id: 'second', name: 'Segunda' }], has_more: false })); return; }
     if (req.url === '/v1/text-to-speech/first') {
       const parts = []; for await (const chunk of req) parts.push(chunk);
-      assert.equal(JSON.parse(Buffer.concat(parts).toString()).text, VOICE_SAMPLE_PHRASE);
+      assert.equal(JSON.parse(Buffer.concat(parts).toString()).text, SPANISH_ACCENT_PREFIX + VOICE_SAMPLE_PHRASE);
       posts++; res.writeHead(202).end(JSON.stringify({ id: 'job' })); return;
     }
     if (req.url === '/v1/text-to-speech/second') { req.resume(); posts++; res.writeHead(500).end('secret detail'); return; }
@@ -38,12 +39,21 @@ test('generated sample requires visible fixed-phrase consent and plays only afte
     const details = voice.getByRole('region', { name: 'Detalles de la voz' });
     await details.getByRole('button', { name: 'Generar muestra en español' }).click();
     const confirmation = details.getByRole('region', { name: 'Confirmar muestra generada' });
-    assert.match(await confirmation.innerText(), new RegExp(`${VOICE_SAMPLE_PHRASE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*${[...VOICE_SAMPLE_PHRASE].length} caracteres`));
+    assert.match(await confirmation.innerText(), new RegExp(`${VOICE_SAMPLE_PHRASE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*${[...(SPANISH_ACCENT_PREFIX + VOICE_SAMPLE_PHRASE)].length} caracteres`));
     assert.match(await confirmation.innerText(), /créditos/); assert.equal(posts, 0);
     if (process.env.PREVIEW_SCREENSHOT_DIR) await details.screenshot({ path: join(process.env.PREVIEW_SCREENSHOT_DIR, 'generated-sample-desktop.png') });
     await page.setViewportSize({ width: 390, height: 844 }); await details.scrollIntoViewIfNeeded();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     if (process.env.PREVIEW_SCREENSHOT_DIR) await details.screenshot({ path: join(process.env.PREVIEW_SCREENSHOT_DIR, 'generated-sample-mobile.png') });
+    await confirmation.getByRole('button', { name: 'Cancelar muestra' }).click(); assert.equal(posts, 0);
+    await page.route('**/generated-sample/quote', async route => {
+      const response = await route.fetch();
+      const body = await response.json() as { sampleText: string };
+      body.sampleText = body.sampleText.replace('Hola', 'Ojal');
+      await route.fulfill({ response, json: body });
+    }, { times: 1 });
+    await details.getByRole('button', { name: 'Generar muestra en español' }).click();
+    await confirmation.getByText(/Ojal, esta es una muestra/).waitFor();
     await confirmation.getByRole('button', { name: 'Cancelar muestra' }).click(); assert.equal(posts, 0);
     await details.getByRole('button', { name: 'Generar muestra en español' }).click();
     await confirmation.getByRole('button', { name: 'Confirmar generación de muestra TTS' }).click();

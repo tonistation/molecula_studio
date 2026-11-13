@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { VOICE_SAMPLE_PHRASE, VOICE_SAMPLE_VERSION } from '../../shared/voice/sample-phrase.ts';
+import { speechPayload } from './speech-payload.ts';
 import { inspectMediaBounded } from '../store/inspection-runner.ts';
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -12,9 +13,19 @@ const PENDING = 'pending\n';
 const locks = new Map<string, Promise<void>>();
 const digest = (data: string | Uint8Array) => createHash('sha256').update(data).digest('hex');
 
-export function sampleKey(provider: string, voiceId: string, modelId: string): string {
+export function sampleKey(provider: string, voiceId: string, modelId: string, legacy = false): string {
+  const payload = speechPayload({ provider, voiceId, modelId, text: VOICE_SAMPLE_PHRASE });
+  const settings = payload.voice_settings;
+  const phrase = legacy ? VOICE_SAMPLE_PHRASE : payload.text;
+  return digest(JSON.stringify({ provider, voiceId, modelId, version: VOICE_SAMPLE_VERSION, phrase, language: 'es', settings }));
+}
+
+/** Frozen historical cache identities: keep ambiguous tasks blocked after settings change. */
+export function historicalSampleKeys(provider: string, voiceId: string, modelId: string): string[] {
   const settings = provider === 'elevenlabs' ? { stability: 0.5, similarity_boost: 0.75, speed: 1 } : { speed: 1, pitch: 0 };
-  return digest(JSON.stringify({ provider, voiceId, modelId, version: VOICE_SAMPLE_VERSION, phrase: VOICE_SAMPLE_PHRASE, language: 'es', settings }));
+  const original = 'Hola, esta es una muestra de mi voz en español.';
+  const directed = provider === 'elevenlabs' && modelId === 'eleven_v4' ? `[neutral Latin American Spanish accent] ${original}` : original;
+  return [original, directed].map(text => digest(JSON.stringify({ provider, voiceId, modelId, version: 1, phrase: text, language: 'es', settings })));
 }
 
 export class SampleUnresolvedError extends Error {
@@ -74,8 +85,9 @@ export class GeneratedVoiceSamples {
     return dir ? this.read(dir, key) : null;
   }
 
-  async generate(key: string, synthesize: () => Promise<Uint8Array>, beforeReserve?: () => void, signal?: AbortSignal): Promise<Uint8Array> {
-    if (!/^[a-f0-9]{64}$/.test(key)) throw new SampleUnresolvedError();
+  async generate(key: string, synthesize: () => Promise<Uint8Array>, beforeReserve?: () => void, signal?: AbortSignal, legacyKeys: string | string[] = []): Promise<Uint8Array> {
+    const historical = typeof legacyKeys === 'string' ? [legacyKeys] : legacyKeys;
+    if (!/^[a-f0-9]{64}$/.test(key) || historical.some(item => !/^[a-f0-9]{64}$/.test(item))) throw new SampleUnresolvedError();
     const root = await realpath(this.root);
     const previous = locks.get(root) ?? Promise.resolve();
     let release!: () => void;
@@ -87,6 +99,8 @@ export class GeneratedVoiceSamples {
       const directoryStat = await lstat(dir); identity = { dev: directoryStat.dev, ino: directoryStat.ino };
       const cached = await this.read(dir, key);
       if (cached) return cached;
+      // A previous version may have submitted the same voice/model and left an unresolved task.
+      for (const legacyKey of new Set(historical)) if (legacyKey !== key) await this.read(dir, legacyKey);
       if ((await readdir(dir)).length >= MAX_ENTRIES) throw new Error('La caché de muestras alcanzó su límite.');
       signal?.throwIfAborted(); beforeReserve?.();
       const reservation = await open(join(dir, key), 'wx', 0o600);

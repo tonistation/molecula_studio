@@ -1,4 +1,3 @@
-import { SCHEMA_VERSION } from './limits.ts';
 import { validateProject } from './validate.ts';
 import type { Project } from './types.ts';
 
@@ -15,7 +14,7 @@ export interface EmptyProjectArgs {
  */
 export function emptyProject(args: EmptyProjectArgs): Project {
   const project: Project = {
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: 2,
     projectId: args.projectId,
     revision: 0,
     title: args.title ?? 'Proyecto sin título',

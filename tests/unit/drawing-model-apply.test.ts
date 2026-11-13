@@ -15,8 +15,8 @@ function example() {
   const parsed = parseProjectText(fixtureText('storyboard'));
   assert.ok(parsed.ok);
   const project = parsed.project;
-  const scene = structuredClone(project.scenes[0]!.visual!);
-  assert.ok('kind' in scene);
+  const scene = structuredClone(project.scenes[0]!.visual);
+  assert.ok(scene && 'kind' in scene && scene.kind === 'kit');
   scene.objects.push({ id: 'farol', type: 'model', params: { modelId: id }, position: [0, 0, 0],
     rotation: [0, 0, 0], scale: 1, color: '#ffffff', animations: [] });
   return { project, scene };

@@ -26,8 +26,12 @@ export function buildKitModelPrompt(input: KitPromptInput & { catalog: readonly 
 
 /** Data-only, deterministic prompt shared by copy/paste and the future provider adapter. */
 export function buildKitPrompt({ scene, previousScenes, references, targetVisual }: KitPromptInput): string {
-  const identities = previousScenes.flatMap(previous => previous.visual && 'kind' in previous.visual
-    ? previous.visual.objects : []);
+  const identities = previousScenes.flatMap(previous => {
+    const visual = previous.visual;
+    if (!visual || !('kind' in visual)) return [];
+    if (visual.kind !== 'kit') throw new Error('El generador 3D requiere escenas visuales 3D.');
+    return visual.objects;
+  });
   return [
     'Dibuja una sola escena KitScene, no un proyecto ni una lista de escenas. Responde solo JSON válido según el schema literal del final.',
     'Estética low-poly con sombreado plano, colores saturados, cielo degradado, sol y nubes simples. Construye objetos específicos del tema; no copies marcas ni personajes de las referencias.',

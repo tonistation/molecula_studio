@@ -15,6 +15,10 @@ import { applyKitSceneWithModels } from '../../shared/kit/apply.ts';
 import type { ModelSnapshot } from '../../shared/models/model.ts';
 import { selectModelCatalog } from '../../shared/models/catalog.ts';
 import { SCRIPT_TIMEOUT_MS, DRAWING_TIMEOUT_MS } from '../../shared/generation-timeouts.ts';
+import { buildFlatPrompt } from '../../shared/flat/prompt.ts';
+import { flatOutputSchema } from '../../shared/flat/output-schema.ts';
+import { parseFlatResponse } from '../../shared/flat/parse.ts';
+import { applyFlatVisual } from '../../shared/flat/apply.ts';
 export { SCRIPT_TIMEOUT_MS, DRAWING_TIMEOUT_MS } from '../../shared/generation-timeouts.ts';
 
 export interface CodexOptions {
@@ -198,6 +202,34 @@ export async function generateDrawing(input: unknown, options: CodexOptions = {}
         entities: new Map(project.entities.map(entity => [entity.entityId, entity])) });
       return parsed.ok ? { ok: true, value: parsed.scene } : parsed;
     }, { ...options, timeoutMs: options.timeoutMs ?? DRAWING_TIMEOUT_MS }, signal);
+}
+
+/** 2D styles ignore the legacy modelMode=true flag; they never load or produce model bundles. */
+export async function generateFlatDrawing(input: unknown, options: CodexOptions = {}, signal?: AbortSignal) {
+  const body = input as { project?: unknown; sceneId?: unknown; modelMode?: unknown };
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || !['project,sceneId', 'modelMode,project,sceneId'].includes(Object.keys(body).sort().join())
+    || ('modelMode' in body && body.modelMode !== true) || typeof body.sceneId !== 'string') {
+    throw new GenerationError(400, 'invalid-argument', 'Indica un borrador válido y la escena que deseas dibujar.');
+  }
+  const result = validateProject(body.project);
+  if (!result.ok || result.mode !== 'editable' || result.project.schemaVersion !== 3
+    || !['vector-2d', 'motion-graphics'].includes(result.project.styleId)) {
+    throw new GenerationError(400, 'invalid-argument', 'El borrador no es válido, es de solo lectura o tiene otro estilo.');
+  }
+  const project = result.project;
+  const index = project.scenes.findIndex(scene => scene.sceneId === body.sceneId);
+  const scene = project.scenes[index];
+  if (!scene) throw new GenerationError(400, 'invalid-argument', 'No se encontró la escena para dibujar.');
+  const kind = project.styleId === 'vector-2d' ? 'vector' : 'motion';
+  const prompt = buildFlatPrompt({ scene: { title: scene.title, text: scene.text, visualIntent: scene.visualIntent, durationMs: scene.durationMs }, previousScenes: project.scenes.slice(0, index) }, kind);
+  return generate('drawing', prompt, flatOutputSchema(kind, scene.durationMs), text => {
+    const parsed = parseFlatResponse(text, scene.durationMs, kind);
+    if (!parsed.ok) return parsed;
+    try { applyFlatVisual(project, scene.sceneId, parsed.visual, kind); }
+    catch { return { ok: false, errors: ['El dibujo no se puede aplicar al borrador.'] }; }
+    return { ok: true, value: parsed.visual };
+  }, { ...options, timeoutMs: options.timeoutMs ?? DRAWING_TIMEOUT_MS }, signal);
 }
 
 export async function generateModelDrawing(input: unknown, catalog: readonly ModelSnapshot[], options: CodexOptions = {}, signal?: AbortSignal) {

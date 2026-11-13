@@ -8,6 +8,54 @@ import { startCompanionServer } from '../../src/companion/server/http.ts';
 import { fixtureText } from '../helpers/fixtures.ts';
 import { mp3Bytes } from '../helpers/media.ts';
 import { bindingDigests } from '../../src/shared/digests.ts';
+import { SPANISH_ACCENT_PREFIX } from '../../src/shared/voice/speech-input.ts';
+import { speechPayload } from '../../src/companion/providers/speech-payload.ts';
+import { voiceQuote } from '../../src/companion/providers/voice-quote.ts';
+
+test('concurrent project change during MiniMax language preflight prevents paid TTS', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'voice-preflight-race-'));
+  let resume!: () => void; let notify!: () => void; let posts = 0;
+  const gate = new Promise<void>(resolve => { resume = resolve; });
+  const waiting = new Promise<void>(resolve => { notify = resolve; });
+  const fake = createServer(async (req, res) => {
+    if (req.url === '/v1/languages?provider=minimax') { notify(); await gate; res.end(JSON.stringify([{ code: 'Spanish', name: 'Spanish' }])); return; }
+    posts++; req.resume(); res.writeHead(500).end();
+  });
+  await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', resolve));
+  const companion = await startCompanionServer({ workspaceRoot: root, codexOptions: { env: { PATH: '' } }, vibiOptions: { apiKey: 'fake', voiceId: 'voice', provider: 'minimax', modelId: 'model', baseUrl: `http://127.0.0.1:${(fake.address() as { port: number }).port}` } });
+  t.after(async () => { resume(); await companion.close(); await new Promise<void>(resolve => fake.close(() => resolve())); await rm(root, { recursive: true, force: true }); });
+  const { projectId } = await companion.store.importProject({ text: fixtureText('storyboard') });
+  const current = await companion.store.readProject(projectId);
+  const path = join(root, projectId, 'project.json');
+  const url = `${companion.origin}/api/projects/${projectId}/scenes/${current.project.scenes[0]!.sceneId}/voice`;
+  const headers = { authorization: `Bearer ${companion.token}`, origin: companion.origin, 'content-type': 'application/json' };
+  const expected = { expectedRevision: current.revision, expectedDigest: current.digest };
+  const quote = await (await fetch(`${url}/quote`, { method: 'POST', headers, body: JSON.stringify(expected) })).json() as { fingerprint: string };
+  const response = fetch(url, { method: 'POST', headers, body: JSON.stringify({ ...expected, consent: true, quote: quote.fingerprint }) });
+  await waiting;
+  const changed = (await readFile(path, 'utf8')) + '\n'; await writeFile(path, changed);
+  resume();
+  assert.equal((await response).status, 409);
+  assert.equal(posts, 0); assert.equal(await readFile(path, 'utf8'), changed);
+});
+
+test('capability reports the effective model default and preserves explicit provider and model overrides', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'voice-config-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const [env, expected] of [
+    [{ PATH: '', VIBI_API_KEY: 'fake', VIBI_VOICE_ID: 'voice' }, true],
+    [{ PATH: '', VIBI_API_KEY: 'fake', VIBI_VOICE_ID: 'voice', VIBI_MODEL_ID: 'eleven_multilingual_v2' }, false],
+    [{ PATH: '', VIBI_API_KEY: 'fake', VIBI_VOICE_ID: 'voice', VIBI_PROVIDER: 'capcut' }, false],
+  ] as const) {
+    const server = await startCompanionServer({ workspaceRoot: root, codexOptions: { env } });
+    try {
+      const response = await fetch(`${server.origin}/api/capabilities`, { headers: { authorization: `Bearer ${server.token}`, origin: server.origin } });
+      const body = await response.json() as { vibiAccentDirective: boolean; vibiVoiceConfigured: boolean };
+      assert.equal(body.vibiAccentDirective, expected);
+      assert.equal(body.vibiVoiceConfigured, true);
+    } finally { await server.close(); }
+  }
+});
 
 test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth, stale revision and duplicates never spend', async t => {
   const root = await mkdtemp(join(tmpdir(), 'vibi-voice-'));
@@ -24,7 +72,10 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
     if (req.method === 'POST') {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
       if (req.url?.includes('text-to-speech')) {
-        posts++; chosenUrl = req.url!; words = JSON.parse(Buffer.concat(chunks).toString()).text.match(/\S+/gu);
+        posts++; chosenUrl = req.url!;
+        const payload = JSON.parse(Buffer.concat(chunks).toString());
+        assert.equal(payload.model_id, 'eleven_v4'); assert.ok(payload.text.startsWith(SPANISH_ACCENT_PREFIX));
+        words = payload.text.slice(SPANISH_ACCENT_PREFIX.length).match(/\S+/gu);
         res.writeHead(202).end(JSON.stringify({ id: 'tts' }));
       } else {
         stts++;
@@ -52,8 +103,25 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
   const file = join(root, projectId, 'project.json');
   const headers = { authorization: `Bearer ${companion.token}`, origin: companion.origin, 'content-type': 'application/json' };
   const url = `${companion.origin}/api/projects/${projectId}/scenes/${sceneId}/voice`;
-  const generate = (patch: Record<string, unknown> = {}, extra = headers, signal?: AbortSignal) => fetch(url, { method: 'POST', headers: extra, signal,
-    body: JSON.stringify({ expectedRevision: current.revision, expectedDigest: current.digest, consent: true, ...patch }) });
+  const generate = async (patch: Record<string, unknown> = {}, extra = headers, signal?: AbortSignal) => {
+    const selection = 'voiceId' in patch || 'provider' in patch ? { voiceId: patch.voiceId, provider: patch.provider } : {};
+    const quoteResponse = await fetch(`${url}/quote`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: current.revision, expectedDigest: current.digest, ...selection }) });
+    const quote = quoteResponse.ok ? ((await quoteResponse.json()) as { fingerprint: string }).fingerprint : '';
+    return fetch(url, { method: 'POST', headers: extra, signal,
+      body: JSON.stringify({ expectedRevision: current.revision, expectedDigest: current.digest, consent: true, quote, ...patch }) });
+  };
+  const missingQuote = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: current.revision, expectedDigest: current.digest, consent: true }) });
+  assert.equal(missingQuote.status, 409); assert.equal(posts, 0); assert.equal(stts, 0);
+  assert.equal((await generate({ quote: '0'.repeat(64) })).status, 409); assert.equal(posts, 0); assert.equal(stts, 0);
+  const input = { provider: 'elevenlabs', modelId: 'eleven_v4', voiceId: 'test-voice', text: current.project.scenes[0]!.text, scope: `scene/${projectId}/${sceneId}` };
+  const payload = speechPayload(input);
+  const oldSettingsQuote = voiceQuote(input, { ...payload, voice_settings: { ...payload.voice_settings, speed: 1.1 } });
+  assert.equal((await generate({ quote: oldSettingsQuote.fingerprint })).status, 409); assert.equal(posts, 0); assert.equal(stts, 0);
+  const otherSceneId = current.project.scenes[1]!.sceneId;
+  const otherQuoteResponse = await fetch(url.replace(`/scenes/${sceneId}/`, `/scenes/${otherSceneId}/`) + '/quote', { method: 'POST', headers,
+    body: JSON.stringify({ expectedRevision: current.revision, expectedDigest: current.digest }) });
+  const otherQuote = await otherQuoteResponse.json() as { fingerprint: string };
+  assert.equal((await generate({ quote: otherQuote.fingerprint })).status, 409); assert.equal(posts, 0); assert.equal(stts, 0);
   assert.equal((await generate({ consent: false })).status, 400);
   assert.equal((await generate({}, { ...headers, authorization: '' })).status, 401);
   assert.equal((await generate({}, { ...headers, origin: 'https://evil.test' })).status, 403);
@@ -102,7 +170,7 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
   assert.equal(chosenUrl, '/v1/text-to-speech/test-voice');
   assert.deepEqual(asset.source, { origin: 'provider', license: 'Vibi – según plan', attribution: 'elevenlabs/test-voice' });
   assert.deepEqual((await companion.store.readAsset(projectId, asset.assetId)).bytes, bytes);
-  assert.doesNotMatch(await readFile(file, 'utf8'), /fake-only-key|PRIVATE/);
+  assert.doesNotMatch(await readFile(file, 'utf8'), /fake-only-key|PRIVATE|neutral Latin American Spanish accent/);
   hook = undefined;
   const chosen = await generate(selection);
   assert.equal(chosen.status, 200, await chosen.clone().text());
@@ -154,7 +222,7 @@ test('automatic voice boundary saves MP3/STT/bindings and source; consent, auth,
   assert.equal((await generate()).status, 422); assert.equal(stts, sttBeforeLong);
   assert.deepEqual(await readFile(file), before); bytes = mp3Bytes(80);
   for (const stage of ['tts', 'stt'] as const) {
-    const original = await readFile(file, 'utf8'); const count = stts;
+    const original = await readFile(file, 'utf8'); const count: number = stts;
     hook = async at => { if (at === stage) await writeFile(file, original + '\n'); };
     const conflict = await generate(); assert.equal(conflict.status, 409, await conflict.text());
     assert.equal(await readFile(file, 'utf8'), original + '\n');
@@ -179,10 +247,13 @@ test('automatic voice disconnect stops local polling without publishing audio', 
   t.after(async () => { await companion.close(); await new Promise<void>(r => fake.close(() => r())); await rm(root, { recursive: true, force: true }); });
   const { projectId } = await companion.store.importProject({ text: fixtureText('storyboard') });
   const current = await companion.store.readProject(projectId);
+  const url = `${companion.origin}/api/projects/${projectId}/scenes/${current.project.scenes[0]!.sceneId}/voice`;
+  const headers = { authorization: `Bearer ${companion.token}`, origin: companion.origin, 'content-type': 'application/json' };
+  const quoted = await fetch(`${url}/quote`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: current.revision, expectedDigest: current.digest }) });
+  const { fingerprint: quote } = await quoted.json() as { fingerprint: string };
   const controller = new AbortController();
-  const response = fetch(`${companion.origin}/api/projects/${projectId}/scenes/${current.project.scenes[0]!.sceneId}/voice`, { method: 'POST', signal: controller.signal,
-    headers: { authorization: `Bearer ${companion.token}`, origin: companion.origin, 'content-type': 'application/json' },
-    body: JSON.stringify({ expectedRevision: current.revision, expectedDigest: current.digest, consent: true }) });
+  const response = fetch(url, { method: 'POST', signal: controller.signal, headers,
+    body: JSON.stringify({ expectedRevision: current.revision, expectedDigest: current.digest, consent: true, quote }) });
   await polling; controller.abort(); await assert.rejects(response); await disconnected;
   assert.equal((await companion.store.readProject(projectId)).digest, current.digest);
 });

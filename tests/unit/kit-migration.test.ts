@@ -47,7 +47,7 @@ test('a migrated legacy object cannot bypass identity, version or parameter vali
   ]) {
     const project: Project = structuredClone(parsed.project);
     const visual = project.scenes[0]!.visual;
-    assert.ok(visual && 'kind' in visual);
+    assert.ok(visual && 'kind' in visual && visual.kind === 'kit');
     change(visual.objects[0]);
     const result = validateProject(project);
     assert.equal(result.ok, false);

@@ -164,6 +164,7 @@ function orderScene(scene: Scene): unknown {
 function orderSceneVisual(visual: SceneVisual | null): unknown {
   if (visual === null) return null;
   if ('inert' in visual) return visual.inert;
+  if (visual.kind !== 'kit') return orderKitData(visual);
   return {
     kind: visual.kind,
     kitVersion: visual.kitVersion,

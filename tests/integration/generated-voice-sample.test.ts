@@ -3,11 +3,67 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, readdir, writeFile, symlink, stat, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { GeneratedVoiceSamples, sampleKey } from '../../src/companion/providers/generated-voice-samples.ts';
+import { GeneratedVoiceSamples, sampleKey, historicalSampleKeys } from '../../src/companion/providers/generated-voice-samples.ts';
 import { mp3Bytes } from '../helpers/media.ts';
 import { createServer, request } from 'node:http';
 import { startCompanionServer } from '../../src/companion/server/http.ts';
 import { VOICE_SAMPLE_PHRASE } from '../../src/shared/voice/sample-phrase.ts';
+
+async function sampleQuote(url: string, headers: Record<string, string>): Promise<string> {
+  const response = await fetch(`${url}/quote`, { headers });
+  if (!response.ok) return '';
+  return ((await response.json()) as { fingerprint: string }).fingerprint;
+}
+
+test('sample quote from another model is rejected before cache reservation or paid request', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'sample-quote-model-'));
+  let posts = 0;
+  const fake = createServer((req, res) => {
+    if (req.url === '/v1/default-voices?page_size=30') res.end(JSON.stringify({ voices: [{ voice_id: 'voice', name: 'Voice' }], has_more: false }));
+    else { posts++; res.writeHead(500).end(); }
+  });
+  await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', resolve));
+  const baseUrl = `http://127.0.0.1:${(fake.address() as { port: number }).port}`;
+  const options = { workspaceRoot: root, codexOptions: { env: { PATH: '' } }, vibiOptions: { apiKey: 'fake', voiceId: 'voice', baseUrl } };
+  let server = await startCompanionServer({ ...options, vibiOptions: { ...options.vibiOptions, modelId: 'eleven_multilingual_v2' } });
+  t.after(async () => { await server.close(); await new Promise<void>(resolve => fake.close(() => resolve())); await rm(root, { recursive: true, force: true }); });
+  const headers = () => ({ authorization: `Bearer ${server.token}`, origin: server.origin, 'content-type': 'application/json' });
+  const url = () => `${server.origin}/api/vibi/voices/elevenlabs/voice/generated-sample`;
+  await fetch(`${server.origin}/api/vibi/voices`, { headers: headers() });
+  const oldQuote = await sampleQuote(url(), headers());
+  await server.close();
+  server = await startCompanionServer({ ...options, vibiOptions: { ...options.vibiOptions, modelId: 'eleven_v4' } });
+  await fetch(`${server.origin}/api/vibi/voices`, { headers: headers() });
+  const response = await fetch(url(), { method: 'POST', headers: headers(), body: JSON.stringify({ consent: true, quote: oldQuote }) });
+  assert.equal(response.status, 409); assert.equal((await response.json() as any).error.code, 'voice-quote-changed');
+  assert.equal(posts, 0); await assert.rejects(() => access(join(root, '.voice-samples')), { code: 'ENOENT' });
+});
+
+test('v4 sample key changes with directive but legacy unresolved reservation blocks a new paid request', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'voice-legacy-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const oldKey = sampleKey('elevenlabs', 'voice', 'eleven_v4', true);
+  const newKey = sampleKey('elevenlabs', 'voice', 'eleven_v4');
+  assert.notEqual(oldKey, newKey);
+  assert.equal(sampleKey('elevenlabs', 'voice', 'eleven_multilingual_v2'), sampleKey('elevenlabs', 'voice', 'eleven_multilingual_v2', true));
+  const samples = new GeneratedVoiceSamples(root);
+  await assert.rejects(() => samples.generate(oldKey, async () => { throw new Error('ambiguous'); }));
+  let calls = 0;
+  await assert.rejects(() => samples.generate(newKey, async () => { calls++; return mp3Bytes(80); }, undefined, undefined, oldKey), /anterior/);
+  assert.equal(calls, 0);
+});
+
+test('historical directed reservation blocks a future settings cache identity', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'voice-settings-history-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const oldKey = sampleKey('elevenlabs', 'voice', 'eleven_v4');
+  const futureKey = 'f'.repeat(64);
+  const samples = new GeneratedVoiceSamples(root);
+  await assert.rejects(() => samples.generate(oldKey, async () => { throw new Error('ambiguous'); }));
+  let calls = 0;
+  await assert.rejects(() => samples.generate(futureKey, async () => { calls++; return mp3Bytes(80); }, undefined, undefined, historicalSampleKeys('elevenlabs', 'voice', 'eleven_v4')), /anterior/);
+  assert.equal(calls, 0);
+});
 
 test('generated samples reserve once, replay bytes, and retain ambiguous failures across restart', async t => {
   const root = await mkdtemp(join(tmpdir(), 'voice-samples-'));
@@ -59,7 +115,8 @@ test('MiniMax language preflight failure does not reserve or submit and permits 
   const headers = { authorization: `Bearer ${server.token}`, origin: server.origin, 'content-type': 'application/json' };
   await fetch(`${server.origin}/api/vibi/voices`, { headers });
   const url = `${server.origin}/api/vibi/voices/minimax/voice/generated-sample`;
-  const post = () => fetch(url, { method: 'POST', headers, body: '{"consent":true}' });
+  const quote = await sampleQuote(url, headers);
+  const post = () => fetch(url, { method: 'POST', headers, body: JSON.stringify({ consent: true, quote }) });
   const failed = await post(); assert.notEqual(failed.status, 200); assert.notEqual((await failed.json() as any).error.code, 'sample-unresolved');
   assert.equal(posts, 0); await assert.rejects(() => access(join(root, '.voice-samples')), { code: 'ENOENT' });
   valid = true; const good = await post(); assert.equal(good.status, 200, await good.text()); assert.equal(posts, 1);
@@ -79,6 +136,7 @@ test('catalog removal during a streamed confirmation body prevents TTS', async t
   const headers = { authorization: `Bearer ${server.token}`, origin: server.origin, 'content-type': 'application/json' };
   await fetch(`${server.origin}/api/vibi/voices`, { headers });
   const url = `${server.origin}/api/vibi/voices/elevenlabs/voice/generated-sample`;
+  const quote = await sampleQuote(url, headers);
   let notify!: () => void; const begun = new Promise<void>(resolve => { notify = resolve; });
   server.server.prependOnceListener('request', notify);
   let finish!: (status: number | undefined) => void;
@@ -86,7 +144,7 @@ test('catalog removal during a streamed confirmation body prevents TTS', async t
   const req = request(url, { method: 'POST', headers }, res => { res.resume(); finish(res.statusCode); });
   req.write('{"consent":'); await begun;
   listed = false; await fetch(`${server.origin}/api/vibi/voices`, { headers });
-  req.end('true}');
+  req.end(`true,"quote":"${quote}"}`);
   assert.ok([404, 409].includes((await response)!)); assert.equal(posts, 0);
   await assert.rejects(() => access(join(root, '.voice-samples')), { code: 'ENOENT' });
 });
@@ -118,7 +176,8 @@ test('simultaneous first requests from distinct clients reserve only one paid ta
   const headers = { authorization: `Bearer ${server.token}`, origin: server.origin, 'content-type': 'application/json' };
   await fetch(`${server.origin}/api/vibi/voices`, { headers });
   const url = `${server.origin}/api/vibi/voices/minimax/voice/generated-sample`;
-  const post = () => fetch(url, { method: 'POST', headers: { ...headers, connection: 'close' }, body: '{"consent":true}' });
+  const quote = await sampleQuote(url, headers);
+  const post = () => fetch(url, { method: 'POST', headers: { ...headers, connection: 'close' }, body: JSON.stringify({ consent: true, quote }) });
   const first = post(); const second = post();
   await both;
   await assert.rejects(() => access(join(root, '.voice-samples')), { code: 'ENOENT' });
@@ -208,16 +267,17 @@ test('HTTP disconnect during reservation does not submit TTS and a later explici
   const headers = { authorization: `Bearer ${server.token}`, origin: server.origin, 'content-type': 'application/json' };
   await fetch(`${server.origin}/api/vibi/voices`, { headers });
   const url = `${server.origin}/api/vibi/voices/elevenlabs/voice/generated-sample`;
+  const quote = await sampleQuote(url, headers);
   server.server.once('request', (_req, res) => res.once('close', disconnected));
   const controller = new AbortController();
-  const cancelled = fetch(url, { method: 'POST', headers, body: '{"consent":true}', signal: controller.signal }).catch(() => null);
+  const cancelled = fetch(url, { method: 'POST', headers, body: JSON.stringify({ consent: true, quote }), signal: controller.signal }).catch(() => null);
   await reservationReached;
   controller.abort(); await cancelled; await responseClosed;
   release(); await cleanupFinished;
   assert.equal(posts, 0); assert.equal(stt, 0);
   assert.equal((await fetch(url, { headers })).status, 404);
   assert.equal(posts, 0, 'there is no automatic retry');
-  const retry = await fetch(url, { method: 'POST', headers, body: '{"consent":true}' });
+  const retry = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ consent: true, quote }) });
   assert.equal(retry.status, 200, await retry.clone().text());
   assert.deepEqual(Buffer.from(await retry.arrayBuffer()), Buffer.from(bytes));
   assert.equal(posts, 1); assert.equal(stt, 0);
@@ -232,7 +292,7 @@ test('HTTP samples require catalog and consent, never invoke STT, and retain abo
     if (req.url === '/v1/default-voices?page_size=30') { res.end(JSON.stringify({ voices: [{ voice_id: 'voice', name: 'Voice' }, { voice_id: 'other', name: 'Other' }], has_more: false })); return; }
     if (req.url?.startsWith('/v1/text-to-speech/')) {
       posts++; const chunks = []; for await (const chunk of req) chunks.push(chunk);
-      assert.equal(JSON.parse(Buffer.concat(chunks).toString()).text, VOICE_SAMPLE_PHRASE);
+      assert.equal(JSON.parse(Buffer.concat(chunks).toString()).text, `[neutral Latin American Spanish accent] ${VOICE_SAMPLE_PHRASE}`);
       res.writeHead(202).end(JSON.stringify({ id: 'job' })); if (hold) notify(); return;
     }
     if (req.url === '/v1/history/job') { if (hold) return; res.end(JSON.stringify({ status: 'completed', result: { audio_url: `${base}/audio/job.mp3` } })); return; }
@@ -246,9 +306,18 @@ test('HTTP samples require catalog and consent, never invoke STT, and retain abo
   t.after(async () => { await server.close(); await new Promise<void>(resolve => fake.close(() => resolve())); await rm(root, { recursive: true, force: true }); });
   const headers = () => ({ authorization: `Bearer ${server.token}`, origin: server.origin, 'content-type': 'application/json' });
   const path = (voice = 'voice') => `${server.origin}/api/vibi/voices/elevenlabs/${voice}/generated-sample`;
-  const post = (voice = 'voice', body: unknown = { consent: true }, signal?: AbortSignal) => fetch(path(voice), { method: 'POST', headers: headers(), body: JSON.stringify(body), signal });
+  const post = async (voice = 'voice', body: unknown = { consent: true }, signal?: AbortSignal) => {
+    const quote = await sampleQuote(path(voice), headers());
+    return fetch(path(voice), { method: 'POST', headers: headers(), body: JSON.stringify({ ...(body as object), quote }), signal });
+  };
   assert.equal((await post()).status, 400);
   await fetch(`${server.origin}/api/vibi/voices`, { headers: headers() });
+  for (const body of [{ consent: true }, { consent: true, quote: '0'.repeat(64) }]) {
+    const rejected = await fetch(path(), { method: 'POST', headers: headers(), body: JSON.stringify(body) });
+    assert.equal(rejected.status, 409); assert.equal((await rejected.json() as any).error.code, 'voice-quote-changed');
+  }
+  assert.equal(posts, 0); assert.equal(stt, 0);
+  await assert.rejects(() => access(join(root, '.voice-samples')), { code: 'ENOENT' });
   assert.equal((await fetch(path(), { headers: { ...headers(), authorization: '' } })).status, 401);
   const hostStatus = await new Promise<number | undefined>((resolve, reject) => {
     const req = request(path(), { headers: { ...headers(), host: 'evil.test' } }, res => { res.resume(); resolve(res.statusCode); });
@@ -298,7 +367,7 @@ test('a submitted TTS timeout retains its reservation after restart', async t =>
   t.after(async () => { await server.close(); await new Promise<void>(resolve => fake.close(() => resolve())); await rm(root, { recursive: true, force: true }); });
   const headers = () => ({ authorization: `Bearer ${server.token}`, origin: server.origin, 'content-type': 'application/json' });
   const url = () => `${server.origin}/api/vibi/voices/elevenlabs/voice/generated-sample`;
-  const post = () => fetch(url(), { method: 'POST', headers: headers(), body: '{"consent":true}' });
+  const post = async () => fetch(url(), { method: 'POST', headers: headers(), body: JSON.stringify({ consent: true, quote: await sampleQuote(url(), headers()) }) });
   await fetch(`${server.origin}/api/vibi/voices`, { headers: headers() });
   const timedOut = await post(); assert.equal(timedOut.status, 409); assert.equal((await timedOut.json() as any).error.code, 'sample-unresolved');
   assert.equal(posts, 1);

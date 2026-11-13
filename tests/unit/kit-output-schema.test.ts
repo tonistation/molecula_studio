@@ -5,6 +5,14 @@ import { validateProject } from '../../src/shared/schema/validate.ts';
 import { validateKitScene } from '../../src/shared/kit/validate.ts';
 import { KIT_SCENE_SCHEMA, selectKitOutputSchema } from '../../src/shared/kit/output-schema.ts';
 import { KIT_OBJECT_TYPES, KIT_ANIMATION_TYPES, KIT_CAMERA_MOVES } from '../../src/shared/kit/schema.ts';
+import { buildKitPrompt } from '../../src/shared/kit/prompt.ts';
+
+test('3D prompt and output schema reject non-3D visual input', () => {
+  const visual = { kind: 'vector' as const, version: 1 as const, background: '#FFFFFF', layers: [] };
+  assert.throws(() => selectKitOutputSchema([{ visual }]), /requiere escenas visuales 3D/);
+  assert.throws(() => buildKitPrompt({ scene: { title: '', text: '', visualIntent: '', durationMs: 1000 },
+    previousScenes: [{ visual }], references: [] }), /requiere escenas visuales 3D/);
+});
 
 // Independent test-only evaluator for the exact exported JSON Schema vocabulary.
 // Semantic/cross-field constraints are intentionally verified by validateKitScene, not this evaluator.

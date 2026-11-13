@@ -11,6 +11,7 @@ import { useRef, useState } from 'react';
 import { api, ApiError } from '../api.ts';
 import { GenerationMode } from './GenerationMode.tsx';
 import { DRAWING_TIMEOUT_MS } from '../../../src/shared/generation-timeouts.ts';
+import { FlatDrawingStep } from './FlatDrawingStep.tsx';
 
 export function DrawingStep({ draft, sceneId, disabled, onEdit, codexCapability = 'unavailable' }: DraftStepProps & { sceneId: string }) {
   const [mode, setMode] = useState<'auto' | 'manual'>('manual');
@@ -21,6 +22,10 @@ export function DrawingStep({ draft, sceneId, disabled, onEdit, codexCapability 
   const index = draft.scenes.findIndex(scene => scene.sceneId === sceneId);
   const scene = draft.scenes[index];
   if (!scene) return null;
+  if (draft.schemaVersion === 3 && draft.styleVersion === 1 && (draft.styleId === 'vector-2d' || draft.styleId === 'motion-graphics')) {
+    return <FlatDrawingStep key={`${draft.styleId}:${sceneId}`} draft={draft} sceneId={sceneId} disabled={disabled} onEdit={onEdit} codexCapability={codexCapability} />;
+  }
+  if ((draft.styleId !== 'stylized-3d' || draft.styleVersion !== 1) && !disabled) return null;
   const catalogForDraft = async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
       const models: ModelSnapshot[] = [];

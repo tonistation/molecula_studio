@@ -33,7 +33,7 @@ const corpus: Array<{ name: string; input: string | Uint8Array; failure: Failure
   { name: 'a constructor key', input: '{"constructor":{}}', failure: 'dangerous-key' },
   { name: 'a prototype key in an array item', input: '{"a":[{"prototype":1}]}', failure: 'dangerous-key' },
   { name: 'a repeated dangerous key', input: '{"__proto__":1,"__proto__":2}', failure: 'dangerous-key' },
-  { name: 'a future schemaVersion', input: '{"schemaVersion":3}', failure: 'unsupported-version' },
+  { name: 'a future schemaVersion', input: '{"schemaVersion":4}', failure: 'unsupported-version' },
   { name: 'a missing schemaVersion', input: '{"title":"x"}', failure: 'invalid-schema' },
   { name: 'schemaVersion zero', input: '{"schemaVersion":0}', failure: 'invalid-schema' },
   { name: 'a string schemaVersion', input: '{"schemaVersion":"1"}', failure: 'invalid-schema' },

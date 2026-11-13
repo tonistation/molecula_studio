@@ -11,6 +11,7 @@ import { toneWav } from '../helpers/playable-audio.ts';
 import { parseProjectText, serializeProject } from '../../src/shared/schema/index.ts';
 import { voiceStatuses } from '../../studio/src/voice-model.ts';
 import { voicedFixture } from '../helpers/render-audio.ts';
+import { SPANISH_ACCENT_PREFIX } from '../../src/shared/voice/speech-input.ts';
 
 async function renderedStreams(path: string) {
   const { stdout } = await promisify(execFile)(resolve('node_modules/.bin/remotion'),
@@ -66,10 +67,16 @@ test('stale voice: one edited scene, guarded regeneration, cancel/confirm export
     assert.deepEqual(saved.scenes[0].audio, attached.scenes[0].audio);
     await regenerate.click();
     const spending = voice.getByRole('region', { name: 'Confirmar generación Vibi', exact: true });
-    await spending.getByText(/Se enviarán 12 caracteres de 1 escenas/).waitFor();
+    assert.equal([...saved.scenes[0].text].length, 12);
+    assert.equal([...SPANISH_ACCENT_PREFIX].length, 40);
+    await spending.getByText('Se enviarán 52 caracteres de 1 escenas a TTS y luego sus audios a STT. Se reemplazará la voz de esas escenas y se guardará el proyecto.', { exact: true }).waitFor();
+    await spending.getByText('Configuración: elevenlabs / eleven_v4 / fake-voice. Escena 1: 52 caracteres.', { exact: true }).waitFor();
+    await spending.getByText(/Se añade «\[neutral Latin American Spanish accent\]» a cada escena \(40 caracteres por escena, incluido el espacio\)/).waitFor();
     await spending.getByRole('button', { name: 'Confirmar generación y consumo TTS + STT', exact: true }).waitFor();
     assert.equal(providerRequests, 0, 'regenerate first opens existing explicit spending consent');
     await spending.getByRole('button', { name: 'Cancelar generación', exact: true }).click();
+    assert.equal(providerRequests, 0, 'cancel never submits TTS or STT');
+    assert.deepEqual(await readFile(file), savedBytes, 'cancel preserves saved narration and media bindings');
     const panel = page.getByRole('region', { name: 'Exportar video', exact: true });
     const exportButton = panel.getByRole('button', { name: 'Exportar MP4', exact: true });
     const dialog = page.getByRole('dialog', { name: 'Exportar con voz desactualizada', exact: true });

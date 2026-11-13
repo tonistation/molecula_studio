@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { withStudio } from '../helpers/studio-browser.ts';
 import { fixtureText } from '../helpers/fixtures.ts';
 import { toneMp3 } from '../helpers/playable-audio.ts';
+import { SPANISH_ACCENT_PREFIX } from '../../src/shared/voice/speech-input.ts';
 
 test('automatic voice shows cost consent, queries credits only on demand, generates sequentially and preserves prior scenes on failure', async t => {
   const source = JSON.parse(fixtureText('storyboard'));
@@ -28,7 +29,9 @@ test('automatic voice shows cost consent, queries credits only on demand, genera
           const saved = JSON.parse(await readFile(join(root, source.projectId, 'project.json'), 'utf8'));
           assert.ok(saved.scenes[0].audio); assert.equal(saved.scenes[1].audio, null, 'first scene committed before second paid submit');
         }
-        tokens = JSON.parse(Buffer.concat(chunks).toString()).text.match(/\S+/gu);
+        const text = JSON.parse(Buffer.concat(chunks).toString()).text;
+        assert.ok(text.startsWith(SPANISH_ACCENT_PREFIX));
+        tokens = text.slice(SPANISH_ACCENT_PREFIX.length).match(/\S+/gu);
         res.writeHead(202).end(JSON.stringify({ id: `tts-${posts}` }));
       } else { order.push(`stt${posts}`); res.writeHead(202).end(JSON.stringify({ task_id: 'stt' })); }
     } else if (req.url?.startsWith('/v1/history/')) {
@@ -56,6 +59,10 @@ test('automatic voice shows cost consent, queries credits only on demand, genera
     await voice.getByRole('button', { name: 'Cargar voces Vibi', exact: true }).click();
     const selector = voice.getByLabel('Voz para generar', { exact: true });
     await selector.selectOption('narrator-a');
+    await voice.getByRole('button', { name: 'Generar voz · escena 1', exact: true }).click();
+    const single = voice.getByRole('region', { name: 'Confirmar generación Vibi' });
+    await single.getByText(new RegExp(`Se enviarán ${[...source.scenes[0].text].length + [...SPANISH_ACCENT_PREFIX].length} caracteres de 1 escenas`)).waitFor();
+    await single.getByRole('button', { name: 'Cancelar generación' }).click();
     await all.click();
     const confirmation = voice.getByRole('region', { name: 'Confirmar generación Vibi' });
     await confirmation.getByText(/Voz elegida: Narradora A · elevenlabs \/ narrator-a/).waitFor();
@@ -63,7 +70,7 @@ test('automatic voice shows cost consent, queries credits only on demand, genera
     assert.equal(await confirmation.count(), 0, 'changing voice invalidates financial consent');
     await selector.selectOption('narrator-a');
     await all.click();
-    const count = source.scenes.reduce((sum: number, scene: { text: string }) => sum + [...scene.text].length, 0);
+    const count = source.scenes.reduce((sum: number, scene: { text: string }) => sum + [...scene.text].length + [...SPANISH_ACCENT_PREFIX].length, 0);
     await confirmation.getByText(new RegExp(`Se enviarán ${count} caracteres de 2 escenas`)).waitFor();
     await confirmation.getByText(/STT por duración del audio generado, todavía desconocida/).waitFor();
     assert.equal(posts, 0); assert.equal(accounts, 0);

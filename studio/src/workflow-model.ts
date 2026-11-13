@@ -1,13 +1,14 @@
 import type { Project } from '../../src/shared/schema/types.ts';
 import { projectToVideoProps } from '../../src/shared/video-props.ts';
 import { voiceStatuses } from './voice-model.ts';
+import { isSupportedStyle } from './style-selection.ts';
 
 export type WorkflowState = 'pending' | 'ready' | 'outdated';
 export type WorkflowStates = readonly [WorkflowState, WorkflowState, WorkflowState, WorkflowState];
 
 /** Readiness describes the current content, not approval or a completed render. */
 export async function workflowStates(project: Project, missingAssets: string[]): Promise<WorkflowStates> {
-  const supported = project.styleId === 'stylized-3d' && project.styleVersion === 1;
+  const supported = isSupportedStyle(project);
   const idea: WorkflowState = supported && project.idea.trim() ? 'ready' : 'pending';
   const script: WorkflowState = project.scenes.length > 0
     && project.scenes.every(scene => scene.text.trim() && scene.visualIntent.trim()) ? 'ready' : 'pending';

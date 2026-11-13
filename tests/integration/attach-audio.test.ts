@@ -294,6 +294,55 @@ test('visual timing rescales proportionally including ordered camera collisions 
   assert.deepEqual(expanded.overlays[0], { ...kit.overlays[0], startMs: 525, endMs: 1575 });
 });
 
+for (const [styleId, kind] of [['vector-2d', 'vector'], ['motion-graphics', 'motion']] as const) {
+  test(`audio attachment retimes ${kind} layers and keeps narration bindings independent of visuals`, async (t) => {
+    const project = emptyProject({ projectId: `audio-${kind}`, now: '2026-11-05T12:00:00.000Z' });
+    project.schemaVersion = 3;
+    project.styleId = styleId;
+    project.scenes = [scene('first')];
+    project.scenes[0]!.visual = { kind, version: 1, background: '#FFFFFF', layers: [{
+      id: 'shape', type: 'rect', position: [540, 960], rotation: 0, scale: 1, opacity: 1,
+      startMs: 1000, endMs: 3000, fill: '#123456', width: 100, height: 200,
+      animations: [{ type: 'fade', startMs: 1000, endMs: 3000, easing: 'linear', from: 0, to: 1 }],
+    }] };
+    const env = await setup(t, { project });
+    await env.attach({ bytes: wavBytes({ durationMs: 500 }) });
+    const saved = (await env.reopen()).project;
+    const visual = saved.scenes[0]!.visual;
+    assert.ok(visual && 'kind' in visual && (visual.kind === 'vector' || visual.kind === 'motion'));
+    assert.equal(visual.layers[0]!.startMs, 250);
+    assert.equal(visual.layers[0]!.endMs, 750);
+    assert.equal(visual.layers[0]!.animations[0]!.startMs, 250);
+    assert.equal(visual.layers[0]!.animations[0]!.endMs, 750);
+    assert.equal(validateProject(saved).ok, true);
+    await assertBound(saved, 0);
+    const before = await bindingDigests(saved);
+    visual.background = '#000000';
+    const after = await bindingDigests(saved);
+    assert.notEqual(before.contentDigest, after.contentDigest);
+    assert.deepEqual(before.scenes, after.scenes);
+  });
+
+  test(`audio attachment preserves a visible ${kind} frame near the scene end`, async (t) => {
+    const project = emptyProject({ projectId: `edge-${kind}`, now: '2026-11-05T12:00:00.000Z' });
+    project.schemaVersion = 3; project.styleId = styleId; project.scenes = [scene('first')];
+    project.scenes[0]!.visual = { kind, version: 1, background: '#FFFFFF', layers: [{
+      id: 'shape', type: 'rect', position: [540, 960], rotation: 0, scale: 1, opacity: 1,
+      startMs: 3966, endMs: 4000, fill: '#123456', width: 100, height: 200,
+      animations: [{ type: 'fade', startMs: 3998, endMs: 3999, easing: 'linear', from: 0, to: 1 }],
+    }] };
+    const env = await setup(t, { project });
+    await env.attach({ bytes: wavBytes({ durationMs: 500 }) });
+    const saved = (await env.reopen()).project;
+    assert.equal(validateProject(saved).ok, true);
+    const visual = saved.scenes[0]!.visual;
+    assert.ok(visual && 'kind' in visual && (visual.kind === 'vector' || visual.kind === 'motion'));
+    const layer = visual.layers[0]!;
+    assert.ok(Math.ceil(layer.startMs * 30 / 1000) * 1000 < layer.endMs * 30);
+    assert.ok(layer.animations[0]!.startMs < layer.animations[0]!.endMs);
+  });
+}
+
 test('switching voice mode preserves valid other-scene bindings but never recertifies stale bindings', async (t) => {
   const env = await setup(t);
   await env.attach({ sceneId: 'second' });

@@ -3,6 +3,8 @@ import { LIMITS } from '../../shared/schema/limits.ts';
 import type { VoiceCatalog } from '../../shared/voice/selection.ts';
 import { publicPreviewUrl, voiceDetails } from './voice-catalog.ts';
 import { safePreviewMime, type PreviewDiagnostic } from '../../shared/voice/preview-diagnostic.ts';
+import { speechInput } from '../../shared/voice/speech-input.ts';
+import { speechPayload } from './speech-payload.ts';
 
 export interface VibiOptions {
   apiKey?: string;
@@ -19,7 +21,7 @@ export interface VibiOptions {
 export function voiceConfiguration(options: VibiOptions = {}) {
   const voiceId = options.voiceId ?? process.env.VIBI_VOICE_ID ?? '';
   const provider = options.provider ?? process.env.VIBI_PROVIDER ?? 'elevenlabs';
-  const modelId = options.modelId ?? process.env.VIBI_MODEL_ID ?? (provider === 'elevenlabs' ? 'eleven_multilingual_v2' : provider === 'capcut' ? 'capcut' : '');
+  const modelId = options.modelId ?? process.env.VIBI_MODEL_ID ?? (provider === 'elevenlabs' ? 'eleven_v4' : provider === 'capcut' ? 'capcut' : '');
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(voiceId) || !['elevenlabs', 'minimax', 'capcut'].includes(provider)
     || !/^[a-zA-Z0-9_.-]{1,128}$/.test(modelId)) {
     throw new VibiError('vibi-config', 'Configure VIBI_VOICE_ID y un proveedor/modelo compatible. MiniMax requiere VIBI_MODEL_ID explícito.');
@@ -122,6 +124,7 @@ interface PreparedSpeech { text: string; voiceId: string; provider: string; mode
 export async function prepareSpeech(text: string, options: VibiOptions = {}, signal?: AbortSignal): Promise<PreparedSpeech> {
   const config = voiceConfiguration(options);
   if (!text.trim() || [...text].length > LIMITS.maxSceneText) throw new VibiError('vibi-input', 'La narración está vacía o supera el límite.');
+  if (config.provider === 'elevenlabs' && config.modelId === 'eleven_v4' && [...speechInput(text, config.provider, config.modelId, 'es')].length > 10_000) throw new VibiError('vibi-input', 'El texto enviado a Vibi supera el límite del modelo.');
   const interval = options.pollIntervalMs ?? 2000;
   if (!Number.isSafeInteger(interval) || interval < 1) throw new VibiError('vibi-config', 'El intervalo debe ser positivo.');
   let language = 'es';
@@ -151,10 +154,11 @@ export async function synthesizeSpeech(text: string, options: VibiOptions = {}, 
   const config = voiceConfiguration(options);
   if (ready.text !== text || ready.provider !== config.provider || ready.voiceId !== config.voiceId || ready.modelId !== config.modelId) throw new VibiError('vibi-config', 'La configuración de voz cambió antes de generar.');
   const { language, interval } = ready;
+  const payload = speechPayload({ ...config, text });
+  if (payload.language_code !== language) throw new VibiError('vibi-config', 'El idioma de voz cambió antes de generar.');
   return withVibi(options, signal, async (request, base, combined) => {
     const response = await request(`/v1/text-to-speech/${config.voiceId}`, { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text, language_code: language, provider: config.provider, model_id: config.modelId,
-        voice_settings: config.provider === 'elevenlabs' ? { stability: 0.5, similarity_boost: 0.75, speed: 1 } : { speed: 1, pitch: 0 } }) });
+      body: JSON.stringify(payload) });
     if (response.status !== 202) { await response.body?.cancel(); throw new VibiError('vibi-http', 'Vibi no aceptó TTS. No se reintentó automáticamente.'); }
     const accepted = await boundedJson(response);
     if (typeof accepted.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(accepted.id)) throw new VibiError('vibi-response', 'Vibi no devolvió un ID TTS válido.');

@@ -253,7 +253,7 @@ test('generation routes retain token/Origin/Host/method boundary, reject invalid
       assert.equal((await fetch(handle.origin + path, { headers })).status, 405);
     }
     assert.equal((await fetch(handle.origin + '/api/capabilities')).status, 401);
-    assert.deepEqual(await (await fetch(handle.origin + '/api/capabilities', { headers })).json(), { codex: true, vibi: Boolean(fake.env.VIBI_API_KEY), vibiVoiceConfigured: false });
+    assert.deepEqual(await (await fetch(handle.origin + '/api/capabilities', { headers })).json(), { codex: true, vibi: Boolean(fake.env.VIBI_API_KEY), vibiVoiceConfigured: false, vibiAccentDirective: true });
     const badHost = await new Promise<number>(resolve => {
       const req = request(handle.origin + '/api/capabilities', { headers: { ...headers, host: 'evil.example' } }, res => { res.resume(); resolve(res.statusCode!); }); req.end();
     });

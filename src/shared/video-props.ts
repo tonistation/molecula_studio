@@ -1,5 +1,9 @@
 import type { CaptionStyle, Entity, Output, Project, Word } from './schema/types.ts';
 import type { KitScene } from './kit/types.ts';
+import type { VectorVisual } from './vector/types.ts';
+import type { MotionVisual } from './motion/types.ts';
+import { validateVectorVisual } from './vector/validate.ts';
+import { validateMotionVisual } from './motion/validate.ts';
 import type { ModelSnapshot } from './models/model.ts';
 import { totalFrames } from './timeline.ts';
 import { estimateWords } from './voice/estimate.ts';
@@ -12,7 +16,7 @@ export interface VideoSceneProps {
   durationInFrames: number;
   text: string;
   visualIntent: string;
-  visual: KitScene | null;
+  visual: KitScene | VectorVisual | MotionVisual | null;
   words: Word[];
   audioUrl: string | null;
   gainDb: number;
@@ -36,13 +40,21 @@ export type VideoProps = {
 export function projectToVideoProps(project: Project, assetUrls: Record<string, string>): VideoProps {
   const models = project.models === undefined ? undefined : verifyModelSnapshotsSync(project.models);
   if (models === null) throw new Error('La integridad de los modelos no coincide con su identificador.');
-  if (project.styleId !== 'stylized-3d' || project.styleVersion !== 1) {
+  if (project.styleVersion !== 1 || !(project.styleId === 'stylized-3d' ||
+    project.schemaVersion === 3 && (project.styleId === 'vector-2d' || project.styleId === 'motion-graphics'))) {
     throw new Error(`Unsupported style: ${project.styleId} version ${project.styleVersion}`);
   }
   const fps = project.output.fps;
   const scenes = project.scenes.map(scene => {
     if (scene.visual !== null && 'inert' in scene.visual) {
       throw new Error(`Unsupported inert visual in scene ${scene.sceneId}`);
+    }
+    if (scene.visual !== null && project.styleId !== 'stylized-3d') {
+      const valid = project.styleId === 'vector-2d' ? validateVectorVisual(scene.visual, scene.durationMs) : validateMotionVisual(scene.visual, scene.durationMs);
+      if (!valid.ok) throw new Error(`Unsupported visual in scene ${scene.sceneId}`);
+    }
+    if (scene.visual !== null && project.styleId === 'stylized-3d' && scene.visual.kind !== 'kit') {
+      throw new Error(`Unsupported visual in scene ${scene.sceneId}`);
     }
     const fromFrame = totalFrames(scene.startMs, fps);
     const endFrame = totalFrames(scene.startMs + scene.durationMs, fps);

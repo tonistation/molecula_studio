@@ -18,17 +18,19 @@ Base: commit `ad26d62`. Uso local, una persona. Servidor: [más adelante](#camin
 
 | Pieza | Estado | En esta ruta |
 |---|---|---|
-| Schema `project.json` v2, migración desde v1, validación, digests | ✅ | Se extiende la base existente sin cambiar los vínculos de medios |
+| Schema `project.json` v3 para estilos 2D/Motion, compatibilidad v1/v2, validación, digests | Implementado | Estilos históricos desconocidos permanecen opacos y de solo lectura |
 | Companion local: HTTP loopback, token, `ProjectStore` atómico | ✅ | Se extiende con rutas nuevas |
 | Estudio React: proyectos, escenas (texto/duración), guardar/reabrir, importar, relink | ✅ | Se extiende |
 | Reloj por frame (`src/shared/timeline.ts`) | ✅ | Se reutiliza para calcular frames |
-| Composición visual 3D + subtítulos | ✅ | Fase 1 |
+| Composición visual 3D, 2D vectorial y Motion + subtítulos | Implementada; aceptación 2D/Motion en curso | Fase 1 y ampliación posterior |
 | Exportar MP4 | ✅ CLI y UI, silencioso o con voz guardada | Fases 1, 2 y 4.5 |
 | Vista previa en el estudio | ✅ Borrador con audio manual por escena | Fases 2 y 4.2 |
 | Guion automático / manual | ✅ · schemas de guion/dibujo aceptados por Codex real por separado | Fase 3 |
 | Voz automática / manual | ✅ · TTS/STT reales con alineación completa en aceptación acotada | Fase 4 |
 
 La ruta está implementada hasta 5.4. La [aceptación real acotada](#aceptación-real-acotada--9-de-noviembre-de-2026) verificó inicialmente componentes y un recorrido con guion manual. Después se completó una misma propuesta con guion y tres dibujos Codex automáticos, tres TTS y tres STT reales con alineación completa y MP4 H.264/AAC de 15,4 s. El original automático se conserva; una copia usa los mismos audios y recibió ajustes visuales manuales. La escucha, precisión fonética y aprobación estética humanas siguen pendientes.
+
+El usuario informó que el MP3 externo se escucha normal, pero el corte de audio en la vista previa del navegador sigue sin causa confirmada. Se conserva la tolerancia de sincronización de 100 ms; las pruebas de carga sintéticas no demuestran que el corte esté resuelto.
 
 En una aceptación automática posterior se guardó un guion de tres escenas. El primer dibujo devolvió HTTP 504 al agotarse el límite local de 180 s; la causa de la espera es desconocida. Los diagnósticos efímeros de proceso no incluyen salida del CLI y no identifican su actividad interna. No se realizó un reintento en esta corrección.
 
@@ -41,6 +43,14 @@ La copia visual cambió el ancla de «Representación ampliada» al océano en l
 El companion admite un único dibujo automático por proceso, incluso entre proyectos, hasta que termina el proceso y la limpieza temporal. Un intento concurrente recibe HTTP 409 y requiere un nuevo clic; el guion se admite independientemente. Esta exclusión conservadora evita solapar un reintento con una cancelación todavía en curso.
 
 La biblioteca procedural local permite crear modelos declarativos y reutilizarlos entre proyectos, con un máximo de 1024 entradas en el catálogo del workspace. Cada proyecto conserva snapshots verificados por hash para previsualización y render independientes del catálogo. Las formas son composiciones acotadas de primitivas, sin código generado ni recursos remotos; no garantizan geometría arbitraria ni fotorrealismo. La integración automática usa Codex CLI; la aceptación inicial de esta función utilizó un ejecutable falso, no una llamada real al proveedor.
+
+### Ampliación autorizada — 2D vectorial y Motion
+
+Implementados en schema 3, con **aceptación del recorrido completo en curso**, sin marcar este hito como terminado. En «Idea y estilo» → «Estilo» el editor ofrece «2D vectorial» y «Motion» junto al 3D existente. Al cambiar de estilo, si hay visuales, solicita confirmación: aceptarla los elimina para redibujar, pero conserva guion, audio, palabras y snapshots de modelos. Los proyectos v1/v2 con estilo desconocido siguen opacos y de solo lectura; no se actualizan mediante el selector.
+
+En cada escena se puede copiar el prompt y pegar/revisar/aplicar el resultado manual, o generar y revisar con Codex en automático; «Dibujar todas» funciona secuencialmente. Aplicar modifica el borrador y exportar requiere guardarlo. Ambos modos usan el mismo contrato validado específico del estilo. La integración se probó con Codex falso; la salida schema 3 de Codex real aún no se verificó.
+
+2D admite capas de rectángulo, elipse, polígono y texto; Motion añade contador. Ambas admiten animaciones acotadas de movimiento, fundido y escala. Son datos declarativos, sin SVG arbitrario, código ni URLs. La vista previa y el MP4 comparten composición, renderer, subtítulos y audio; el MP4 usa la revisión guardada. El renderer y el flujo de modelos 3D existentes se mantienen. La revisión audiovisual humana permanece pendiente.
 
 ## Decisiones
 
@@ -101,7 +111,7 @@ Todas bajo la frontera actual (token + Origin/Host), salvo `render-assets`.
 | `POST /api/script/generate` | `{ idea, styleId, locale, targetSeconds }` → `ScriptProposal` (no guarda) | 3.5 |
 | `POST /api/drawing/generate` | `{ project, sceneId }` → una `KitScene` del borrador validado, con continuidad (no guarda) | 3.5 |
 | `PUT /api/projects/:id/scenes/:sceneId/audio` | Modo manual: bytes de audio (+ `?align=vibi` opcional) → ingesta y guarda | 4.2 |
-| `POST /api/projects/:id/scenes/:sceneId/voice` | Modo auto: `{ expectedRevision, expectedDigest, consent: true, provider?, voiceId? }`; elección opcional del catálogo validado del proveedor configurado; sin elección usa entorno. Modelo solo del entorno → TTS + STT → ingesta y guarda | 4.4 + selector posterior |
+| `POST /api/projects/:id/scenes/:sceneId/voice` | Modo auto: `{ expectedRevision, expectedDigest, consent: true, quote, provider?, voiceId? }`; `quote` es la huella obtenida previamente de `POST .../voice/quote`. Elección opcional del catálogo validado del proveedor configurado; sin elección usa entorno. Modelo solo del entorno → TTS + STT → ingesta y guarda | 4.4 + selector posterior |
 | `GET /api/vibi/credits` | Consulta explícita del usuario → solo `{ credits }` desde `credit_balance`, sin perfil ni clave | 4.4 |
 | `GET /api/vibi/voices` | Consulta explícita → `{ provider, voices: [{ voiceId, name, language?, accent?, gender?, style?, description?, previewAvailable? }], hasMore }`; primeros 30 del proveedor configurado, sin URLs de muestras ni claves | Selector posterior |
 | `GET /api/vibi/voices/:provider/:voiceId/preview` | Muestra existente del último catálogo válido; bytes de audio autenticados, nunca una URL elegida por el navegador ni una tarea TTS/STT | Detalles y muestras |
@@ -422,7 +432,10 @@ Referencia: <https://vibi.pro/docs> (página con JavaScript; abrir en navegador)
   - `POST /v1/text-to-speech/{voice_id}` con `{ text, language_code: 'es', provider, model_id, voice_settings }` → `{ id }`.
   - Polling de `GET /v1/history/{id}` hasta `completed`. Descargar `result.audio_url` (MP3) con la misma clave.
   - Pasar ese MP3 por el STT de 4.3 → `words`. Guardar vía `attachSceneAudio` con `source: { origin: 'provider', license: 'Vibi – según plan', attribution: '<provider>/<voice_id>' }`.
-  - Configuración por env: `VIBI_API_KEY`, `VIBI_VOICE_ID`, `VIBI_PROVIDER` (por defecto `elevenlabs`), `VIBI_MODEL_ID` (por defecto `eleven_multilingual_v2`).
+  - Configuración por env: `VIBI_API_KEY`, `VIBI_VOICE_ID`, `VIBI_PROVIDER` (por defecto `elevenlabs`), `VIBI_MODEL_ID` (por defecto `eleven_v4` para ElevenLabs; un valor explícito se respeta).
+  - Para ElevenLabs `eleven_v4`, el texto enviado a TTS en español incluye `[neutral Latin American Spanish accent] ` por escena o muestra: 40 caracteres adicionales, incluido el espacio. La directiva por sí sola no modifica la narración, los subtítulos ni sus vínculos. Un modelo explícito distinto de `eleven_v4` no recibe la directiva; tampoco se fuerza para otros proveedores. Una muestra real aislada con el modelo y la directiva se generó correctamente mediante Vibi. ElevenLabs describe las etiquetas de acento como experimentales: la frase exacta no garantiza el acento y podría leerse en voz alta; la escucha y evaluación humanas siguen pendientes.
+  - Antes del consentimiento, el servidor calcula una cotización de texto y configuración efectivos para cada escena o muestra. La solicitud de pago incluye su huella y el servidor la vuelve a comprobar antes de enviar o reservar; si cambió, rechaza y exige revisar y confirmar de nuevo. La cotización cuenta caracteres, no determina el precio. Las pestañas antiguas deben recargarse: su formato de consentimiento sin huella ya no sirve. No hay reintentos automáticos.
+  - La caché de muestras distingue el texto efectivo y su configuración; conserva el bloqueo de una solicitud incierta de la versión anterior incluso tras reiniciar, sin reconciliación automática.
   - **Excepción de idioma aprobada:** usar el formato documentado por proveedor: `es` en ElevenLabs/CapCut y nombre de idioma en MiniMax. Para MiniMax se confirma `Spanish` contra `GET /v1/languages?provider=minimax` antes del envío de pago; si no está disponible, se rechaza sin adivinar. MiniMax requiere modelo explícito; el modelo predeterminado anterior corresponde a ElevenLabs, y CapCut usa `capcut` según su documentación. No cambia el schema. El panel oficial «Languages» aclara además que el backend normaliza códigos y nombres; el bloqueo inicial por incompatibilidad absoluta fue demasiado estricto.
   - UI: confirmación con caracteres a enviar antes de gastar (TTS cobra por carácter y STT por duración; `GET` de la cuenta en «Auth» devuelve créditos disponibles); «Generar todas» secuencial con progreso; un fallo no deshace las escenas ya generadas.
 - **Aceptación:** [x] con el servidor falso: audio, palabras y bindings guardados; clave ausente en logs y en `project.json`.

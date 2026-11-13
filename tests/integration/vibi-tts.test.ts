@@ -2,6 +2,27 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { synthesizeSpeech, vibiCredits, voiceConfiguration, VibiError } from '../../src/companion/providers/vibi.ts';
+import { SPANISH_ACCENT_PREFIX } from '../../src/shared/voice/speech-input.ts';
+
+test('v4 sends the Spanish accent directive without changing the source narration', async t => {
+  let submitted: Record<string, unknown> | undefined;
+  const server = createServer(async (req, res) => {
+    if (req.method === 'POST') {
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      submitted = JSON.parse(Buffer.concat(chunks).toString());
+      res.writeHead(202).end(JSON.stringify({ id: 'job' }));
+    } else if (req.url === '/audio/job.mp3') res.end('audio');
+    else res.end(JSON.stringify({ status: 'completed', result: { audio_url: `${base}/audio/job.mp3` } }));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const text = 'Hola mundo';
+  await synthesizeSpeech(text, { apiKey: 'fake', voiceId: 'voice', provider: 'elevenlabs', modelId: 'eleven_v4', baseUrl: base, pollIntervalMs: 1 });
+  assert.equal(submitted?.text, `${SPANISH_ACCENT_PREFIX}${text}`);
+  assert.equal(submitted?.language_code, 'es');
+  assert.equal(text, 'Hola mundo');
+});
 
 test('Vibi TTS submits once with safe defaults, sequential polls and same-key same-origin download; credits sanitize profile', async t => {
   let polls = 0; let posts = 0;
@@ -38,6 +59,7 @@ test('MiniMax verifies Spanish against languages before spending; missing model/
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
       const body = JSON.parse(Buffer.concat(chunks).toString()); posts++;
       assert.equal(body.language_code, provider === 'minimax' ? 'Spanish' : 'es');
+      assert.equal(body.text, 'Hola');
       assert.deepEqual(body.voice_settings, { speed: 1, pitch: 0 });
       res.writeHead(202).end(JSON.stringify({ id: 'job' }));
     } else if (req.url === '/audio/job.mp3') res.end('audio');

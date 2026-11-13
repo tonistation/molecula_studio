@@ -123,8 +123,11 @@ export const COMPACT_KIT_SCENE_SCHEMA = {
 };
 
 export function selectKitOutputSchema(scenes: readonly Pick<Scene, 'visual'>[]) {
-  return scenes.some(({ visual }) => visual && 'kind' in visual
-    && (visual.camera.keyframes !== undefined || visual.objects.some(item => item.legacy !== undefined)))
+  return scenes.map(({ visual }) => {
+    if (!visual || !('kind' in visual)) return false;
+    if (visual.kind !== 'kit') throw new Error('El generador 3D requiere escenas visuales 3D.');
+    return visual.camera.keyframes !== undefined || visual.objects.some(item => item.legacy !== undefined);
+  }).some(Boolean)
     ? KIT_SCENE_SCHEMA : COMPACT_KIT_SCENE_SCHEMA;
 }
 

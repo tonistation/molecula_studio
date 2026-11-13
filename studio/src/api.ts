@@ -190,12 +190,14 @@ export async function fetchVoiceSample(provider: string, voiceId: string, signal
 }
 
 /** Only an explicit confirmation may call POST; GET reads the workspace cache only. */
-export async function fetchGeneratedVoiceSample(provider: string, voiceId: string, signal: AbortSignal, generate: boolean): Promise<AssetBlobUrl> {
+export interface VoiceQuote { provider: string; modelId: string; voiceId: string; characters: number; directive: string; fingerprint: string; sampleText?: string }
+
+export async function fetchGeneratedVoiceSample(provider: string, voiceId: string, signal: AbortSignal, generate: boolean, quote?: string): Promise<AssetBlobUrl> {
   signal.throwIfAborted();
   const response = await fetch(`/api/vibi/voices/${encodeURIComponent(provider)}/${encodeURIComponent(voiceId)}/generated-sample`, {
     method: generate ? 'POST' : 'GET',
     headers: { authorization: `Bearer ${companionToken()}`, ...(generate ? { 'content-type': 'application/json' } : {}) },
-    ...(generate ? { body: JSON.stringify({ consent: true }) } : {}), signal,
+    ...(generate ? { body: JSON.stringify({ consent: true, quote }) } : {}), signal,
   });
   if (!response.ok) await parseResponse<never>(response);
   const blob = await response.blob(); signal.throwIfAborted();
@@ -262,20 +264,25 @@ export const api = {
   publishModels: (models: import('../../src/shared/models/model.ts').ModelSnapshot[], signal?: AbortSignal) =>
     call<{ models: import('../../src/shared/models/model.ts').ModelSnapshot[] }>('POST', '/api/models/resolve', { models }, signal),
   vibiVoices: (signal?: AbortSignal) => call<VoiceCatalog>('GET', '/api/vibi/voices', undefined, signal),
-  generateVoice: (projectId: string, sceneId: string, revision: number, digest: string, signal?: AbortSignal, selection?: VoiceSelection) =>
+  voiceQuote: (projectId: string, sceneId: string, revision: number, digest: string, signal?: AbortSignal, selection?: VoiceSelection) =>
+    call<VoiceQuote>('POST', `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/voice/quote`, { expectedRevision: revision, expectedDigest: digest, ...selection }, signal),
+  sampleQuote: (provider: string, voiceId: string, signal?: AbortSignal) => call<VoiceQuote>('GET', `/api/vibi/voices/${encodeURIComponent(provider)}/${encodeURIComponent(voiceId)}/generated-sample/quote`, undefined, signal),
+  generateVoice: (projectId: string, sceneId: string, revision: number, digest: string, quote: string, signal?: AbortSignal, selection?: VoiceSelection) =>
     call<{ opened: ReadResult; receipt: SaveReceipt; alignment: 'vibi' | 'estimated'; alignmentKind: AlignmentKind; warnings: string[]; alignmentDiagnostic?: AlignmentDiagnostic }>('POST',
       `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/voice`,
-      { expectedRevision: revision, expectedDigest: digest, consent: true, ...selection }, signal),
+      { expectedRevision: revision, expectedDigest: digest, consent: true, quote, ...selection }, signal),
   vibiCredits: (signal?: AbortSignal) => call<{ credits: number }>('GET', '/api/vibi/credits', undefined, signal),
   attachAudio: (projectId: string, sceneId: string, bytes: Uint8Array, mimeType: 'audio/wav' | 'audio/mpeg', license: string, revision: number, digest: string, alignVibi = false) =>
     callBytes<{ opened: ReadResult; receipt: SaveReceipt; revision: number; digest: string; alignment: 'vibi' | 'estimated'; alignmentKind: AlignmentKind; warnings: string[]; alignmentDiagnostic?: AlignmentDiagnostic }>(
       `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/audio${alignVibi ? '?align=vibi' : ''}`, bytes, mimeType,
       { 'x-expected-revision': String(revision), 'x-expected-digest': digest, 'x-asset-license': encodeURIComponent(license), ...(alignVibi ? { 'x-vibi-consent': '1' } : {}) }),
-  capabilities: (signal?: AbortSignal) => call<{ codex: boolean; vibi: boolean; vibiVoiceConfigured: boolean }>('GET', '/api/capabilities', undefined, signal),
+  capabilities: (signal?: AbortSignal) => call<{ codex: boolean; vibi: boolean; vibiVoiceConfigured: boolean; vibiAccentDirective: boolean }>('GET', '/api/capabilities', undefined, signal),
   generateScript: (input: import('../../src/shared/script/prompt.ts').ScriptPromptInput, signal?: AbortSignal) =>
     call<import('../../src/shared/script/schema.ts').ScriptProposal>('POST', '/api/script/generate', input, signal),
   generateDrawing: (project: Project, sceneId: string, signal?: AbortSignal) =>
     call<import('../../src/shared/kit/types.ts').KitScene>('POST', '/api/drawing/generate', { project, sceneId }, signal),
+  generateFlatDrawing: (project: Project, sceneId: string, signal?: AbortSignal) =>
+    call<unknown>('POST', '/api/drawing/generate', { project, sceneId }, signal),
   generateModelDrawing: (project: Project, sceneId: string, signal?: AbortSignal) =>
     call<{ scene: import('../../src/shared/kit/types.ts').KitScene; models: import('../../src/shared/models/model.ts').ModelSnapshot[] }>(
       'POST', '/api/drawing/generate', { project, sceneId, modelMode: true }, signal),

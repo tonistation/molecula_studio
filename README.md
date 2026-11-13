@@ -1,8 +1,8 @@
 # Molecula Studio
 
-Aplicación local para crear videos animados verticales a partir de guiones, escenas, voz y subtítulos. La primera entrega utiliza un kit declarativo 3D.
+Aplicación local para crear videos animados verticales a partir de guiones, escenas, voz y subtítulos, con estilos declarativos 3D, 2D vectorial y Motion.
 
-**Estado: implementado hasta 5.4; aceptación audiovisual humana pendiente.** Schema 2, persistencia local, editor React, kit 3D, subtítulos y exportación MP4 por CLI/UI. Guion/dibujo ofrecen modos manual/automático con Codex CLI; voz permite WAV/MP3 o Vibi TTS/STT con consentimiento. Una aceptación posterior completó una misma propuesta con guion y tres dibujos automáticos, tres TTS y tres STT reales, alineación completa y MP4 de 15,4 s. El proyecto automático original y su MP4 se conservaron; una copia recibió ajustes visuales manuales sin regenerar audio. El [ROADMAP](ROADMAP.md) detalla resultados y límites; el [backlog anterior](docs/plan/implementation-tasks.md) sigue congelado.
+**Estado: implementado hasta 5.4; estilos 2D y Motion implementados, aceptación de su recorrido completo en curso.** Schema 3, persistencia local, editor React, subtítulos y exportación MP4 por CLI/UI. Guion/dibujo ofrecen modos manual/automático con Codex CLI; voz permite WAV/MP3 o Vibi TTS/STT con consentimiento. Una aceptación anterior del 3D completó una misma propuesta con guion y tres dibujos automáticos, tres TTS y tres STT reales, alineación completa y MP4 de 15,4 s. El proyecto automático original y su MP4 se conservaron; una copia recibió ajustes visuales manuales sin regenerar audio. El [ROADMAP](ROADMAP.md) detalla resultados y límites; el [backlog anterior](docs/plan/implementation-tasks.md) sigue congelado.
 
 En la aceptación automática posterior se guardó un guion de tres escenas; el primer dibujo devolvió HTTP 504 tras el límite local de 180 s. La causa de la espera es desconocida. Los errores de proceso incluyen metadatos efímeros acotados, sin salida del CLI; no demuestran qué ocurrió dentro de Codex.
 
@@ -34,6 +34,18 @@ npm run render -- workspace/<projectId>/project.json [salida.mp4]
 
 El render lee la revisión guardada, no modifica el JSON y no exige aprobación editorial. Por defecto publica en `<workspace>/.renders/<projectId>/<revision>-<fecha-UTC>.mp4`; el workspace es el padre de la carpeta del documento. Una salida explícita es relativa al directorio actual; debe ser `.mp4` y no existir. Admite modo silencioso o voz desde los activos guardados. Ejemplo externo: `npm run render -- docs/plan/examples/storyboard-project.json workspace/storyboard.mp4`.
 
+### Elegir y dibujar un estilo
+
+1. Abre un proyecto y, en «Idea y estilo» → «Estilo», elige «3D estilizado», «2D vectorial» o «Motion».
+2. Si ya hay dibujos, cambiar de estilo pide confirmación y, al aceptar, elimina los visuales de las escenas para volver a dibujarlos. Se conservan guion, audio, palabras y snapshots de modelos 3D. Cancela para mantener el estilo y los dibujos actuales.
+3. En cada escena, abre «Dibujar esta escena»: en manual copia el prompt, pega la respuesta, revisa y aplica; en auto genera con Codex, revisa y aplica. «Dibujar todas» genera secuencialmente. Aplicar cambia el borrador; guarda antes de exportar.
+
+Los estilos nuevos usan proyectos schema 3, también al cambiar de estilo desde un proyecto editable anterior. Los proyectos v1/v2 con estilos desconocidos permanecen opacos y de solo lectura; no se convierten al elegir un estilo. El 3D existente conserva su renderer y flujo de modelos.
+
+2D admite rectángulos, elipses, polígonos y texto; Motion añade contadores. Las capas admiten movimiento, fundido y escala con tiempos acotados. Son datos declarativos validados, no SVG arbitrario, código ni URLs. Manual y automático usan el mismo contrato validado específico del estilo. La integración se ha probado con Codex falso; la salida de Codex real para estos estilos schema 3 aún no se ha verificado.
+
+Vista previa y MP4 comparten composición y renderer, subtítulos y audio; la vista previa muestra el borrador y el MP4 usa la revisión guardada. El recorrido completo de los estilos nuevos y la aprobación audiovisual humana siguen pendientes de aceptación.
+
 ### Demo con planos distintos
 
 El [storyboard de la sal del mar](docs/plan/examples/kit/sal-del-mar-storyboard.json) es un proyecto portátil de 36 s, sin archivos externos: montaña con lluvia → detalle de disolución → seguimiento del río → mar con evaporación. Se puede importar en el estudio o renderizar en silencio:
@@ -60,7 +72,11 @@ En un proyecto abierto: «Voz automática» → «Cargar voces Vibi» → elegir
 
 «Escuchar muestra» solicita audio existente, sin crear tareas TTS/STT ni enviar narración. Solo se habilita con una URL compatible y validada; «Detener», cambiar de voz o salir cancela la descarga y detiene el audio. Puede estar en otro idioma. El catálogo real funcionó, pero la única muestra solicitada devolvió 502: **su causa y disponibilidad upstream siguen desconocidas**, no se afirma reproducción real ni gratuidad universal. Ahora el error distingue HTTP, formato, firma, tamaño, red y plazo mediante datos seguros efímeros; la voz sigue utilizable y generar requiere su consentimiento separado. [Soporte y límites](ROADMAP.md#ampliación-autorizada--detalles-y-muestras-de-voces).
 
-También puedes generar una muestra con una frase fija en español y consentimiento explícito: se envía a Vibi TTS, no a STT; puede consumir créditos y su costo exacto es desconocido. La muestra se reutiliza desde `.voice-samples` dentro del workspace, sin guardar secretos en la caché ni en el proyecto. Si una solicitud queda en estado incierto, nuevas generaciones para esa misma muestra permanecen bloqueadas incluso al reiniciar; no hay un mecanismo de reconciliación disponible. Cancelar no garantiza que el proveedor detenga el trabajo. Una prueba real aislada generó una muestra con una voz; el audio se decodificó, pero no se escuchó ni se confirmó independientemente la facturación.
+También puedes generar una muestra con una frase fija en español y consentimiento explícito: se envía a Vibi TTS, no a STT; puede consumir créditos y su costo exacto es desconocido. La muestra se reutiliza desde `.voice-samples` dentro del workspace cuando coincide el texto efectivo y la configuración, sin guardar secretos en la caché ni en el proyecto. Si una solicitud queda en estado incierto, nuevas generaciones para esa misma muestra permanecen bloqueadas incluso al reiniciar; también se conserva el bloqueo de una solicitud incierta anterior al cambio de texto. No hay un mecanismo de reconciliación ni reintentos automáticos. Cancelar no garantiza que el proveedor detenga el trabajo. Una prueba real aislada anterior generó una muestra con una voz; el audio se decodificó, pero no se escuchó ni se confirmó independientemente la facturación.
+
+Para ElevenLabs, el modelo predeterminado es `eleven_v4` si no se define `VIBI_MODEL_ID`. En español se antepone `[neutral Latin American Spanish accent] ` solo al texto enviado a TTS: suma 40 caracteres por escena o muestra, incluido el espacio. La indicación no cambia por sí misma la narración, los subtítulos ni sus vínculos. Un modelo explícito distinto de `eleven_v4` no recibe la indicación; tampoco se fuerza para otros proveedores. Una muestra real aislada con `eleven_v4` y la indicación se generó correctamente a través de Vibi. ElevenLabs describe las etiquetas de acento como experimentales: esta frase no garantiza el acento y podría leerse en voz alta. La escucha y evaluación humana de esa muestra siguen pendientes.
+
+Antes de confirmar escenas o una muestra, el servidor calcula la configuración y los caracteres efectivos. Al generar, vuelve a comprobar la huella de esa cotización y rechaza una confirmación desactualizada; no es una tarifa ni garantiza el costo final. Las pestañas antiguas usan un formato de consentimiento incompatible y deben recargarse antes de solicitar una cotización y confirmar de nuevo.
 
 ## Alineación parcial y diagnóstico de subtítulos
 
@@ -110,6 +126,6 @@ El HTML es una propuesta visual estática, no la aplicación ni una prueba de pe
 
 Guardar solo confirma tras verificar los bytes en disco; fallo precommit conserva anterior y fallo postcommit puede ser incierto. Hay exportación H.264/AAC 1080×1920 a 30 fps, voz manual/automática y flujo guiado. Siguen pendientes la disponibilidad general de muestras y la revisión audiovisual/fonética humana. Los rótulos anclados evitan dividir palabras cortas; los objetos de texto conservan tamaño proyectado y rotación y se desplazan al área visible cuando es necesario. No existe detección general de colisiones entre subtítulos y rótulos. No se afirma rendimiento garantizado ni aprobación estética humana. Riesgos históricos de save/retención: [API](docs/plan/api-contracts.md).
 
-La vista previa espera la carga de los recursos de audio declarados antes de mostrar el reproductor; cada solicitud tiene un plazo de 15 s y los fallos se informan. Se corrigió una carrera local de recursos, pero la causa del corte de audio reportado sigue sin confirmarse.
+La vista previa espera la carga de los recursos de audio declarados antes de mostrar el reproductor; cada solicitud tiene un plazo de 15 s y los fallos se informan. Se corrigió una carrera local de recursos, pero la causa del corte de audio reportado en el navegador sigue sin confirmarse; el usuario indicó que el MP3 externo se escucha normal. Se conserva la tolerancia de sincronización de 100 ms; la prueba de carga es sintética y no demuestra que el corte esté resuelto.
 
 Repositorio de referencia: [tonistation/molecula_studio](https://github.com/tonistation/molecula_studio).

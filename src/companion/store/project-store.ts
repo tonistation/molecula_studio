@@ -998,7 +998,9 @@ export class ProjectStore {
       const scene = project.scenes.find((item) => item.sceneId === args.sceneId)!;
       const oldAsset = project.assets.find((item) => item.assetId === scene.audio?.assetId);
       if (scene.visual !== null && 'kind' in scene.visual && scene.durationMs !== durationMs) {
-        scene.visual = rescaleKitTiming(scene.visual, scene.durationMs, durationMs);
+        scene.visual = scene.visual.kind === 'kit'
+          ? rescaleKitTiming(scene.visual, scene.durationMs, durationMs)
+          : rescaleFlatTiming(scene.visual, scene.durationMs, durationMs);
       }
       scene.durationMs = durationMs;
       scene.audio = { assetId, offsetMs: 0, gainDb: 0 };
@@ -1592,5 +1594,41 @@ function rescaleKitTiming(visual: KitScene, oldDuration: number, duration: numbe
   }
   for (const frame of copy.camera.keyframes ?? []) frame.atMs = scaled.get(frame.atMs)!;
   // Particles have speed/seed, not explicit timestamp fields in kitVersion 1.
+  return copy;
+}
+
+function rescaleFlatTiming<T extends import('../../shared/vector/types.ts').VectorVisual | import('../../shared/motion/types.ts').MotionVisual>(visual: T, oldDuration: number, duration: number): T {
+  const copy = structuredClone(visual);
+  for (const layer of copy.layers) {
+    const times = new Set([layer.startMs, layer.endMs]);
+    for (const animation of layer.animations) { times.add(animation.startMs); times.add(animation.endMs); }
+    const ordered = [...times].sort((a, b) => a - b);
+    if (ordered.length > duration + 1) throw new InvalidArgumentError('Cannot preserve visual timing at the new duration');
+    const scaled = new Map<number, number>();
+    let previous = -1;
+    ordered.forEach((time, index) => {
+      const value = Math.min(duration - (ordered.length - index - 1), Math.max(previous + 1, Math.round(time * duration / oldDuration)));
+      scaled.set(time, value);
+      previous = value;
+    });
+    const scale = (time: number) => scaled.get(time)!;
+    layer.startMs = scale(layer.startMs);
+    layer.endMs = scale(layer.endMs);
+    for (const animation of layer.animations) {
+      animation.startMs = scale(animation.startMs);
+      animation.endMs = scale(animation.endMs);
+    }
+    // Expand around the closest render frame without dropping or clipping animation intervals.
+    const frame = Math.ceil(layer.startMs * 30 / 1000);
+    const frameMs = frame * 1000 / 30;
+    if (frameMs >= layer.endMs) {
+      if (frameMs < duration) layer.endMs = Math.floor(frameMs) + 1;
+      else {
+        const previousFrameMs = (frame - 1) * 1000 / 30;
+        if (previousFrameMs < 0) throw new InvalidArgumentError('Cannot preserve a visible visual layer at the new duration');
+        layer.startMs = Math.floor(previousFrameMs);
+      }
+    }
+  }
   return copy;
 }

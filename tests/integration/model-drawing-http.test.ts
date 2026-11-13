@@ -58,8 +58,8 @@ test('model drawing reuses a portable project snapshot with an empty workspace c
     const project = valid.project;
     const model = { version: 1, name: 'Farol', semanticId: 'farol', parts: [{ shape: 'sphere', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], color: '#ffffff' }] };
     const snapshot = { id: sha256Sync(canonicalize(model)), model };
-    const scene = structuredClone(project.scenes[0]!.visual!);
-    assert.ok('kind' in scene);
+    const scene = structuredClone(project.scenes[0]!.visual);
+    assert.ok(scene && 'kind' in scene && scene.kind === 'kit');
     scene.objects.push({ id: 'farol', type: 'model', params: { modelId: snapshot.id }, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, color: '#ffffff', animations: [] });
     const imported = applyKitSceneWithModels(project, project.scenes[0]!.sceneId, scene, [snapshot]);
     const before = JSON.stringify(imported);
@@ -101,8 +101,8 @@ test('authenticated model drawing publishes validated catalog and reuses it acro
     const validated = validateProject(fixtureJson('storyboard'));
     assert.ok(validated.ok);
     const project = validated.project;
-    const scene = structuredClone(project.scenes[0]!.visual!);
-    assert.ok('kind' in scene);
+    const scene = structuredClone(project.scenes[0]!.visual);
+    assert.ok(scene && 'kind' in scene && scene.kind === 'kit');
     scene.objects.push({ id: 'farol', type: 'model', params: { modelId: 'new-farol' }, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, color: '#ffffff', animations: [] });
     const model = { version: 1, name: 'Farol', semanticId: 'farol', parts: [{ shape: 'sphere', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], color: '#ffffff' }] };
     await writeFile(fake.env.FAKE_CODEX_FIXTURE, JSON.stringify({ scene, models: [{ alias: 'new-farol', model }] }));
@@ -156,8 +156,8 @@ test('cancelled generation and failed catalog publication do not publish a batch
     const validated = validateProject(fixtureJson('storyboard'));
     assert.ok(validated.ok);
     const project = validated.project;
-    const scene = structuredClone(project.scenes[0]!.visual!);
-    assert.ok('kind' in scene);
+    const scene = structuredClone(project.scenes[0]!.visual);
+    assert.ok(scene && 'kind' in scene && scene.kind === 'kit');
     scene.objects.push({ id: 'farol', type: 'model', params: { modelId: 'new-farol' }, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, color: '#ffffff', animations: [] });
     const model = { version: 1, name: 'Farol', semanticId: 'farol', parts: [{ shape: 'sphere', position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], color: '#ffffff' }] };
     await writeFile(fake.env.FAKE_CODEX_FIXTURE, JSON.stringify({ scene, models: [{ alias: 'new-farol', model }] }));

@@ -3,6 +3,8 @@ import { hasForbiddenControl } from './text.ts';
 import { issue } from './errors.ts';
 import type { IssueCode } from './errors.ts';
 import { validateKitScene } from '../kit/validate.ts';
+import { validateVectorVisual } from '../vector/validate.ts';
+import { validateMotionVisual } from '../motion/validate.ts';
 import { migrateV1Project } from './migrate.ts';
 import { MAX_PROJECT_MODELS, MODEL_ID_PATTERN, validateProceduralModel, type ModelSnapshot } from '../models/model.ts';
 import type {
@@ -147,7 +149,7 @@ const ORIGINS = ['user', 'fixture', 'provider'] as const;
 
 type Ctx = { issues: Issue[] };
 type InputScene = Omit<Scene, 'visual'> & { visual: SceneVisual | StylizedVisual | null };
-type InputProject = Omit<Project, 'schemaVersion' | 'scenes'> & { schemaVersion: 1 | 2; scenes: InputScene[] };
+type InputProject = Omit<Project, 'schemaVersion' | 'scenes'> & { schemaVersion: 1 | 2 | 3; scenes: InputScene[] };
 
 /**
  * Validates current data or validates and purely migrates schema 1 to schema 2.
@@ -162,8 +164,8 @@ export function validateProject(value: unknown): ValidateOutcome {
 
   const ctx: Ctx = { issues: [] };
   const version = isPlainObject(value) ? value.schemaVersion : undefined;
-  if (version !== 1 && version !== 2) {
-    return { ok: false, issues: [issue('$.schemaVersion', 'const', 'must be 1 or 2')] };
+  if (version !== 1 && version !== 2 && version !== 3) {
+    return { ok: false, issues: [issue('$.schemaVersion', 'const', 'must be 1, 2 or 3')] };
   }
   const result = readProject(ctx, value, version);
   if (ctx.issues.length > 0) return { ok: false, issues: ctx.issues };
@@ -186,7 +188,7 @@ export function validateProject(value: unknown): ValidateOutcome {
 // Structure pre-checks (depth, dangerous keys, cycles, non-plain values)
 // ---------------------------------------------------------------------------
 
-function inspectStructure(root: unknown): Issue[] {
+export function inspectStructure(root: unknown): Issue[] {
   const issues: Issue[] = [];
   const seen = new Set<object>();
 
@@ -211,7 +213,7 @@ function inspectStructure(root: unknown): Issue[] {
       issues.push(issue(path, 'depth', `nesting exceeds ${LIMITS.maxDepth}`));
       return;
     }
-    if (!Array.isArray(value) && !isPlainObject(value)) {
+    if (Array.isArray(value) ? Object.getPrototypeOf(value) !== Array.prototype : !isPlainObject(value)) {
       issues.push(issue(path, 'type', 'only plain objects and arrays are supported'));
       return;
     }
@@ -458,8 +460,8 @@ interface ReadProjectResult {
   inertVisual?: unknown;
 }
 
-function readProject(ctx: Ctx, value: unknown, version: 1 | 2): ReadProjectResult {
-  const root = readObject(ctx, '$', value, ROOT_KEYS, version === 2 ? ['sources', 'cover', 'postText', 'models'] : []);
+function readProject(ctx: Ctx, value: unknown, version: 1 | 2 | 3): ReadProjectResult {
+  const root = readObject(ctx, '$', value, ROOT_KEYS, version >= 2 ? ['sources', 'cover', 'postText', 'models'] : []);
 
   const schemaVersion = readConst(ctx, '$.schemaVersion', root.schemaVersion, version);
   const projectId = readId(ctx, '$.projectId', root.projectId);
@@ -483,13 +485,14 @@ function readProject(ctx: Ctx, value: unknown, version: 1 | 2): ReadProjectResul
   const models = Object.hasOwn(root, 'models') ? readModels(ctx, root.models) : undefined;
 
   const mode: ProjectMode =
-    styleId === INSTALLED_STYLE_ID && styleVersion === INSTALLED_STYLE_VERSION
+    styleVersion === INSTALLED_STYLE_VERSION && (styleId === INSTALLED_STYLE_ID || (version === 3 && (styleId === 'vector-2d' || styleId === 'motion-graphics')))
       ? 'editable'
       : 'read-only';
 
   const scenes = readScenes(ctx, '$.scenes', root.scenes, {
     schemaVersion,
     mode,
+    styleId,
     output,
     entities: new Map(entities.map((entity) => [entity.entityId, entity])),
     modelIds: new Set(models?.map(model => model.id)),
@@ -543,9 +546,9 @@ function readModels(ctx: Ctx, value: unknown): ModelSnapshot[] {
   return snapshots;
 }
 
-function readScriptMetadata(ctx: Ctx, root: Record<string, unknown>, version: 1 | 2): Pick<Project, 'sources' | 'cover' | 'postText'> {
+function readScriptMetadata(ctx: Ctx, root: Record<string, unknown>, version: 1 | 2 | 3): Pick<Project, 'sources' | 'cover' | 'postText'> {
   const metadata: Pick<Project, 'sources' | 'cover' | 'postText'> = {};
-  if (version !== 2) return metadata;
+  if (version === 1) return metadata;
   if (Object.hasOwn(root, 'sources')) {
     metadata.sources = readArray(ctx, '$.sources', root.sources, LIMITS.maxScriptSources).map((value, index) => {
       const at = `$.sources[${index}]`;
@@ -830,7 +833,8 @@ function readProportions(ctx: Ctx, path: string, value: unknown): Proportions {
 // ---------------------------------------------------------------------------
 
 interface SceneEnv {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
+  styleId: string;
   mode: ProjectMode;
   output: Output;
   entities: Map<string, Entity>;
@@ -951,14 +955,22 @@ function readSceneVisual(
   if (env.mode === 'read-only') {
     // Opaque styles remain inert, but an explicit kit model reference must not
     // bypass the project-wide snapshot constraint.
-    if (env.schemaVersion === 2 && value.kind === 'kit' && Array.isArray(value.objects)
+    if (env.schemaVersion >= 2 && value.kind === 'kit' && Array.isArray(value.objects)
       && value.objects.some(item => isPlainObject(item) && item.type === 'model')) {
       const result = validateKitScene(value, { durationMs, entities: env.entities, modelIds: env.modelIds });
       if (!result.ok) ctx.issues.push(...result.issues.map(finding => ({ ...finding, path: `${path}${finding.path.slice(1)}` })));
     }
     return { inert: value };
   }
-  if (env.schemaVersion === 2) {
+  if (env.schemaVersion === 3 && (env.styleId === 'vector-2d' || env.styleId === 'motion-graphics')) {
+    const result = env.styleId === 'vector-2d' ? validateVectorVisual(value, durationMs) : validateMotionVisual(value, durationMs);
+    if (!result.ok) {
+      ctx.issues.push(...result.issues.map(finding => ({ ...finding, path: `${path}${finding.path.slice(1)}` })));
+      return null;
+    }
+    return result.visual;
+  }
+  if (env.schemaVersion >= 2) {
     const result = validateKitScene(value, { durationMs, entities: env.entities, modelIds: env.modelIds });
     if (!result.ok) {
       ctx.issues.push(...result.issues.map(finding => ({ ...finding, path: `${path}${finding.path.slice(1)}` })));

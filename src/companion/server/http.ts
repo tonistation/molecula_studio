@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { createRenderJobs, RenderRequestError } from '../render/render-jobs.ts';
 import type { renderProject } from '../render/render-service.ts';
 import { capabilities } from '../providers/capabilities.ts';
-import { generateScript, generateDrawing, generateModelDrawing, GenerationError, type CodexOptions } from '../providers/codex-cli.ts';
+import { generateScript, generateDrawing, generateFlatDrawing, generateModelDrawing, GenerationError, type CodexOptions } from '../providers/codex-cli.ts';
 import { ModelLibrary } from '../store/model-library.ts';
 import { verifyModelSnapshotsSync } from '../../shared/models/integrity.ts';
 import { sha256Sync } from '../../shared/models/sha256-sync.ts';
@@ -17,8 +17,10 @@ import { transcribeAudio, synthesizeSpeech, prepareSpeech, voiceConfiguration, v
 import type { PreviewDiagnostic } from '../../shared/voice/preview-diagnostic.ts';
 import { inspectMediaBounded } from '../store/inspection-runner.ts';
 import { InspectionError } from '../store/media-inspect.ts';
-import { GeneratedVoiceSamples, sampleKey, SampleUnresolvedError, type SampleReservationTestHooks } from '../providers/generated-voice-samples.ts';
+import { GeneratedVoiceSamples, sampleKey, historicalSampleKeys, SampleUnresolvedError, type SampleReservationTestHooks } from '../providers/generated-voice-samples.ts';
 import { VOICE_SAMPLE_PHRASE } from '../../shared/voice/sample-phrase.ts';
+import { voiceQuote, matchesVoiceQuote } from '../providers/voice-quote.ts';
+import { speechPayload } from '../providers/speech-payload.ts';
 
 import { LIMITS } from '../../shared/schema/limits.ts';
 import { ProjectStore, type WorkspaceOptions } from '../store/project-store.ts';
@@ -119,7 +121,7 @@ export async function startCompanionServer(options: CompanionServerOptions): Pro
   const generation = { options: options.codexOptions ?? {}, active: new Set<AbortController>(), closing: false, voiceBusy: false, voices: new Set<string>(), samples: new Map<string, string>() };
   const env = options.codexOptions?.env ?? process.env;
   const vibi = { apiKey: env.VIBI_API_KEY ?? '', voiceId: env.VIBI_VOICE_ID ?? '', provider: env.VIBI_PROVIDER ?? 'elevenlabs',
-    modelId: env.VIBI_MODEL_ID ?? (env.VIBI_PROVIDER === 'minimax' ? '' : env.VIBI_PROVIDER === 'capcut' ? 'capcut' : 'eleven_multilingual_v2'), ...options.vibiOptions };
+    modelId: env.VIBI_MODEL_ID ?? (env.VIBI_PROVIDER === 'minimax' ? '' : env.VIBI_PROVIDER === 'capcut' ? 'capcut' : 'eleven_v4'), ...options.vibiOptions };
 
   const server = createServer((req, res) => {
     void handleRequest(req, res, { store, models, voiceSamples, token, state, renders, generation, vibi, studioDir: options.studioDir, extraOrigins: options.extraOrigins });
@@ -269,9 +271,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   const { store } = context;
   const method = req.method ?? 'GET';
 
-  const generatedSample = /^\/api\/vibi\/voices\/(elevenlabs|minimax|capcut)\/([a-zA-Z0-9_-]{1,128})\/generated-sample$/.exec(pathname);
+  const generatedSample = /^\/api\/vibi\/voices\/(elevenlabs|minimax|capcut)\/([a-zA-Z0-9_-]{1,128})\/generated-sample(\/quote)?$/.exec(pathname);
   if (generatedSample) {
-    if (method !== 'GET' && method !== 'POST') throw methodNotAllowed('GET, POST');
+    if (generatedSample[3] ? method !== 'GET' : method !== 'GET' && method !== 'POST') throw methodNotAllowed(generatedSample[3] ? 'GET' : 'GET, POST');
     if (context.generation.closing) throw new HttpError(503, 'companion-closing', 'El companion se está cerrando.');
     const provider = generatedSample[1]!; const voiceId = generatedSample[2]!;
     if (provider !== context.vibi.provider || !context.generation.voices.has(`${provider}/${voiceId}`)) {
@@ -285,11 +287,16 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       throw error;
     }
     const key = sampleKey(config.provider, config.voiceId, config.modelId);
+    const quoteInput = { ...config, text: VOICE_SAMPLE_PHRASE, scope: 'sample/v1' };
+    if (generatedSample[3]) { sendJson(res, 200, { ...voiceQuote(quoteInput), sampleText: speechPayload(quoteInput).text }); return; }
+    let fingerprint: unknown;
     if (method === 'POST') {
       const body = await readJsonBody(req) as Record<string, unknown>;
-      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || body.consent !== true) {
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['consent', 'quote'].includes(key)) || body.consent !== true) {
         throw new HttpError(400, 'consent-required', 'Confirme la generación de la frase fija y el posible consumo TTS.');
       }
+      fingerprint = body.quote;
+      if (!matchesVoiceQuote(fingerprint, quoteInput)) throw new HttpError(409, 'voice-quote-changed', 'La configuración de voz cambió. Revise y confirme de nuevo.');
     }
     const assertCurrentVoice = () => {
       if (provider !== context.vibi.provider || !context.generation.voices.has(`${provider}/${voiceId}`)) {
@@ -304,6 +311,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       if (current.provider !== config.provider || current.modelId !== config.modelId || current.voiceId !== config.voiceId) {
         throw new HttpError(409, 'voice-config-changed', 'La configuración de voz cambió. Seleccione la voz nuevamente.');
       }
+      if (method === 'POST' && !matchesVoiceQuote(fingerprint, { ...current, text: VOICE_SAMPLE_PHRASE, scope: 'sample/v1' })) throw new HttpError(409, 'voice-quote-changed', 'La configuración de voz cambió. Revise y confirme de nuevo.');
     };
     assertCurrentVoice();
     const controller = new AbortController();
@@ -324,7 +332,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         bytes = await context.voiceSamples.generate(key, async () => {
           const generated = await synthesizeSpeech(VOICE_SAMPLE_PHRASE, options, controller.signal, prepared);
           return generated.bytes;
-        }, assertCurrentVoice, controller.signal);
+        }, assertCurrentVoice, controller.signal, historicalSampleKeys(config.provider, config.voiceId, config.modelId));
       }
       if (!bytes) throw new HttpError(404, 'sample-not-cached', 'No hay muestra generada en caché.');
       if (res.destroyed) return;
@@ -340,7 +348,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     return;
   }
 
-  const voiceRoute = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})\/scenes\/([a-z][a-z0-9_-]{0,63})\/voice$/.exec(pathname);
+  const voiceRoute = /^\/api\/projects\/([a-z][a-z0-9_-]{0,63})\/scenes\/([a-z][a-z0-9_-]{0,63})\/voice(\/quote)?$/.exec(pathname);
   const previewRoute = /^\/api\/vibi\/voices\/(elevenlabs|minimax|capcut)\/([a-zA-Z0-9_-]{1,128})\/preview$/.exec(pathname);
   if (voiceRoute || previewRoute || pathname === '/api/vibi/credits' || pathname === '/api/vibi/voices') {
     const credits = !voiceRoute;
@@ -373,19 +381,19 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       }
       if (credits) { sendJson(res, 200, await vibiCredits(context.vibi, controller.signal)); return; }
       const body = await readJsonBody(req) as Record<string, unknown>;
-      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['expectedRevision', 'expectedDigest', 'consent', 'provider', 'voiceId'].includes(key))
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['expectedRevision', 'expectedDigest', 'consent', 'provider', 'voiceId', 'quote'].includes(key))
         || !Number.isSafeInteger(body.expectedRevision) || Number(body.expectedRevision) < 0
         || typeof body.expectedDigest !== 'string' || !/^[a-f0-9]{64}$/.test(body.expectedDigest)) {
         throw new HttpError(400, 'invalid-argument', 'Se requieren revisión y digest válidos del proyecto guardado.');
       }
-      if (body.consent !== true) throw new HttpError(400, 'consent-required', 'Confirme el envío de texto/audio y el consumo TTS y STT.');
+      if (!voiceRoute![3] && body.consent !== true) throw new HttpError(400, 'consent-required', 'Confirme el envío de texto/audio y el consumo TTS y STT.');
       const selected = 'voiceId' in body || 'provider' in body;
       if (selected && (typeof body.voiceId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.voiceId)
         || body.provider !== context.vibi.provider || !context.generation.voices.has(`${body.provider}/${body.voiceId}`))) {
         throw new HttpError(400, 'invalid-voice', 'Seleccione una voz del catálogo del proveedor configurado antes de confirmar.');
       }
-      const voiceOptions = selected ? { ...context.vibi, voiceId: body.voiceId as string } : context.vibi;
-      voiceConfiguration(voiceOptions);
+      let voiceOptions = selected ? { ...context.vibi, voiceId: body.voiceId as string } : context.vibi;
+      const config = voiceConfiguration(voiceOptions);
       const projectId = voiceRoute![1]!; const sceneId = voiceRoute![2]!;
       const current = await store.readProject(projectId);
       if (current.revision !== body.expectedRevision || current.digest !== body.expectedDigest) {
@@ -403,8 +411,18 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       const scene = current.project.scenes.find(item => item.sceneId === sceneId);
       if (!scene) throw new HttpError(404, 'scene-not-found', 'La escena ya no existe.');
       if (!scene.text.trim()) throw new HttpError(422, 'empty-narration', 'La escena no tiene narración.');
+      const quoteInput = { ...config, text: scene.text, scope: `scene/${projectId}/${sceneId}` };
+      if (voiceRoute![3]) { sendJson(res, 200, voiceQuote(quoteInput)); return; }
+      if (!matchesVoiceQuote(body.quote, quoteInput)) throw new HttpError(409, 'voice-quote-changed', 'La configuración de voz cambió. Revise y confirme de nuevo.');
       estimateWords(scene.text, scene.durationMs);
-      const generated = await synthesizeSpeech(scene.text, voiceOptions, controller.signal);
+      const prepared = await prepareSpeech(scene.text, voiceOptions, controller.signal);
+      await checkCurrent();
+      controller.signal.throwIfAborted();
+      if (selected && !context.generation.voices.has(`${body.provider}/${body.voiceId}`)) throw new HttpError(409, 'voice-catalog-changed', 'El catálogo de voces cambió. Seleccione la voz nuevamente.');
+      voiceOptions = selected ? { ...context.vibi, voiceId: body.voiceId as string } : context.vibi;
+      const currentConfig = voiceConfiguration(voiceOptions);
+      if (!matchesVoiceQuote(body.quote, { ...currentConfig, text: scene.text, scope: `scene/${projectId}/${sceneId}` })) throw new HttpError(409, 'voice-quote-changed', 'La configuración de voz cambió. Revise y confirme de nuevo.');
+      const generated = await synthesizeSpeech(scene.text, voiceOptions, controller.signal, prepared);
       controller.signal.throwIfAborted();
       const inspection = await inspectMediaBounded(generated.bytes, 'audio/mpeg');
       const audioMs = inspection.durationMs;
@@ -583,8 +601,12 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       let vibiVoiceConfigured = false;
       if (capability) { try { voiceConfiguration(context.vibi); vibiVoiceConfigured = true; } catch { /* Local configuration only; no network. */ } }
       let result;
-      if (capability) result = { ...await capabilities(context.generation.options, controller.signal), vibi: Boolean(context.vibi.apiKey?.trim()), vibiVoiceConfigured };
-      else if (drawing && body && typeof body === 'object' && 'modelMode' in body) {
+      if (capability) result = { ...await capabilities(context.generation.options, controller.signal), vibi: Boolean(context.vibi.apiKey?.trim()), vibiVoiceConfigured,
+        vibiAccentDirective: context.vibi.provider === 'elevenlabs' && context.vibi.modelId === 'eleven_v4' };
+      else if (drawing && body && typeof body === 'object' && 'project' in body && body.project && typeof body.project === 'object'
+        && 'styleId' in body.project && (body.project.styleId === 'vector-2d' || body.project.styleId === 'motion-graphics')) {
+        result = await generateFlatDrawing(body, context.generation.options, controller.signal);
+      } else if (drawing && body && typeof body === 'object' && 'modelMode' in body) {
         store.lockedWorkspaceRoot();
         const catalog = await context.models.list();
         const bundle = await generateModelDrawing(body, catalog, context.generation.options, controller.signal);

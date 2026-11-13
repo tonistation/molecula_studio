@@ -20,7 +20,7 @@ function validated(name: string) {
 }
 
 test('schema version and limits are exported from a single source', () => {
-  assert.equal(SCHEMA_VERSION, 2);
+  assert.equal(SCHEMA_VERSION, 3);
   assert.equal(LIMITS.maxJsonBytes, 2 * 1024 * 1024);
   assert.equal(LIMITS.maxDepth, 16);
   assert.equal(LIMITS.maxScenes, 12);
@@ -64,11 +64,11 @@ test('storyboard example keeps scenes, entities and references', () => {
   const car = project.entities.find((entity) => entity.entityId === 'entity_car');
   assert.ok(car);
   assert.equal(car.definitionVersion, 1);
-  const instances = project.scenes.flatMap((scene) =>
-    scene.visual && 'kind' in scene.visual
-      ? scene.visual.objects.filter((object) => object.legacy?.entityId === 'entity_car')
-      : [],
-  );
+  const instances = project.scenes.flatMap((scene) => {
+    const visual = scene.visual;
+    assert.ok(visual && 'kind' in visual && visual.kind === 'kit');
+    return visual.objects.filter((object) => object.legacy?.entityId === 'entity_car');
+  });
   assert.equal(instances.length, 2);
   for (const instance of instances) assert.equal(instance.legacy?.definitionVersion, car.definitionVersion);
 });
